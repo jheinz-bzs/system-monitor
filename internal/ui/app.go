@@ -6,8 +6,10 @@
 package ui
 
 import (
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -15,11 +17,16 @@ import (
 // closed.
 func Run() {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
+	a.Settings().SetTheme(newTheme())
 	w := a.NewWindow("System Monitor")
 
 	// Placeholder content until the tabbed layout is built.
+	title := widget.NewLabel("System Monitor — scaffold")
+	title.SizeName = theme.SizeNameHeadingText
+	title.TextStyle = fyne.TextStyle{Bold: true}
+
 	w.SetContent(container.NewCenter(
-		widget.NewLabel("System Monitor — scaffold"),
+		title,
 	))
 
 	w.Resize(defaultWindowSize())
