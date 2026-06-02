@@ -12,11 +12,11 @@ The app has **8 tabs**: Overview, CPU, Memory, Disk, Network, Processes, Ports, 
 
 ---
 
-## Design Artifacts in `/.claude/`
+## Design Artifacts
 
-These three files are the authoritative design reference. Always consult them before making layout, color, typography, or component decisions.
+These files are the authoritative design reference. Always consult them before making layout, color, typography, or component decisions.
 
-### `system-monitor-design-doc.docx`
+### `.claude/system-monitor-design-doc.docx`
 
 The **product spec**. Describes what each tab does, the tech stack, and the guiding principles. Read this first to understand intent — especially the principle that chart types should be chosen per-metric, not templated uniformly, and that tabs use however many panes make sense for the data.
 
@@ -29,32 +29,43 @@ The **design system brief**. Contains:
 - The chart-type-per-tab table
 - What component patterns and chart visual language need to be defined
 
-### `System Monitor — Wireframes.pdf`
+### `docs/wireframe designs/*.html`
 
-The **full design system + wireframes**. This is the primary visual reference. It contains:
+The **full design system + wireframes**, as standalone HTML mockups. This is the primary visual reference — **open the relevant `.html` file in a browser before making any UI change**. The wireframe is the layout contract.
 
-| Pages | Content |
-|-------|---------|
-| 1 | Color palette |
-| 4 | Typography & icon spec |
-| 6 | Spacing, borders, geometry |
-| 7 | Components A: metric panel, chart container, data table |
-| 9 | Components B: buttons, nav, pills, status bar |
-| 11 | Chart language: grid, axes, series, sparkline, treemap |
-| 13–18 | Overview tab (compact rail + expanded sidebar variants) |
-| 20 | CPU tab |
-| 22 | Memory tab |
-| 24 | Disk tab |
-| 26 | Network tab |
-| 28 | Processes tab |
-| 30 | Ports tab |
-| 32 | Connections tab |
+Design-system pages:
+
+| File | Content |
+|------|---------|
+| `design-system-01-color-palette.html` | Color palette |
+| `design-system-02-typography-icons.html` | Typography & icon spec |
+| `design-system-03-spacing-borders-geometry.html` | Spacing, borders, geometry |
+| `design-system-04-components-panels-charts-tables.html` | Components A: metric panel, chart container, data table |
+| `design-system-05-components-controls-nav-chrome.html` | Components B: buttons, nav, pills, status bar |
+| `design-system-06-chart-language.html` | Chart language: grid, axes, series, sparkline, treemap |
+
+Per-tab wireframes:
+
+| File | Tab |
+|------|-----|
+| `tab-01-overview-panel-grid.html` | Overview (panel grid) |
+| `tab-01-overview-sidebar-compact.html` | Overview — compact sidebar variant |
+| `tab-01-overview-sidebar-expanded.html` | Overview — expanded sidebar variant |
+| `tab-02-cpu-chart-per-core-table.html` | CPU |
+| `tab-03-memory-line-chart-breakdown.html` | Memory |
+| `tab-04-disk-treemap-volumes-io.html` | Disk |
+| `tab-05-network-three-line-bandwidth.html` | Network |
+| `tab-06-processes-treemap-sortable-table.html` | Processes |
+| `tab-07-ports-table-cross-nav.html` | Ports |
+| `tab-08-connections-tcp-udp-table.html` | Connections |
+
+These HTML mockups are for **visual reference only** — Fyne renders its own widgets and does not use HTML/CSS. Translate the visual intent into Fyne's canvas/widget model.
 
 ---
 
 ## Design System Quick Reference
 
-Pull these values from the PDF when writing Fyne code or making visual decisions.
+Pull these values from the HTML wireframes when writing Fyne code or making visual decisions.
 
 ### Colors
 
@@ -138,11 +149,11 @@ Sidebar: expanded 178px, compact 54px.
 
 ## How to Use These Files When Making Changes
 
-1. **Understand the feature** — read `system-monitor-design-doc.docx` for intent and scope.
-2. **Check the wireframe** — open `System Monitor — Wireframes.pdf` and find the relevant tab page. The wireframe is the layout contract.
-3. **Apply the design system** — pull exact tokens (colors, sizes, spacing) from the PDF's design system pages (1–11) or from the quick reference table above.
+1. **Understand the feature** — read `.claude/system-monitor-design-doc.docx` for intent and scope.
+2. **Check the wireframe** — open the relevant `docs/wireframe designs/tab-*.html` file in a browser and find the matching tab. The wireframe is the layout contract.
+3. **Apply the design system** — pull exact tokens (colors, sizes, spacing) from the `docs/wireframe designs/design-system-*.html` pages or from the quick reference table above.
 4. **Respect tab pane structure** — don't add or remove panes from a tab without a deliberate reason. The number of panes per tab was chosen to fit the data.
-5. **Chart types are not interchangeable** — use the chart type specified per tab (see table above and PDF page 11 for chart language conventions).
+5. **Chart types are not interchangeable** — use the chart type specified per tab (see table above and `design-system-06-chart-language.html` for chart language conventions).
 
 <!-- bizstream-bcs:start -->
 ## BizStream BCS docs

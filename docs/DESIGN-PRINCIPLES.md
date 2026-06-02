@@ -32,8 +32,8 @@ precision over hand-holding.**
 
 ## The design system is authoritative
 
-Pull exact values from the wireframe PDF / CLAUDE.md quick reference — don't
-improvise:
+Pull exact values from the HTML wireframes in `docs/wireframe designs/` (open
+them in a browser) or the CLAUDE.md quick reference — don't improvise:
 
 - **Color:** cool-neutral surfaces (chroma ≤ 0.01), accent off `#4679fa`,
   semantic green/yellow/red for healthy/elevated/critical, an 8-color
