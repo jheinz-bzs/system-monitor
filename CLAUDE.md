@@ -6,7 +6,7 @@ This file tells Claude how to understand and work with the design artifacts in t
 
 ## Project Summary
 
-A native desktop system monitoring app built in **Go** using the **Fyne UI toolkit** and **gopsutil** for system data. The target audience is developers and power users. The app has no persistence — all metric history is held in an in-memory ring buffer (last ~10 minutes at 1s resolution).
+A native desktop system monitoring app built in **Go** using the **Fyne UI toolkit** and **gopsutil** for system data. The target audience is developers and power users. The app has no persistence — all metric history is held in an in-memory ring buffer (last ~1 minute at 1s resolution).
 
 The app has **8 tabs**: Overview, CPU, Memory, Disk, Network, Processes, Ports, Connections.
 
@@ -29,7 +29,7 @@ The **design system brief**. Contains:
 - The chart-type-per-tab table
 - What component patterns and chart visual language need to be defined
 
-### `System_Monitor___Wireframes_Print.pdf`
+### `System Monitor — Wireframes.pdf`
 
 The **full design system + wireframes**. This is the primary visual reference. It contains:
 
@@ -108,7 +108,7 @@ Sidebar: expanded 178px, compact 54px.
 - Primary/overall line: 2.2px solid; secondary series: 1px at 55% opacity
 - Area and sparkline fills: 30%→0% vertical gradient, never flat
 - Treemap: squarified, 2px gutter, fills at 20% α + 1px stroke at full hue
-- Axis ticks: muted mono 9px; time axis runs left (−10m) → right (now)
+- Axis ticks: muted mono 9px; time axis runs left (−1m) → right (now)
 
 ---
 
@@ -130,7 +130,7 @@ Sidebar: expanded 178px, compact 54px.
 ## Architecture Notes for Code Changes
 
 - **Process IDs are first-class identifiers.** Shared state across tabs should be designed so cross-tab navigation (e.g. Port → owning process in Processes tab) can be wired up cleanly. The cross-nav link component is already defined in the design system.
-- **Ring buffer per metric.** No database, no file I/O for metrics. Charts show ~10 minutes of data at 1s resolution.
+- **Ring buffer per metric.** No database, no file I/O for metrics. Charts show ~1 minute of data at 1s resolution.
 - **No settings screen** — out of scope for the current version.
 - **Fyne renders its own widgets.** Do not reference HTML/CSS conventions when writing Fyne layout code. Translate visual intent from the wireframes into Fyne's canvas/widget model.
 
@@ -139,7 +139,22 @@ Sidebar: expanded 178px, compact 54px.
 ## How to Use These Files When Making Changes
 
 1. **Understand the feature** — read `system-monitor-design-doc.docx` for intent and scope.
-2. **Check the wireframe** — open `System_Monitor___Wireframes_Print.pdf` and find the relevant tab page. The wireframe is the layout contract.
+2. **Check the wireframe** — open `System Monitor — Wireframes.pdf` and find the relevant tab page. The wireframe is the layout contract.
 3. **Apply the design system** — pull exact tokens (colors, sizes, spacing) from the PDF's design system pages (1–11) or from the quick reference table above.
 4. **Respect tab pane structure** — don't add or remove panes from a tab without a deliberate reason. The number of panes per tab was chosen to fit the data.
 5. **Chart types are not interchangeable** — use the chart type specified per tab (see table above and PDF page 11 for chart language conventions).
+
+<!-- bizstream-bcs:start -->
+## BizStream BCS docs
+
+For project context, read these:
+- `docs/TECH-STACK.md`
+- `docs/CODING-STANDARDS.md`
+- `docs/DESIGN-PRINCIPLES.md`
+- `docs/TESTING-CONSIDERATIONS.md`
+- `docs/ADR.md`
+- `docs/USING-GITHUB.md` — and check `~/.claude/CLAUDE.md` plus per-project auto-memory for personal overrides before any GitHub write operation
+
+## Execution rules
+- Fyne requires CGO (`CGO_ENABLED=1`) and a C compiler. Ensure `gcc` is on `PATH` before building/running (Windows: WinLibs mingw-w64). Prefer the Makefile targets (`make run`/`build`/`vet`/`fmt`/`tidy`).
+<!-- bizstream-bcs:end -->
