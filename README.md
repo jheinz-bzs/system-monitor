@@ -3,7 +3,7 @@
 A native desktop system monitoring app built in **Go** with the **Fyne** UI
 toolkit and **gopsutil** for system data. Targets developers and power users.
 
-Metric history is held entirely in memory (ring buffers, ~10 minutes at 1s
+Metric history is held entirely in memory (ring buffers, ~1 minute at 1s
 resolution) — there is no persistence layer.
 
 ## Requirements
