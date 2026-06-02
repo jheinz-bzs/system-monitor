@@ -74,18 +74,6 @@ There is no enforced template. Let the data dictate the layout.
 
 ---
 
-## Design System Deliverables
-
-Please define:
-
-- **Color palette** — background, surface, border, text (primary/secondary/muted), accent, and semantic colors (green = healthy, yellow = warning, red = critical)
-- **Typography** — font choices, sizes for headings, labels, table data, chart axis labels, status values
-- **Spacing scale** — base unit and scale
-- **Component patterns** — metric panel (overview card), data table rows, chart containers, tab/nav style, buttons, input fields (for filter/search)
-- **Chart visual language** — line colors, grid style, axis style, tooltip style
-
----
-
 ## Wireframe Deliverables
 
 For each of the 8 tabs, produce a wireframe showing:
@@ -101,6 +89,6 @@ Wireframes can be low-to-mid fidelity but should use the design system colors an
 
 ## Notes
 
-- The app uses an **in-memory ring buffer** for metric history — no database. Charts show approximately the last 10 minutes of data at 1-second resolution.
+- The app uses an **in-memory ring buffer** for metric history — no database. Charts show approximately the last 1 minute of data at 1-second resolution.
 - Cross-tab navigation is a stretch goal: e.g. clicking a process in the Ports tab jumps to that process highlighted in the Processes tab. Design with this in mind but it does not need to be wired up in wireframes.
 - The app has no settings screen yet — out of scope for now.
