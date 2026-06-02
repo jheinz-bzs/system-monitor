@@ -1,14 +1,12 @@
 // Package ui builds and runs the System Monitor application window.
 //
-// At this scaffolding stage it opens a single empty window. Future work will
-// add the eight tabs (Overview, CPU, Memory, Disk, Network, Processes, Ports,
-// Connections) described in the design doc.
+// The window hosts a persistent shell — a title bar, a vertical tab navigation,
+// and a status bar — with one tab per metric area (Overview, CPU, Memory, Disk,
+// Network, Processes, Ports, Connections). At this scaffolding stage the tab
+// contents are placeholders; real panes are added in later work.
 package ui
 
-import (
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-)
+import "fyne.io/fyne/v2/app"
 
 // Run creates the application, shows the main window, and blocks until it is
 // closed.
@@ -17,12 +15,10 @@ func Run() {
 	a.Settings().SetTheme(newTheme())
 	w := a.NewWindow("System Monitor")
 
-	// Placeholder content until the tabbed layout is built.
-	title := newHeading("System Monitor — scaffold")
-
-	w.SetContent(container.NewCenter(
-		title,
-	))
+	// The shell draws its own chrome flush to the window edges, so suppress
+	// Fyne's default padding around window content.
+	w.SetPadded(false)
+	w.SetContent(buildContent())
 
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()

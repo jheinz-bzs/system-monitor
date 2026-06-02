@@ -74,6 +74,12 @@ const (
 	sizeNamePanelRadius fyne.ThemeSizeName = "monitor.panelRadius" // 4px
 )
 
+// Custom theme color name exposing the design's secondary text color (text-2),
+// which Fyne does not name natively. Kept available for widgets/resources that
+// recolor via theme.NewColoredResource; the nav icons are line glyphs and
+// recolor through colorizeStroke instead (see colorize.go).
+const colorNameTextSecondary fyne.ThemeColorName = "monitor.textSecondary" // text-2
+
 // monitorTheme is the System Monitor Fyne theme. It satisfies fyne.Theme.
 type monitorTheme struct{}
 
@@ -102,6 +108,8 @@ func (m *monitorTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) colo
 		return colorAccent
 	case theme.ColorNameForeground:
 		return colorText
+	case colorNameTextSecondary:
+		return colorText2
 	case theme.ColorNameForegroundOnError:
 		return colorText
 	case theme.ColorNameForegroundOnPrimary:
