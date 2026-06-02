@@ -74,7 +74,11 @@ func buildContent() fyne.CanvasObject {
 	list := container.New(layout.NewCustomPaddedVBoxLayout(navItemGap))
 	for i, d := range tabDefs {
 		i := i // capture per iteration
-		panes[i] = newPlaceholder(d.name)
+		if d.name == "Overview" {
+			panes[i] = newOverview()
+		} else {
+			panes[i] = newPlaceholder(d.name)
+		}
 		items[i] = newNavItem(d.name, d.icon, i+1, func() { selectIndex(i) })
 		list.Add(items[i])
 	}
