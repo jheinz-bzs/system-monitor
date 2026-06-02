@@ -15,7 +15,7 @@ export CGO_ENABLED := 1
 PKG := ./cmd/system-monitor
 BIN := bin/system-monitor
 
-.PHONY: run start build vet tidy fmt clean
+.PHONY: run start build build-win vet tidy fmt clean
 
 ## run: build and launch the application
 run start:
@@ -24,6 +24,10 @@ run start:
 ## build: compile the binary into ./bin
 build:
 	go build -o $(BIN) $(PKG)
+
+## build-win: compile a windowed Windows binary (no console window)
+build-win:
+	go build -ldflags="-H windowsgui" -o $(BIN).exe $(PKG)
 
 ## vet: run go vet across all packages
 vet:
