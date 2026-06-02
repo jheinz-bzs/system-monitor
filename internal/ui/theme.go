@@ -44,6 +44,14 @@ var (
 	colorYellow = rgb(0xd8, 0xa1, 0x34) // warning / elevated
 	colorRed    = rgb(0xe2, 0x56, 0x3f) // critical / stopped
 
+	// Translucent design tokens (design-system-03). Used by charts and by
+	// status pills / panels rather than by standard widgets.
+	colorAccentLine = color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x52} // --sm-accent-line, ~0.32α — chart primary line
+	colorAccentDim  = color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x24} // --sm-accent-dim, ~0.14α — accent fill
+	colorGreenDim   = color.NRGBA{R: 0x3f, G: 0xb8, B: 0x77, A: 0x29} // --sm-green-dim, 0.16α — healthy pill fill
+	colorYellowDim  = color.NRGBA{R: 0xd8, G: 0xa1, B: 0x34, A: 0x29} // --sm-yellow-dim, 0.16α — warning pill fill
+	colorRedDim     = color.NRGBA{R: 0xe2, G: 0x56, B: 0x3f, A: 0x29} // --sm-red-dim, 0.16α — critical pill fill
+
 	// Derived shades that don't have a dedicated design token.
 	colorDisabledButton = rgb(0x14, 0x18, 0x1e) // dimmed panel for disabled buttons
 	colorPressed        = rgb(0x2a, 0x34, 0x42) // between surface-3 and border-strong
@@ -59,6 +67,11 @@ const (
 	sizeNameTableText   fyne.ThemeSizeName = "monitor.tableText"   // 12px
 	sizeNameStatusPill  fyne.ThemeSizeName = "monitor.statusPill"  // 10.5px
 	sizeNameMeta        fyne.ThemeSizeName = "monitor.meta"        // 9px
+
+	// sizeNamePanelRadius is the corner radius for cards / panels (--sm-radius,
+	// 4px). It is distinct from the 2px chip/input radius used by InputRadius
+	// and SelectionRadius. Standard widgets don't query it; panel components do.
+	sizeNamePanelRadius fyne.ThemeSizeName = "monitor.panelRadius" // 4px
 )
 
 // monitorTheme is the System Monitor Fyne theme. It satisfies fyne.Theme.
@@ -178,7 +191,7 @@ func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
 	case theme.SizeNameCaptionText:
 		return 11 // panel/column labels, meta
 	case theme.SizeNamePadding:
-		return 6 // dense, on the 4px scale but with a little breathing room
+		return 4 // --sm-1; dense, snapped to the 4px scale
 	case theme.SizeNameInnerPadding:
 		return 8
 	case theme.SizeNameLineSpacing:
@@ -209,6 +222,8 @@ func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
 		return 10.5 // status pills
 	case sizeNameMeta:
 		return 9 // axis ticks, meta captions
+	case sizeNamePanelRadius:
+		return 4 // --sm-radius; card / panel corners
 
 	default:
 		// Defer to the default theme for any size we don't override
