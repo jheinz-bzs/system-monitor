@@ -12,11 +12,9 @@ package ui
 // fyne.ThemeVariant and always returns its dark palette.
 //
 // Fonts: the design calls for IBM Plex Mono (everything numeric/tabular) and
-// IBM Plex Sans (titles and prose). Those font files are not bundled in the
-// repository, so Font and Icon delegate to Fyne's default theme. Fyne's
-// defaults already split on fyne.TextStyle.Monospace, so the mono-vs-sans
-// intent is preserved; to fully match the spec, bundle the IBM Plex faces
-// (e.g. via `fyne bundle`) and return them from Font.
+// IBM Plex Sans (titles and prose). Both families are bundled and embedded in
+// fonts.go; Font returns them based on fyne.TextStyle. Icon still delegates to
+// Fyne's default theme.
 
 import (
 	"image/color"
@@ -50,6 +48,17 @@ var (
 	colorDisabledButton = rgb(0x14, 0x18, 0x1e) // dimmed panel for disabled buttons
 	colorPressed        = rgb(0x2a, 0x34, 0x42) // between surface-3 and border-strong
 	colorShadow         = color.NRGBA{R: 0, G: 0, B: 0, A: 0x66}
+)
+
+// Custom theme size names for the design-system typographic roles that Fyne
+// does not name natively (see design-system-02-typography-icons.html). They
+// resolve through monitorTheme.Size, so the typography helpers can read them
+// via theme.Size(...) and stay in sync with the rest of the design system.
+const (
+	sizeNameMetricValue fyne.ThemeSizeName = "monitor.metricValue" // 26px
+	sizeNameTableText   fyne.ThemeSizeName = "monitor.tableText"   // 12px
+	sizeNameStatusPill  fyne.ThemeSizeName = "monitor.statusPill"  // 10.5px
+	sizeNameMeta        fyne.ThemeSizeName = "monitor.meta"        // 9px
 )
 
 // monitorTheme is the System Monitor Fyne theme. It satisfies fyne.Theme.
@@ -129,12 +138,25 @@ func (m *monitorTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) colo
 	}
 }
 
-// Font delegates to Fyne's default fonts. The design specifies IBM Plex Mono
-// for numeric/tabular text and IBM Plex Sans for prose; those faces are not
-// bundled in the repo, but Fyne's defaults already select a monospace face for
-// fyne.TextStyle{Monospace: true}, preserving the mono-vs-sans split.
+// Font returns the bundled IBM Plex faces (see fonts.go): IBM Plex Sans for
+// prose and IBM Plex Mono for monospace/data text. Bold maps to Plex Sans
+// SemiBold (600) to match the design's page-title weight. Symbol glyphs keep
+// Fyne's built-in symbol font.
 func (m *monitorTheme) Font(style fyne.TextStyle) fyne.Resource {
-	return theme.DefaultTheme().Font(style)
+	switch {
+	case style.Symbol:
+		return theme.DefaultTheme().Font(style)
+	case style.Monospace:
+		return fontMonoRegular
+	case style.Bold && style.Italic:
+		return fontSansSemiBoldItalic
+	case style.Bold:
+		return fontSansSemiBold
+	case style.Italic:
+		return fontSansItalic
+	default:
+		return fontSansRegular
+	}
 }
 
 // Icon delegates to Fyne's default icon set.
@@ -177,6 +199,17 @@ func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
 		return 3
 	case theme.SizeNameInlineIcon:
 		return 18
+
+	// Design-system typographic roles (Mono) not named by Fyne.
+	case sizeNameMetricValue:
+		return 26 // big metric readouts
+	case sizeNameTableText:
+		return 12 // table / body data
+	case sizeNameStatusPill:
+		return 10.5 // status pills
+	case sizeNameMeta:
+		return 9 // axis ticks, meta captions
+
 	default:
 		// Defer to the default theme for any size we don't override
 		// (e.g. window-chrome sizes).
