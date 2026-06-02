@@ -1,0 +1,30 @@
+# Build artifacts
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test / coverage output
+*.test
+*.out
+coverage.*
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Vendored dependencies (this project uses Go modules, not vendoring)
+/vendor/
+
+# Fyne packaging output
+*.app
+fyne-cross/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
