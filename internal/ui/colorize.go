@@ -23,8 +23,14 @@ import (
 // colorizeStroke returns a copy of the given SVG resource with every
 // "currentColor" token replaced by c, so the line stroke renders in that color.
 func colorizeStroke(src fyne.Resource, c color.Color) fyne.Resource {
-	out := bytes.ReplaceAll(src.Content(), []byte("currentColor"), []byte(hexString(c)))
-	return fyne.NewStaticResource(src.Name(), out)
+	hex := hexString(c)
+	out := bytes.ReplaceAll(src.Content(), []byte("currentColor"), []byte(hex))
+	// Prefix the color into the resource name. Fyne's painter caches rasterized
+	// SVGs keyed on resource name (+ size), so two recolored copies sharing the
+	// source's name would collide in the cache and the icon would never visibly
+	// change color when its state flips. A color-qualified name keeps them
+	// distinct (e.g. "#4679fa-overview.svg" vs "#9aa6b6-overview.svg").
+	return fyne.NewStaticResource(hex+"-"+src.Name(), out)
 }
 
 // hexString formats a color as a #rrggbb string (alpha is dropped; nav icons

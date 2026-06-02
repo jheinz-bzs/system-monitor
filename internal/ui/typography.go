@@ -20,6 +20,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -101,8 +103,46 @@ func statusColor(kind statusKind) color.Color {
 
 // newStatusText returns a status label — Plex Mono Regular (400), 10.5px,
 // colored by kind. This is the text of a status pill; the pill's
-// background/outline chrome belongs in a dedicated component and can wrap this
-// when needed.
+// background/outline chrome is added by newStatusPill.
 func newStatusText(text string, kind statusKind) *canvas.Text {
 	return styledText(text, fontMonoRegular, sizeNameStatusPill, statusColor(kind))
+}
+
+// Pill chrome geometry. The 2px radius matches the design's chip/input radius
+// (theme InputRadius); the insets give the text a little breathing room.
+const (
+	pillHPad   = 8
+	pillVPad   = 3
+	pillRadius = 2
+)
+
+// pillFill maps a statusKind onto its translucent (0.16α) background fill.
+// Neutral has no dedicated design token, so it falls back to surface-3.
+func pillFill(kind statusKind) color.Color {
+	switch kind {
+	case statusHealthy:
+		return colorGreenDim
+	case statusWarning:
+		return colorYellowDim
+	case statusCritical:
+		return colorRedDim
+	default:
+		return colorSurface3
+	}
+}
+
+// newStatusPill wraps a status label in pill chrome: a kind-tinted translucent
+// fill, a 1px border-strong outline, and rounded corners. The returned object
+// hugs its text — place it in an HBox (or similar) so a stretching parent
+// layout doesn't widen it to fill the row.
+func newStatusPill(text string, kind statusKind) fyne.CanvasObject {
+	bg := canvas.NewRectangle(pillFill(kind))
+	bg.StrokeColor = colorBorderStrong
+	bg.StrokeWidth = 1
+	bg.CornerRadius = pillRadius
+
+	label := newStatusText(text, kind)
+	padded := container.New(
+		layout.NewCustomPaddedLayout(pillVPad, pillVPad, pillHPad, pillHPad), label)
+	return container.NewStack(bg, padded)
 }
