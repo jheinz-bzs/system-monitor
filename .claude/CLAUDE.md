@@ -1,0 +1,145 @@
+# CLAUDE.md — System Monitor
+
+This file tells Claude how to understand and work with the design artifacts in this project.
+
+---
+
+## Project Summary
+
+A native desktop system monitoring app built in **Go** using the **Fyne UI toolkit** and **gopsutil** for system data. The target audience is developers and power users. The app has no persistence — all metric history is held in an in-memory ring buffer (last ~10 minutes at 1s resolution).
+
+The app has **8 tabs**: Overview, CPU, Memory, Disk, Network, Processes, Ports, Connections.
+
+---
+
+## Design Artifacts in `/.claude/`
+
+These three files are the authoritative design reference. Always consult them before making layout, color, typography, or component decisions.
+
+### `system-monitor-design-doc.docx`
+
+The **product spec**. Describes what each tab does, the tech stack, and the guiding principles. Read this first to understand intent — especially the principle that chart types should be chosen per-metric, not templated uniformly, and that tabs use however many panes make sense for the data.
+
+### `Design_Markdown`
+
+The **design system brief**. Contains:
+- Platform context (native Fyne app, not HTML/CSS — wireframes are for reference translation)
+- Tone direction: industrial/utilitarian, dense not cluttered, terminal-meets-data-tooling (htop, Grafana dark, Linear, Warp)
+- The full layout pattern for each tab (how many panes, what goes where)
+- The chart-type-per-tab table
+- What component patterns and chart visual language need to be defined
+
+### `System_Monitor___Wireframes_Print.pdf`
+
+The **full design system + wireframes**. This is the primary visual reference. It contains:
+
+| Pages | Content |
+|-------|---------|
+| 1 | Color palette |
+| 4 | Typography & icon spec |
+| 6 | Spacing, borders, geometry |
+| 7 | Components A: metric panel, chart container, data table |
+| 9 | Components B: buttons, nav, pills, status bar |
+| 11 | Chart language: grid, axes, series, sparkline, treemap |
+| 13–18 | Overview tab (compact rail + expanded sidebar variants) |
+| 20 | CPU tab |
+| 22 | Memory tab |
+| 24 | Disk tab |
+| 26 | Network tab |
+| 28 | Processes tab |
+| 30 | Ports tab |
+| 32 | Connections tab |
+
+---
+
+## Design System Quick Reference
+
+Pull these values from the PDF when writing Fyne code or making visual decisions.
+
+### Colors
+
+| Token | Hex | Use |
+|-------|-----|-----|
+| `bg` | `#0e1014` | Window body / canvas |
+| `surface` | `#161a21` | Panels, sidebar, cards |
+| `surface-2` | `#1b212b` | Headers, nav, inputs, status bar |
+| `surface-3` | `#222a36` | Row hover / selected |
+| `plot-bg` | `#0b0d11` | Chart plot area |
+| `border` | `#262e3a` | Panel edges, h-grid |
+| `border-strong` | `#344150` | Emphasized dividers, pill outlines |
+| `text` | `#e7eaf0` | Primary values, headings |
+| `text-2` | `#9aa6b6` | Secondary labels, table data |
+| `text-3` | `#616d7e` | Axis ticks, meta, muted captions |
+| `accent` | `#4679fa` | Primary line, active nav, primary button |
+| `accent-2` | `#6e93fb` | Hover, focus ring, jump links |
+| `green` | `#3fb877` | Healthy / running |
+| `yellow` | `#d8a134` | Warning / elevated |
+| `red` | `#e2563f` | Critical / stopped |
+
+Categorical series colors (per-core lines, multi-series): `c1 #4679fa`, `c2 #36c2d4`, `c3 #8b7cf6`, `c4 #d87cc0`, `c5 #54b86a`, `c6 #d8a134`, `c7 #e2856b`, `c8 #6e93fb`. Wrap after 8.
+
+### Typography
+
+- **IBM Plex Mono** — everything numeric, tabular, labels, axis ticks, status pills
+- **IBM Plex Sans** — page titles and prose only
+
+| Role | Font | Size | Weight |
+|------|------|------|--------|
+| Metric value | Mono | 26px | 500 |
+| Page title | Sans | 17px | 600 |
+| Table data | Mono | 12px | 400 |
+| Panel/column label | Mono | 11px | 500, UPPERCASE, 0.06em tracking |
+| Status pill | Mono | 10.5px | 400 |
+| Axis tick / meta | Mono | 9px | 400, `text-3` color |
+
+Tabular-nums on all Mono. No italics. Two weights max per family.
+
+### Spacing (4px base unit)
+
+`4 / 8 / 12 / 16 / 24 / 32 / 48px`
+
+Key fixed heights: title bar 38px, tab bar 40px, panel header 34px, status bar 26px, nav item 32px, button/input 28px, table row ~29px.
+
+Sidebar: expanded 178px, compact 54px.
+
+### Charts
+
+- Horizontal gridlines: `#262e3a`; vertical gridlines: `#1b212b` (quieter)
+- Primary/overall line: 2.2px solid; secondary series: 1px at 55% opacity
+- Area and sparkline fills: 30%→0% vertical gradient, never flat
+- Treemap: squarified, 2px gutter, fills at 20% α + 1px stroke at full hue
+- Axis ticks: muted mono 9px; time axis runs left (−10m) → right (now)
+
+---
+
+## Tab Layouts
+
+| Tab | Panes | Top | Bottom |
+|-----|-------|-----|--------|
+| Overview | 1 | 2×4 grid of metric panels with sparklines | — |
+| CPU | 3 | Multi-line chart (overall + per-core) | Per-core grid (left) + top processes table (right) |
+| Memory | 2 | Stacked area chart (used/cached/buffers) + breakdown bar | Top processes by memory table |
+| Disk | 2 | Treemap (storage by dir) + volumes list (right) | I/O line chart (read/write/total) |
+| Network | 1 | Stat panels row + three-line bandwidth chart | — |
+| Processes | 2 | Treemap sized by CPU or memory | Full sortable/filterable process table |
+| Ports | 1 | Filterable table with cross-nav jump links | — |
+| Connections | 1 | Filterable table with state pills and cross-nav links | — |
+
+---
+
+## Architecture Notes for Code Changes
+
+- **Process IDs are first-class identifiers.** Shared state across tabs should be designed so cross-tab navigation (e.g. Port → owning process in Processes tab) can be wired up cleanly. The cross-nav link component is already defined in the design system.
+- **Ring buffer per metric.** No database, no file I/O for metrics. Charts show ~10 minutes of data at 1s resolution.
+- **No settings screen** — out of scope for the current version.
+- **Fyne renders its own widgets.** Do not reference HTML/CSS conventions when writing Fyne layout code. Translate visual intent from the wireframes into Fyne's canvas/widget model.
+
+---
+
+## How to Use These Files When Making Changes
+
+1. **Understand the feature** — read `system-monitor-design-doc.docx` for intent and scope.
+2. **Check the wireframe** — open `System_Monitor___Wireframes_Print.pdf` and find the relevant tab page. The wireframe is the layout contract.
+3. **Apply the design system** — pull exact tokens (colors, sizes, spacing) from the PDF's design system pages (1–11) or from the quick reference table above.
+4. **Respect tab pane structure** — don't add or remove panes from a tab without a deliberate reason. The number of panes per tab was chosen to fit the data.
+5. **Chart types are not interchangeable** — use the chart type specified per tab (see table above and PDF page 11 for chart language conventions).

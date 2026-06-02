@@ -1,0 +1,63 @@
+**System Monitor**
+
+Design Document
+
+Version 0.1  |  May 2026
+
+# **Project Overview**
+
+A native desktop system monitoring application built in Go using the Fyne UI toolkit. The goal is to provide developers and power users with a clean, at-a-glance view of their machine's health and activity across CPU, memory, disk, network, processes, ports, and connections — all in one cohesive native application.
+
+The project is scoped to approximately one month and serves as an exploration of native desktop development outside of web-based frameworks. It targets developers and technical users who want a lightweight, offline, privacy-respecting tool that lives entirely on their machine.
+
+# **Tech Stack**
+
+Language: Go
+
+UI Framework: Fyne
+
+System Data: gopsutil
+
+Metric History: In-memory ring buffer per metric (no persistence — system monitoring is a recency problem)
+
+# **Features**
+
+## **Overview Dashboard**
+
+A grid of self-contained metric panels showing the key vitals of the system at a glance. Each panel updates live and is designed for quick scanning without needing to navigate to individual tabs.
+
+## **CPU Monitor**
+
+A dedicated tab showing CPU usage over time as a line chart with per-core breakdown. Displays top CPU-consuming processes in a supporting pane below the chart.
+
+## **Memory Monitor**
+
+Visualizes memory usage over time as a stacked area chart showing used, cached, and free memory. A secondary pane breaks down memory consumption by process.
+
+## **Disk Monitor**
+
+Shows storage breakdown visually as a treemap or bar chart by directory or drive, alongside a line chart for disk read/write I/O over time.
+
+## **Network Monitor**
+
+Displays upload, download, and total bandwidth as three lines on a shared time-axis chart. Designed to make traffic patterns and spikes immediately readable.
+
+## **Processes**
+
+A full sortable and filterable table of running processes with CPU and memory usage per process. Accompanied by a treemap visualization above the table to highlight dominant processes at a glance.
+
+## **Ports**
+
+A table of ports currently in use, the process owning each port, and relevant connection details. Includes a navigation affordance to jump to the owning process in the Processes tab.
+
+## **Connections**
+
+A live view of active TCP and UDP connections on the machine, showing owning process, local and remote addresses, and connection state.
+
+# **Design Principles**
+
+Each tab uses a chart type chosen for the data rather than a uniform template — the visualization should fit the metric, not the other way around.
+
+Tabs with rich data use subsections: a visualization pane on top for quick insight, and a detail pane below for full control. The number of panes per tab is determined case by case.
+
+The app architecture should treat process IDs as first-class identifiers and maintain shared state across tabs, enabling cross-tab navigation (e.g. jumping from a port to its owning process) to be implemented cleanly when time allows.
