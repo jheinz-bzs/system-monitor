@@ -6,11 +6,8 @@
 package ui
 
 import (
-	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 )
 
 // Run creates the application, shows the main window, and blocks until it is
@@ -21,9 +18,7 @@ func Run() {
 	w := a.NewWindow("System Monitor")
 
 	// Placeholder content until the tabbed layout is built.
-	title := widget.NewLabel("System Monitor — scaffold")
-	title.SizeName = theme.SizeNameHeadingText
-	title.TextStyle = fyne.TextStyle{Bold: true}
+	title := newHeading("System Monitor — scaffold")
 
 	w.SetContent(container.NewCenter(
 		title,
