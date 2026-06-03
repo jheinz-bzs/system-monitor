@@ -23,56 +23,97 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-// Design-system color palette. Hex values are taken verbatim from
-// design-system-01-color-palette.html / the CLAUDE.md quick reference.
-var (
-	colorBG           = rgb(0x0e, 0x10, 0x14) // window body / canvas
-	colorSurface      = rgb(0x16, 0x1a, 0x21) // panels, sidebar, cards
-	colorSurface2     = rgb(0x1b, 0x21, 0x2b) // headers, nav, inputs, status bar
-	colorSurface3     = rgb(0x22, 0x2a, 0x36) // row hover / selected
-	colorBorder       = rgb(0x26, 0x2e, 0x3a) // panel edges, h-grid
-	colorBorderStrong = rgb(0x34, 0x41, 0x50) // emphasized dividers, pill outlines
+// colorPalette is the design-system color dictionary. Grouping the tokens into
+// a single struct var lets call sites read palette.Accent / palette.Surface2 so
+// the origin is obvious cross-file. (It's named palette, not color, because
+// image/color already owns that identifier.)
+type colorPalette struct {
+	BG           color.Color // window body / canvas
+	Surface      color.Color // panels, sidebar, cards
+	Surface2     color.Color // headers, nav, inputs, status bar
+	Surface3     color.Color // row hover / selected
+	Border       color.Color // panel edges, h-grid
+	BorderStrong color.Color // emphasized dividers, pill outlines
 
-	colorText  = rgb(0xe7, 0xea, 0xf0) // primary values, headings
-	colorText2 = rgb(0x9a, 0xa6, 0xb6) // secondary labels, table data
-	colorText3 = rgb(0x61, 0x6d, 0x7e) // axis ticks, meta, muted captions
+	Text  color.Color // primary values, headings
+	Text2 color.Color // secondary labels, table data
+	Text3 color.Color // axis ticks, meta, muted captions
 
-	colorAccent  = rgb(0x46, 0x79, 0xfa) // primary line, active nav, primary button
-	colorAccent2 = rgb(0x6e, 0x93, 0xfb) // hover, focus ring, jump links
+	Accent  color.Color // primary line, active nav, primary button
+	Accent2 color.Color // hover, focus ring, jump links
 
-	colorGreen  = rgb(0x3f, 0xb8, 0x77) // healthy / running
-	colorYellow = rgb(0xd8, 0xa1, 0x34) // warning / elevated
-	colorRed    = rgb(0xe2, 0x56, 0x3f) // critical / stopped
+	Green  color.Color // healthy / running
+	Yellow color.Color // warning / elevated
+	Red    color.Color // critical / stopped
 
 	// Translucent design tokens (design-system-03). Used by charts and by
 	// status pills / panels rather than by standard widgets.
-	colorAccentLine = color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x52} // --sm-accent-line, ~0.32α — chart primary line
-	colorAccentDim  = color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x24} // --sm-accent-dim, ~0.14α — accent fill
-	colorGreenDim   = color.NRGBA{R: 0x3f, G: 0xb8, B: 0x77, A: 0x29} // --sm-green-dim, 0.16α — healthy pill fill
-	colorYellowDim  = color.NRGBA{R: 0xd8, G: 0xa1, B: 0x34, A: 0x29} // --sm-yellow-dim, 0.16α — warning pill fill
-	colorRedDim     = color.NRGBA{R: 0xe2, G: 0x56, B: 0x3f, A: 0x29} // --sm-red-dim, 0.16α — critical pill fill
+	AccentLine color.Color // --sm-accent-line, ~0.32α — chart primary line
+	AccentDim  color.Color // --sm-accent-dim, ~0.14α — accent fill
+	GreenDim   color.Color // --sm-green-dim, 0.16α — healthy pill fill
+	YellowDim  color.Color // --sm-yellow-dim, 0.16α — warning pill fill
+	RedDim     color.Color // --sm-red-dim, 0.16α — critical pill fill
 
 	// Derived shades that don't have a dedicated design token.
-	colorDisabledButton = rgb(0x14, 0x18, 0x1e) // dimmed panel for disabled buttons
-	colorPressed        = rgb(0x2a, 0x34, 0x42) // between surface-3 and border-strong
-	colorShadow         = color.NRGBA{R: 0, G: 0, B: 0, A: 0x66}
-)
+	DisabledButton color.Color // dimmed panel for disabled buttons
+	Pressed        color.Color // between surface-3 and border-strong
+	Shadow         color.Color
+}
 
-// Custom theme size names for the design-system typographic roles that Fyne
-// does not name natively (see design-system-02-typography-icons.html). They
-// resolve through monitorTheme.Size, so the typography helpers can read them
-// via theme.Size(...) and stay in sync with the rest of the design system.
-const (
-	sizeNameMetricValue fyne.ThemeSizeName = "monitor.metricValue" // 26px
-	sizeNameTableText   fyne.ThemeSizeName = "monitor.tableText"   // 12px
-	sizeNameStatusPill  fyne.ThemeSizeName = "monitor.statusPill"  // 10.5px
-	sizeNameMeta        fyne.ThemeSizeName = "monitor.meta"        // 9px
+// palette holds the design-system colors. Hex values are taken verbatim from
+// design-system-01-color-palette.html / the CLAUDE.md quick reference.
+var palette = colorPalette{
+	BG:           rgb(0x0e, 0x10, 0x14),
+	Surface:      rgb(0x16, 0x1a, 0x21),
+	Surface2:     rgb(0x1b, 0x21, 0x2b),
+	Surface3:     rgb(0x22, 0x2a, 0x36),
+	Border:       rgb(0x26, 0x2e, 0x3a),
+	BorderStrong: rgb(0x34, 0x41, 0x50),
 
-	// sizeNamePanelRadius is the corner radius for cards / panels (--sm-radius,
-	// 4px). It is distinct from the 2px chip/input radius used by InputRadius
-	// and SelectionRadius. Standard widgets don't query it; panel components do.
-	sizeNamePanelRadius fyne.ThemeSizeName = "monitor.panelRadius" // 4px
-)
+	Text:  rgb(0xe7, 0xea, 0xf0),
+	Text2: rgb(0x9a, 0xa6, 0xb6),
+	Text3: rgb(0x61, 0x6d, 0x7e),
+
+	Accent:  rgb(0x46, 0x79, 0xfa),
+	Accent2: rgb(0x6e, 0x93, 0xfb),
+
+	Green:  rgb(0x3f, 0xb8, 0x77),
+	Yellow: rgb(0xd8, 0xa1, 0x34),
+	Red:    rgb(0xe2, 0x56, 0x3f),
+
+	AccentLine: color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x52},
+	AccentDim:  color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x24},
+	GreenDim:   color.NRGBA{R: 0x3f, G: 0xb8, B: 0x77, A: 0x29},
+	YellowDim:  color.NRGBA{R: 0xd8, G: 0xa1, B: 0x34, A: 0x29},
+	RedDim:     color.NRGBA{R: 0xe2, G: 0x56, B: 0x3f, A: 0x29},
+
+	DisabledButton: rgb(0x14, 0x18, 0x1e),
+	Pressed:        rgb(0x2a, 0x34, 0x42),
+	Shadow:         color.NRGBA{R: 0, G: 0, B: 0, A: 0x66},
+}
+
+// sizeName groups the custom theme size names for the design-system typographic
+// roles that Fyne does not name natively (see
+// design-system-02-typography-icons.html). They resolve through
+// monitorTheme.Size, so the typography helpers can read them via theme.Size(...)
+// and stay in sync with the rest of the design system.
+//
+// PanelRadius is the corner radius for cards / panels (--sm-radius, 4px). It is
+// distinct from the 2px chip/input radius used by InputRadius and
+// SelectionRadius. Standard widgets don't query it; panel components do.
+var sizeName = struct {
+	MetricValue fyne.ThemeSizeName // 26px
+	TableText   fyne.ThemeSizeName // 12px
+	StatusPill  fyne.ThemeSizeName // 10.5px
+	Meta        fyne.ThemeSizeName // 9px
+	PanelRadius fyne.ThemeSizeName // 4px
+}{
+	MetricValue: "monitor.metricValue",
+	TableText:   "monitor.tableText",
+	StatusPill:  "monitor.statusPill",
+	Meta:        "monitor.meta",
+	PanelRadius: "monitor.panelRadius",
+}
 
 // Custom theme color name exposing the design's secondary text color (text-2),
 // which Fyne does not name natively. Kept available for widgets/resources that
@@ -89,74 +130,51 @@ var _ fyne.Theme = (*monitorTheme)(nil)
 // newTheme returns the application theme.
 func newTheme() fyne.Theme { return &monitorTheme{} }
 
+// themeColors maps Fyne's semantic color names onto the design-system palette.
+// A map-miss falls through to the default dark theme (see Color), mirroring the
+// old switch's default arm.
+var themeColors = map[fyne.ThemeColorName]color.Color{
+	theme.ColorNameBackground:         palette.BG,
+	theme.ColorNameButton:             palette.Surface,
+	theme.ColorNameDisabledButton:     palette.DisabledButton,
+	theme.ColorNameDisabled:           palette.Text3,
+	theme.ColorNameError:              palette.Red,
+	theme.ColorNameFocus:              palette.Accent,
+	theme.ColorNameForeground:         palette.Text,
+	colorNameTextSecondary:            palette.Text2,
+	theme.ColorNameForegroundOnError:  palette.Text,
+	theme.ColorNameForegroundOnPrimary: palette.Text,
+	theme.ColorNameForegroundOnSuccess: palette.BG,
+	theme.ColorNameForegroundOnWarning: palette.BG,
+	theme.ColorNameHeaderBackground:   palette.Surface2,
+	theme.ColorNameHover:              palette.Surface3,
+	theme.ColorNameHyperlink:          palette.Accent2,
+	theme.ColorNameInputBackground:    palette.Surface2,
+	theme.ColorNameInputBorder:        palette.Border,
+	theme.ColorNameMenuBackground:     palette.Surface,
+	theme.ColorNameOverlayBackground:  palette.Surface,
+	theme.ColorNamePlaceHolder:        palette.Text3,
+	theme.ColorNamePressed:            palette.Pressed,
+	theme.ColorNamePrimary:            palette.Accent,
+	theme.ColorNameScrollBar:          palette.BorderStrong,
+	theme.ColorNameScrollBarBackground: palette.Surface,
+	theme.ColorNameSelection:          palette.Surface3,
+	theme.ColorNameSeparator:          palette.Border,
+	theme.ColorNameShadow:             palette.Shadow,
+	theme.ColorNameSuccess:            palette.Green,
+	theme.ColorNameWarning:            palette.Yellow,
+}
+
 // Color maps Fyne's semantic color names onto the design-system palette. The
 // variant is intentionally ignored: the design system defines a single dark
 // theme.
 func (m *monitorTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
-	switch name {
-	case theme.ColorNameBackground:
-		return colorBG
-	case theme.ColorNameButton:
-		return colorSurface
-	case theme.ColorNameDisabledButton:
-		return colorDisabledButton
-	case theme.ColorNameDisabled:
-		return colorText3
-	case theme.ColorNameError:
-		return colorRed
-	case theme.ColorNameFocus:
-		return colorAccent
-	case theme.ColorNameForeground:
-		return colorText
-	case colorNameTextSecondary:
-		return colorText2
-	case theme.ColorNameForegroundOnError:
-		return colorText
-	case theme.ColorNameForegroundOnPrimary:
-		return colorText
-	case theme.ColorNameForegroundOnSuccess:
-		return colorBG
-	case theme.ColorNameForegroundOnWarning:
-		return colorBG
-	case theme.ColorNameHeaderBackground:
-		return colorSurface2
-	case theme.ColorNameHover:
-		return colorSurface3
-	case theme.ColorNameHyperlink:
-		return colorAccent2
-	case theme.ColorNameInputBackground:
-		return colorSurface2
-	case theme.ColorNameInputBorder:
-		return colorBorder
-	case theme.ColorNameMenuBackground:
-		return colorSurface
-	case theme.ColorNameOverlayBackground:
-		return colorSurface
-	case theme.ColorNamePlaceHolder:
-		return colorText3
-	case theme.ColorNamePressed:
-		return colorPressed
-	case theme.ColorNamePrimary:
-		return colorAccent
-	case theme.ColorNameScrollBar:
-		return colorBorderStrong
-	case theme.ColorNameScrollBarBackground:
-		return colorSurface
-	case theme.ColorNameSelection:
-		return colorSurface3
-	case theme.ColorNameSeparator:
-		return colorBorder
-	case theme.ColorNameShadow:
-		return colorShadow
-	case theme.ColorNameSuccess:
-		return colorGreen
-	case theme.ColorNameWarning:
-		return colorYellow
-	default:
-		// Fall back to the default dark theme for any color name added in a
-		// future Fyne release that we don't yet map explicitly.
-		return theme.DefaultTheme().Color(name, theme.VariantDark)
+	if c, ok := themeColors[name]; ok {
+		return c
 	}
+	// Fall back to the default dark theme for any color name added in a future
+	// Fyne release that we don't yet map explicitly.
+	return theme.DefaultTheme().Color(name, theme.VariantDark)
 }
 
 // Font returns the bundled IBM Plex faces (see fonts.go): IBM Plex Sans for
@@ -222,15 +240,15 @@ func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
 		return 18
 
 	// Design-system typographic roles (Mono) not named by Fyne.
-	case sizeNameMetricValue:
+	case sizeName.MetricValue:
 		return 26 // big metric readouts
-	case sizeNameTableText:
+	case sizeName.TableText:
 		return 12 // table / body data
-	case sizeNameStatusPill:
+	case sizeName.StatusPill:
 		return 10.5 // status pills
-	case sizeNameMeta:
+	case sizeName.Meta:
 		return 9 // axis ticks, meta captions
-	case sizeNamePanelRadius:
+	case sizeName.PanelRadius:
 		return 4 // --sm-radius; card / panel corners
 
 	default:

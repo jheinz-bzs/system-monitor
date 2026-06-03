@@ -74,28 +74,28 @@ func colorShowcase() fyne.CanvasObject {
 		name string
 		col  color.Color
 	}{
-		{"bg", colorBG},
-		{"surface", colorSurface},
-		{"surface-2", colorSurface2},
-		{"surface-3", colorSurface3},
-		{"border", colorBorder},
-		{"border-strong", colorBorderStrong},
-		{"text", colorText},
-		{"text-2", colorText2},
-		{"text-3", colorText3},
-		{"accent", colorAccent},
-		{"accent-2", colorAccent2},
-		{"green", colorGreen},
-		{"yellow", colorYellow},
-		{"red", colorRed},
-		{"accent-line", colorAccentLine},
-		{"accent-dim", colorAccentDim},
-		{"green-dim", colorGreenDim},
-		{"yellow-dim", colorYellowDim},
-		{"red-dim", colorRedDim},
-		{"disabled-btn", colorDisabledButton},
-		{"pressed", colorPressed},
-		{"shadow", colorShadow},
+		{"bg", palette.BG},
+		{"surface", palette.Surface},
+		{"surface-2", palette.Surface2},
+		{"surface-3", palette.Surface3},
+		{"border", palette.Border},
+		{"border-strong", palette.BorderStrong},
+		{"text", palette.Text},
+		{"text-2", palette.Text2},
+		{"text-3", palette.Text3},
+		{"accent", palette.Accent},
+		{"accent-2", palette.Accent2},
+		{"green", palette.Green},
+		{"yellow", palette.Yellow},
+		{"red", palette.Red},
+		{"accent-line", palette.AccentLine},
+		{"accent-dim", palette.AccentDim},
+		{"green-dim", palette.GreenDim},
+		{"yellow-dim", palette.YellowDim},
+		{"red-dim", palette.RedDim},
+		{"disabled-btn", palette.DisabledButton},
+		{"pressed", palette.Pressed},
+		{"shadow", palette.Shadow},
 	}
 
 	cells := make([]fyne.CanvasObject, 0, len(swatches))
@@ -114,9 +114,9 @@ func colorShowcase() fyne.CanvasObject {
 // name and hex value. The outline keeps near-background fills visible.
 func swatchCell(name string, col color.Color) fyne.CanvasObject {
 	chip := canvas.NewRectangle(col)
-	chip.StrokeColor = colorText3
+	chip.StrokeColor = palette.Text3
 	chip.StrokeWidth = 1
-	chip.CornerRadius = theme.Size(sizeNamePanelRadius)
+	chip.CornerRadius = theme.Size(sizeName.PanelRadius)
 	chip.SetMinSize(fyne.NewSize(0, 40))
 
 	return container.New(layout.NewCustomPaddedVBoxLayout(2),
