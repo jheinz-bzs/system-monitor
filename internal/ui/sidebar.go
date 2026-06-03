@@ -92,7 +92,7 @@ func (n *navItem) CreateRenderer() fyne.WidgetRenderer {
 	label := newColumnLabel(n.label) // Mono 11 UPPERCASE
 
 	number := canvas.NewText(strconv.Itoa(n.index), colorText3)
-	number.FontSource = fontMonoRegular
+	number.FontSource = font.MonoRegular
 	number.TextSize = navNumberSize
 
 	r := &navItemRenderer{
