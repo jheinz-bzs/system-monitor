@@ -208,28 +208,28 @@ func (m *monitorTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 // Fyne's rounded defaults). A map-miss falls through to the default theme (see
 // Size), mirroring the old switch's default arm.
 var themeSizes = map[fyne.ThemeSizeName]float32{
-	theme.SizeNameText:               13, // dense body/table text (design table data 12, labels 11)
-	theme.SizeNameHeadingText:        17, // page title (Sans 17px / 600)
-	theme.SizeNameSubHeadingText:     14,
-	theme.SizeNameCaptionText:        11, // panel/column labels, meta
-	theme.SizeNamePadding:            4,  // --sm-1; dense, snapped to the 4px scale
-	theme.SizeNameInnerPadding:       8,
-	theme.SizeNameLineSpacing:        4,
-	theme.SizeNameSeparatorThickness: 1, // matches the 1px border token
-	theme.SizeNameInputBorder:        1,
-	theme.SizeNameInputRadius:        2, // industrial/sharp corners
-	theme.SizeNameSelectionRadius:    2,
+	theme.SizeNameText:               spaceLG, // 12; dense body/table text (13 rounded to grid)
+	theme.SizeNameHeadingText:        spaceXL, // 16; page title (17 rounded to grid)
+	theme.SizeNameSubHeadingText:     spaceXL, // 16; section title (14 rounded to grid)
+	theme.SizeNameCaptionText:        spaceLG, // 12; panel/column labels, meta (11 rounded to grid)
+	theme.SizeNamePadding:            spaceSM, // 4; --sm-1, dense, on the 4px scale
+	theme.SizeNameInnerPadding:       spaceMD, // 8
+	theme.SizeNameLineSpacing:        spaceSM, // 4
+	theme.SizeNameSeparatorThickness: 1,       // 1px hairline border token
+	theme.SizeNameInputBorder:        1,       // 1px hairline
+	theme.SizeNameInputRadius:        spaceXS, // 2; industrial/sharp corners
+	theme.SizeNameSelectionRadius:    spaceXS, // 2
 	theme.SizeNameScrollBarRadius:    0,
-	theme.SizeNameScrollBar:          12,
-	theme.SizeNameScrollBarSmall:     3,
-	theme.SizeNameInlineIcon:         18,
+	theme.SizeNameScrollBar:          spaceLG, // 12
+	theme.SizeNameScrollBarSmall:     spaceSM, // 4 (3 rounded to grid)
+	theme.SizeNameInlineIcon:         spaceXL, // 16 (18 rounded to grid)
 
-	// Design-system typographic roles (Mono) not named by Fyne.
-	sizeName.MetricValue: 26,   // big metric readouts
-	sizeName.TableText:   12,   // table / body data
-	sizeName.StatusPill:  10.5, // status pills
-	sizeName.Meta:        9,    // axis ticks, meta captions
-	sizeName.PanelRadius: 4,    // --sm-radius; card / panel corners
+	// Design-system typographic roles (Mono) not named by Fyne (grid-rounded).
+	sizeName.MetricValue: space2XL, // 24; big metric readouts (26 rounded to grid)
+	sizeName.TableText:   spaceLG,  // 12; table / body data
+	sizeName.StatusPill:  spaceLG,  // 12; status pills (10.5 rounded to grid)
+	sizeName.Meta:        spaceMD,  // 8; axis ticks, meta captions (9 rounded to grid)
+	sizeName.PanelRadius: spaceSM,  // 4; --sm-radius, card / panel corners
 }
 
 // Size maps Fyne's size names onto the design system's typographic scale,

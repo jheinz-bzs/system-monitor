@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	titleBarHeight  = 38
-	statusBarHeight = 26
-	barHPad         = 16 // leading inset for bar text (--sm-4)
-	titleLogoSize   = 14 // accent diamond logo mark in the title bar
-	titleLogoGap    = 8  // gap between logo and wordmark (--sm-2)
+	titleBarHeight  = 10 * spaceSM // 40; title bar height (38 rounded to grid)
+	statusBarHeight = space2XL     // 24; status bar height (26 rounded to grid)
+	barHPad         = spaceXL      // 16; leading inset for bar text (--sm-4)
+	titleLogoSize   = spaceXL      // 16; accent diamond logo mark (14 rounded to grid)
+	titleLogoGap    = spaceMD      // 8; gap between logo and wordmark (--sm-2)
 )
 
 // tabDef describes one nav entry; the content builder uses the name so each

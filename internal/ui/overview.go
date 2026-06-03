@@ -27,12 +27,12 @@ import (
 // catalog and a color-swatch grid.
 func newOverview() fyne.CanvasObject {
 	body := container.New(
-		layout.NewCustomPaddedVBoxLayout(24),
+		layout.NewCustomPaddedVBoxLayout(space2XL),
 		newHeading("Overview"),
 		typographyShowcase(),
 		colorShowcase(),
 	)
-	padded := container.New(layout.NewCustomPaddedLayout(24, 24, 24, 24), body)
+	padded := container.New(layout.NewCustomPaddedLayout(space2XL, space2XL, space2XL, space2XL), body)
 	return container.NewVScroll(padded)
 }
 
@@ -60,13 +60,21 @@ func typographyShowcase() fyne.CanvasObject {
 	for _, s := range samples {
 		rows = append(
 			rows,
-			container.New(layout.NewCustomPaddedVBoxLayout(2),
+			container.New(layout.NewCustomPaddedVBoxLayout(spaceXS),
 				newMeta(s.role),
 				s.sample,
 			))
 	}
-	return container.New(layout.NewCustomPaddedVBoxLayout(12), rows...)
+	return container.New(layout.NewCustomPaddedVBoxLayout(spaceLG), rows...)
 }
+
+// Swatch-grid geometry for colorShowcase, expressed as multiples of the
+// spacing scale (grid-rounded: 78 -> 80).
+const (
+	swatchCellW    = 30 * spaceSM // 120; grid cell width
+	swatchCellH    = 20 * spaceSM // 80; grid cell height (78 rounded to grid)
+	swatchChipMinH = 10 * spaceSM // 40; color chip min height
+)
 
 // colorShowcase renders a swatch for every palette token defined in theme.go.
 func colorShowcase() fyne.CanvasObject {
@@ -102,9 +110,9 @@ func colorShowcase() fyne.CanvasObject {
 	for _, s := range swatches {
 		cells = append(cells, swatchCell(s.name, s.col))
 	}
-	grid := container.NewGridWrap(fyne.NewSize(120, 78), cells...)
+	grid := container.NewGridWrap(fyne.NewSize(swatchCellW, swatchCellH), cells...)
 
-	return container.New(layout.NewCustomPaddedVBoxLayout(12),
+	return container.New(layout.NewCustomPaddedVBoxLayout(spaceLG),
 		newColumnLabel("Color Palette"),
 		grid,
 	)
@@ -117,7 +125,7 @@ func swatchCell(name string, col color.Color) fyne.CanvasObject {
 	chip.StrokeColor = palette.Text3
 	chip.StrokeWidth = 1
 	chip.CornerRadius = theme.Size(sizeName.PanelRadius)
-	chip.SetMinSize(fyne.NewSize(0, 40))
+	chip.SetMinSize(fyne.NewSize(0, swatchChipMinH))
 
 	return container.New(layout.NewCustomPaddedVBoxLayout(2),
 		chip,

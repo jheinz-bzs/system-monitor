@@ -110,9 +110,9 @@ func newStatusText(text string, kind statusKind) *canvas.Text {
 // Pill chrome geometry. The 2px radius matches the design's chip/input radius
 // (theme InputRadius); the insets give the text a little breathing room.
 const (
-	pillHPad   = 8
-	pillVPad   = 3
-	pillRadius = 2
+	pillHPad   = spaceMD // 8
+	pillVPad   = spaceSM // 4; vertical pad (3 rounded to grid)
+	pillRadius = spaceXS // 2; corner radius (already on-scale)
 )
 
 // pillFill maps a statusKind onto its translucent (0.16α) background fill.
