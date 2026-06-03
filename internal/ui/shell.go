@@ -33,28 +33,70 @@ const (
 	titleLogoGap    = spaceMD      // 8; gap between logo and wordmark (--sm-2)
 )
 
-// tabDef describes one nav entry; the content builder uses the name so each
-// placeholder identifies its own tab. Icons are Fyne built-ins (placeholders).
+// tabID identifies a tab by role rather than by display string, so content
+// routing switches on a typed enum instead of matching a name literal.
+type tabID uint
+
+const (
+	tabOverview tabID = iota
+	tabCPU
+	tabMemory
+	tabDisk
+	tabNetwork
+	tabProcesses
+	tabPorts
+	tabConnections
+)
+
+// tabDef describes one nav entry: its identity, label, nav icon, and the
+// content panes shown when it's selected. content is populated by the newTabs
+// builder (via addChild) rather than at literal-declaration time, so the panes
+// are built fresh per call and never shared across invocations.
 type tabDef struct {
-	name string
-	icon fyne.Resource
+	id      tabID
+	name    string
+	icon    fyne.Resource
+	content []fyne.CanvasObject
 }
 
-var tabDefs = []tabDef{
-	{"Overview", icon.Overview},
-	{"CPU", icon.CPU},
-	{"Memory", icon.Memory},
-	{"Disk", icon.Disk},
-	{"Network", icon.Network},
-	{"Processes", icon.Processes},
-	{"Ports", icon.Ports},
-	{"Connections", icon.Connections},
+// addChild appends a content pane to the tab.
+func (t *tabDef) addChild(child fyne.CanvasObject) {
+	t.content = append(t.content, child)
+}
+
+// newTabs returns the eight tab definitions with their content built fresh.
+// Identity (id/name/icon) is declared first, then each tab's content is
+// populated by switching on id — the seam where real per-tab content gets
+// wired in (see refactor plan §13). Returning fresh defs (rather than mutating
+// a shared global) keeps repeated buildContent calls from double-appending.
+func newTabs() []tabDef {
+	tabs := []tabDef{
+		{id: tabOverview, name: "Overview", icon: icon.Overview},
+		{id: tabCPU, name: "CPU", icon: icon.CPU},
+		{id: tabMemory, name: "Memory", icon: icon.Memory},
+		{id: tabDisk, name: "Disk", icon: icon.Disk},
+		{id: tabNetwork, name: "Network", icon: icon.Network},
+		{id: tabProcesses, name: "Processes", icon: icon.Processes},
+		{id: tabPorts, name: "Ports", icon: icon.Ports},
+		{id: tabConnections, name: "Connections", icon: icon.Connections},
+	}
+	for i := range tabs {
+		t := &tabs[i]
+		switch t.id {
+		case tabOverview:
+			t.addChild(newOverview())
+		default:
+			t.addChild(newPlaceholder(t.name))
+		}
+	}
+	return tabs
 }
 
 // buildContent assembles the full window content and wires nav selection to
 // content switching.
 func buildContent() fyne.CanvasObject {
-	n := len(tabDefs)
+	tabs := newTabs()
+	n := len(tabs)
 	panes := make([]fyne.CanvasObject, n)
 	items := make([]*navItem, n)
 	holder := container.NewStack()
@@ -68,13 +110,12 @@ func buildContent() fyne.CanvasObject {
 	}
 
 	list := container.New(layout.NewCustomPaddedVBoxLayout(navItemGap))
-	for i, d := range tabDefs {
+	for i, d := range tabs {
 		i := i // capture per iteration
-		if d.name == "Overview" {
-			panes[i] = newOverview()
-		} else {
-			panes[i] = newPlaceholder(d.name)
-		}
+		// Stack the tab's content panes. For a single pane this renders
+		// identically to placing it directly; multi-pane tab layouts are a
+		// follow-up (see refactor plan §13).
+		panes[i] = container.NewStack(d.content...)
 		items[i] = newNavItem(d.name, d.icon, i+1, func() { selectIndex(i) })
 		list.Add(items[i])
 	}
