@@ -33,10 +33,6 @@ const (
 	titleLogoGap    = 8  // gap between logo and wordmark (--sm-2)
 )
 
-// logoDiamondSVG is the title-bar brand mark: an outline diamond (the ◇ glyph
-// in the wireframe). It's stroke-drawn so colorizeStroke can tint it to accent.
-var logoDiamondSVG = []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2 22 12 12 22 2 12Z"/></svg>`)
-
 // tabDef describes one nav entry; the content builder uses the name so each
 // placeholder identifies its own tab. Icons are Fyne built-ins (placeholders).
 type tabDef struct {
@@ -45,14 +41,14 @@ type tabDef struct {
 }
 
 var tabDefs = []tabDef{
-	{"Overview", iconOverview},
-	{"CPU", iconCPU},
-	{"Memory", iconMemory},
-	{"Disk", iconDisk},
-	{"Network", iconNetwork},
-	{"Processes", iconProcesses},
-	{"Ports", iconPorts},
-	{"Connections", iconConnections},
+	{"Overview", icon.Overview},
+	{"CPU", icon.CPU},
+	{"Memory", icon.Memory},
+	{"Disk", icon.Disk},
+	{"Network", icon.Network},
+	{"Processes", icon.Processes},
+	{"Ports", icon.Ports},
+	{"Connections", icon.Connections},
 }
 
 // buildContent assembles the full window content and wires nav selection to
@@ -117,7 +113,7 @@ func newPlaceholder(name string) fyne.CanvasObject {
 // controls on the right are left to the native OS title bar.
 func newTitleBar() fyne.CanvasObject {
 	logoImg := canvas.NewImageFromResource(
-		colorizeStroke(fyne.NewStaticResource("logo.svg", logoDiamondSVG), colorAccent),
+		colorizeStroke(icon.Diamond, colorAccent),
 	)
 	logoImg.FillMode = canvas.ImageFillContain
 	logo := container.NewGridWrap(fyne.NewSize(titleLogoSize, titleLogoSize), logoImg)

@@ -11,6 +11,9 @@
 *.out
 coverage.*
 
+# Generated bundled assets (produced by `make generate`; see tools/genassets)
+/internal/ui/assets_gen.go
+
 # Go workspace file
 go.work
 go.work.sum
