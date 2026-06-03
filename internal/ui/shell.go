@@ -89,7 +89,7 @@ func buildContent() fyne.CanvasObject {
 // newSidebar wraps the top-aligned nav list in a surface-colored, fixed-width
 // rail with a 1px right divider.
 func newSidebar(list fyne.CanvasObject) fyne.CanvasObject {
-	bg := canvas.NewRectangle(colorSurface)
+	bg := canvas.NewRectangle(palette.Surface)
 	bg.SetMinSize(fyne.NewSize(navWidth, 0))
 	// Top-align the list: place it in the top slot so it keeps its min height
 	// and the remaining space below stays empty (showing the surface bg).
@@ -113,7 +113,7 @@ func newPlaceholder(name string) fyne.CanvasObject {
 // controls on the right are left to the native OS title bar.
 func newTitleBar() fyne.CanvasObject {
 	logoImg := canvas.NewImageFromResource(
-		colorizeStroke(icon.Diamond, colorAccent),
+		colorizeStroke(icon.Diamond, palette.Accent),
 	)
 	logoImg.FillMode = canvas.ImageFillContain
 	logo := container.NewGridWrap(fyne.NewSize(titleLogoSize, titleLogoSize), logoImg)
@@ -132,7 +132,7 @@ func newStatusBar() fyne.CanvasObject {
 // newBar builds a fixed-height surface-2 bar with its content inset from the
 // left and vertically centered.
 func newBar(height float32, content fyne.CanvasObject) fyne.CanvasObject {
-	bg := canvas.NewRectangle(colorSurface2)
+	bg := canvas.NewRectangle(palette.Surface2)
 	bg.SetMinSize(fyne.NewSize(0, height))
 
 	row := container.NewHBox(content) // left-packed
@@ -145,13 +145,13 @@ func newBar(height float32, content fyne.CanvasObject) fyne.CanvasObject {
 
 // hLine / vLine are 1px dividers in the border color.
 func hLine() fyne.CanvasObject {
-	r := canvas.NewRectangle(colorBorder)
+	r := canvas.NewRectangle(palette.Border)
 	r.SetMinSize(fyne.NewSize(0, 1))
 	return r
 }
 
 func vLine() fyne.CanvasObject {
-	r := canvas.NewRectangle(colorBorder)
+	r := canvas.NewRectangle(palette.Border)
 	r.SetMinSize(fyne.NewSize(1, 0))
 	return r
 }

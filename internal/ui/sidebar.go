@@ -78,20 +78,20 @@ func (n *navItem) Cursor() desktop.Cursor { return desktop.PointerCursor }
 
 func (n *navItem) CreateRenderer() fyne.WidgetRenderer {
 	bg := canvas.NewRectangle(color.Transparent)
-	bar := canvas.NewRectangle(colorAccentLine)
+	bar := canvas.NewRectangle(palette.AccentLine)
 
 	// Pre-build the icon recolored for each state: text-2 when idle, accent
 	// when active. The glyphs are Lucide line icons (stroke-drawn), so they're
 	// recolored with colorizeStroke rather than theme.NewColoredResource, which
 	// only rewrites fill colors (see colorize.go).
-	iconInactive := colorizeStroke(n.icon, colorText2)
-	iconActive := colorizeStroke(n.icon, colorAccent)
+	iconInactive := colorizeStroke(n.icon, palette.Text2)
+	iconActive := colorizeStroke(n.icon, palette.Accent)
 	icon := canvas.NewImageFromResource(iconInactive)
 	icon.FillMode = canvas.ImageFillContain
 
 	label := newColumnLabel(n.label) // Mono 11 UPPERCASE
 
-	number := canvas.NewText(strconv.Itoa(n.index), colorText3)
+	number := canvas.NewText(strconv.Itoa(n.index), palette.Text3)
 	number.FontSource = font.MonoRegular
 	number.TextSize = navNumberSize
 
@@ -121,19 +121,19 @@ type navItemRenderer struct {
 func (r *navItemRenderer) apply() {
 	switch {
 	case r.item.active:
-		r.bg.FillColor = colorAccentDim
+		r.bg.FillColor = palette.AccentDim
 		r.bar.Show()
-		r.label.Color = colorText
+		r.label.Color = palette.Text
 		r.icon.Resource = r.iconActive
 	case r.item.hovered:
-		r.bg.FillColor = colorSurface3
+		r.bg.FillColor = palette.Surface3
 		r.bar.Hide()
-		r.label.Color = colorText2
+		r.label.Color = palette.Text2
 		r.icon.Resource = r.iconInactive
 	default:
 		r.bg.FillColor = color.Transparent
 		r.bar.Hide()
-		r.label.Color = colorText2
+		r.label.Color = palette.Text2
 		r.icon.Resource = r.iconInactive
 	}
 }
