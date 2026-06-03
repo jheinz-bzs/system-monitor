@@ -26,14 +26,14 @@ import (
 )
 
 const (
-	navWidth      = 178 // expanded sidebar width
-	navItemHeight = 32
-	navItemHPad   = 12 // horizontal inset inside an item
-	navIconSize   = 16
-	navIconGap    = 8  // gap between icon and label
-	navBarWidth   = 1  // active-item left accent bar (--sm-accent-line)
-	navItemGap    = 4  // vertical gap between items (--sm-1)
-	navNumberSize = 10 // index badge text size
+	navWidth      = 44 * spaceSM // 176; expanded sidebar width (178 rounded to grid)
+	navItemHeight = 8 * spaceSM  // 32
+	navItemHPad   = spaceLG      // 12; horizontal inset inside an item
+	navIconSize   = spaceXL      // 16
+	navIconGap    = spaceMD      // 8; gap between icon and label
+	navBarWidth   = 1            // active-item left accent bar (1px hairline, --sm-accent-line)
+	navItemGap    = spaceSM      // 4; vertical gap between items (--sm-1)
+	navNumberSize = spaceMD      // 8; index badge text size (10 rounded to grid)
 )
 
 // navItem is one nav entry: an icon + uppercase label + right-aligned index
