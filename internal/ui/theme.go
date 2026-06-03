@@ -168,15 +168,15 @@ func (m *monitorTheme) Font(style fyne.TextStyle) fyne.Resource {
 	case style.Symbol:
 		return theme.DefaultTheme().Font(style)
 	case style.Monospace:
-		return fontMonoRegular
+		return font.MonoRegular
 	case style.Bold && style.Italic:
-		return fontSansSemiBoldItalic
+		return font.SansSemiBoldItalic
 	case style.Bold:
-		return fontSansSemiBold
+		return font.SansSemiBold
 	case style.Italic:
-		return fontSansItalic
+		return font.SansItalic
 	default:
-		return fontSansRegular
+		return font.SansRegular
 	}
 }
 

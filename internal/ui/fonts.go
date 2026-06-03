@@ -35,12 +35,23 @@ var ibmPlexMonoRegular []byte
 //go:embed fonts/IBMPlexMono-Medium.ttf
 var ibmPlexMonoMedium []byte
 
-// Font resources wrapping the embedded faces.
-var (
-	fontSansRegular        = fyne.NewStaticResource("IBMPlexSans-Regular.ttf", ibmPlexSansRegular)
-	fontSansSemiBold       = fyne.NewStaticResource("IBMPlexSans-SemiBold.ttf", ibmPlexSansSemiBold)
-	fontSansItalic         = fyne.NewStaticResource("IBMPlexSans-Italic.ttf", ibmPlexSansItalic)
-	fontSansSemiBoldItalic = fyne.NewStaticResource("IBMPlexSans-SemiBoldItalic.ttf", ibmPlexSansSemiBoldItalic)
-	fontMonoRegular        = fyne.NewStaticResource("IBMPlexMono-Regular.ttf", ibmPlexMonoRegular)
-	fontMonoMedium         = fyne.NewStaticResource("IBMPlexMono-Medium.ttf", ibmPlexMonoMedium)
-)
+// fontSet namespaces the bundled font faces as resources, so call sites read
+// font.SansRegular and the origin of each face is obvious across the package.
+type fontSet struct {
+	SansRegular        fyne.Resource
+	SansSemiBold       fyne.Resource
+	SansItalic         fyne.Resource
+	SansSemiBoldItalic fyne.Resource
+	MonoRegular        fyne.Resource
+	MonoMedium         fyne.Resource
+}
+
+// font holds the font resources wrapping the embedded faces above.
+var font = fontSet{
+	SansRegular:        fyne.NewStaticResource("IBMPlexSans-Regular.ttf", ibmPlexSansRegular),
+	SansSemiBold:       fyne.NewStaticResource("IBMPlexSans-SemiBold.ttf", ibmPlexSansSemiBold),
+	SansItalic:         fyne.NewStaticResource("IBMPlexSans-Italic.ttf", ibmPlexSansItalic),
+	SansSemiBoldItalic: fyne.NewStaticResource("IBMPlexSans-SemiBoldItalic.ttf", ibmPlexSansSemiBoldItalic),
+	MonoRegular:        fyne.NewStaticResource("IBMPlexMono-Regular.ttf", ibmPlexMonoRegular),
+	MonoMedium:         fyne.NewStaticResource("IBMPlexMono-Medium.ttf", ibmPlexMonoMedium),
+}

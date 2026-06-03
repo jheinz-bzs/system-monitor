@@ -28,9 +28,9 @@ import (
 // styledText builds a canvas.Text with an explicit font face, a theme-defined
 // size, and a color. Because FontSource is set, the face and weight come
 // directly from the given resource (TextStyle is not consulted).
-func styledText(text string, font fyne.Resource, sizeName fyne.ThemeSizeName, col color.Color) *canvas.Text {
+func styledText(text string, fontSrc fyne.Resource, sizeName fyne.ThemeSizeName, col color.Color) *canvas.Text {
 	t := canvas.NewText(text, col)
-	t.FontSource = font
+	t.FontSource = fontSrc
 	t.TextSize = theme.Size(sizeName)
 	return t
 }
@@ -40,13 +40,13 @@ func styledText(text string, font fyne.Resource, sizeName fyne.ThemeSizeName, co
 // newHeading returns a page title — Plex Sans SemiBold (600), 17px, primary
 // text. Matches the design "Page title" role.
 func newHeading(text string) *canvas.Text {
-	return styledText(text, fontSansSemiBold, theme.SizeNameHeadingText, colorText)
+	return styledText(text, font.SansSemiBold, theme.SizeNameHeadingText, colorText)
 }
 
 // newSubHeading returns a section title — Plex Sans SemiBold (600), 14px,
 // primary text.
 func newSubHeading(text string) *canvas.Text {
-	return styledText(text, fontSansSemiBold, theme.SizeNameSubHeadingText, colorText)
+	return styledText(text, font.SansSemiBold, theme.SizeNameSubHeadingText, colorText)
 }
 
 // --- Data roles (IBM Plex Mono) ---------------------------------------------
@@ -54,25 +54,25 @@ func newSubHeading(text string) *canvas.Text {
 // newMetricValue returns a large numeric readout — Plex Mono Medium (500),
 // 26px, primary text.
 func newMetricValue(text string) *canvas.Text {
-	return styledText(text, fontMonoMedium, sizeNameMetricValue, colorText)
+	return styledText(text, font.MonoMedium, sizeNameMetricValue, colorText)
 }
 
 // newTableText returns table / body data — Plex Mono Regular (400), 12px,
 // secondary text.
 func newTableText(text string) *canvas.Text {
-	return styledText(text, fontMonoRegular, sizeNameTableText, colorText2)
+	return styledText(text, font.MonoRegular, sizeNameTableText, colorText2)
 }
 
 // newColumnLabel returns an uppercase panel / column label — Plex Mono Medium
 // (500), 11px (caption size), secondary text. The design's 0.06em letter
 // tracking is not expressible in Fyne, so it is omitted.
 func newColumnLabel(text string) *canvas.Text {
-	return styledText(strings.ToUpper(text), fontMonoMedium, theme.SizeNameCaptionText, colorText2)
+	return styledText(strings.ToUpper(text), font.MonoMedium, theme.SizeNameCaptionText, colorText2)
 }
 
 // newMeta returns muted meta / axis text — Plex Mono Regular (400), 9px, text-3.
 func newMeta(text string) *canvas.Text {
-	return styledText(text, fontMonoRegular, sizeNameMeta, colorText3)
+	return styledText(text, font.MonoRegular, sizeNameMeta, colorText3)
 }
 
 // --- Status text ------------------------------------------------------------
@@ -105,7 +105,7 @@ func statusColor(kind statusKind) color.Color {
 // colored by kind. This is the text of a status pill; the pill's
 // background/outline chrome is added by newStatusPill.
 func newStatusText(text string, kind statusKind) *canvas.Text {
-	return styledText(text, fontMonoRegular, sizeNameStatusPill, statusColor(kind))
+	return styledText(text, font.MonoRegular, sizeNameStatusPill, statusColor(kind))
 }
 
 // Pill chrome geometry. The 2px radius matches the design's chip/input radius
