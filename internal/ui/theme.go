@@ -134,35 +134,35 @@ func newTheme() fyne.Theme { return &monitorTheme{} }
 // A map-miss falls through to the default dark theme (see Color), mirroring the
 // old switch's default arm.
 var themeColors = map[fyne.ThemeColorName]color.Color{
-	theme.ColorNameBackground:         palette.BG,
-	theme.ColorNameButton:             palette.Surface,
-	theme.ColorNameDisabledButton:     palette.DisabledButton,
-	theme.ColorNameDisabled:           palette.Text3,
-	theme.ColorNameError:              palette.Red,
-	theme.ColorNameFocus:              palette.Accent,
-	theme.ColorNameForeground:         palette.Text,
-	colorNameTextSecondary:            palette.Text2,
-	theme.ColorNameForegroundOnError:  palette.Text,
+	theme.ColorNameBackground:          palette.BG,
+	theme.ColorNameButton:              palette.Surface,
+	theme.ColorNameDisabledButton:      palette.DisabledButton,
+	theme.ColorNameDisabled:            palette.Text3,
+	theme.ColorNameError:               palette.Red,
+	theme.ColorNameFocus:               palette.Accent,
+	theme.ColorNameForeground:          palette.Text,
+	colorNameTextSecondary:             palette.Text2,
+	theme.ColorNameForegroundOnError:   palette.Text,
 	theme.ColorNameForegroundOnPrimary: palette.Text,
 	theme.ColorNameForegroundOnSuccess: palette.BG,
 	theme.ColorNameForegroundOnWarning: palette.BG,
-	theme.ColorNameHeaderBackground:   palette.Surface2,
-	theme.ColorNameHover:              palette.Surface3,
-	theme.ColorNameHyperlink:          palette.Accent2,
-	theme.ColorNameInputBackground:    palette.Surface2,
-	theme.ColorNameInputBorder:        palette.Border,
-	theme.ColorNameMenuBackground:     palette.Surface,
-	theme.ColorNameOverlayBackground:  palette.Surface,
-	theme.ColorNamePlaceHolder:        palette.Text3,
-	theme.ColorNamePressed:            palette.Pressed,
-	theme.ColorNamePrimary:            palette.Accent,
-	theme.ColorNameScrollBar:          palette.BorderStrong,
+	theme.ColorNameHeaderBackground:    palette.Surface2,
+	theme.ColorNameHover:               palette.Surface3,
+	theme.ColorNameHyperlink:           palette.Accent2,
+	theme.ColorNameInputBackground:     palette.Surface2,
+	theme.ColorNameInputBorder:         palette.Border,
+	theme.ColorNameMenuBackground:      palette.Surface,
+	theme.ColorNameOverlayBackground:   palette.Surface,
+	theme.ColorNamePlaceHolder:         palette.Text3,
+	theme.ColorNamePressed:             palette.Pressed,
+	theme.ColorNamePrimary:             palette.Accent,
+	theme.ColorNameScrollBar:           palette.BorderStrong,
 	theme.ColorNameScrollBarBackground: palette.Surface,
-	theme.ColorNameSelection:          palette.Surface3,
-	theme.ColorNameSeparator:          palette.Border,
-	theme.ColorNameShadow:             palette.Shadow,
-	theme.ColorNameSuccess:            palette.Green,
-	theme.ColorNameWarning:            palette.Yellow,
+	theme.ColorNameSelection:           palette.Surface3,
+	theme.ColorNameSeparator:           palette.Border,
+	theme.ColorNameShadow:              palette.Shadow,
+	theme.ColorNameSuccess:             palette.Green,
+	theme.ColorNameWarning:             palette.Yellow,
 }
 
 // Color maps Fyne's semantic color names onto the design-system palette. The
@@ -203,59 +203,45 @@ func (m *monitorTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	return theme.DefaultTheme().Icon(name)
 }
 
+// themeSizes maps Fyne's size names onto the design system's typographic scale,
+// 4px-based spacing, and sharp-cornered geometry (radii of 0–2px rather than
+// Fyne's rounded defaults). A map-miss falls through to the default theme (see
+// Size), mirroring the old switch's default arm.
+var themeSizes = map[fyne.ThemeSizeName]float32{
+	theme.SizeNameText:               13, // dense body/table text (design table data 12, labels 11)
+	theme.SizeNameHeadingText:        17, // page title (Sans 17px / 600)
+	theme.SizeNameSubHeadingText:     14,
+	theme.SizeNameCaptionText:        11, // panel/column labels, meta
+	theme.SizeNamePadding:            4,  // --sm-1; dense, snapped to the 4px scale
+	theme.SizeNameInnerPadding:       8,
+	theme.SizeNameLineSpacing:        4,
+	theme.SizeNameSeparatorThickness: 1, // matches the 1px border token
+	theme.SizeNameInputBorder:        1,
+	theme.SizeNameInputRadius:        2, // industrial/sharp corners
+	theme.SizeNameSelectionRadius:    2,
+	theme.SizeNameScrollBarRadius:    0,
+	theme.SizeNameScrollBar:          12,
+	theme.SizeNameScrollBarSmall:     3,
+	theme.SizeNameInlineIcon:         18,
+
+	// Design-system typographic roles (Mono) not named by Fyne.
+	sizeName.MetricValue: 26,   // big metric readouts
+	sizeName.TableText:   12,   // table / body data
+	sizeName.StatusPill:  10.5, // status pills
+	sizeName.Meta:        9,    // axis ticks, meta captions
+	sizeName.PanelRadius: 4,    // --sm-radius; card / panel corners
+}
+
 // Size maps Fyne's size names onto the design system's typographic scale,
 // 4px-based spacing, and sharp-cornered geometry (radii of 0–2px rather than
 // Fyne's rounded defaults).
 func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
-	switch name {
-	case theme.SizeNameText:
-		return 13 // dense body/table text (design table data 12, labels 11)
-	case theme.SizeNameHeadingText:
-		return 17 // page title (Sans 17px / 600)
-	case theme.SizeNameSubHeadingText:
-		return 14
-	case theme.SizeNameCaptionText:
-		return 11 // panel/column labels, meta
-	case theme.SizeNamePadding:
-		return 4 // --sm-1; dense, snapped to the 4px scale
-	case theme.SizeNameInnerPadding:
-		return 8
-	case theme.SizeNameLineSpacing:
-		return 4
-	case theme.SizeNameSeparatorThickness:
-		return 1 // matches the 1px border token
-	case theme.SizeNameInputBorder:
-		return 1
-	case theme.SizeNameInputRadius:
-		return 2 // industrial/sharp corners
-	case theme.SizeNameSelectionRadius:
-		return 2
-	case theme.SizeNameScrollBarRadius:
-		return 0
-	case theme.SizeNameScrollBar:
-		return 12
-	case theme.SizeNameScrollBarSmall:
-		return 3
-	case theme.SizeNameInlineIcon:
-		return 18
-
-	// Design-system typographic roles (Mono) not named by Fyne.
-	case sizeName.MetricValue:
-		return 26 // big metric readouts
-	case sizeName.TableText:
-		return 12 // table / body data
-	case sizeName.StatusPill:
-		return 10.5 // status pills
-	case sizeName.Meta:
-		return 9 // axis ticks, meta captions
-	case sizeName.PanelRadius:
-		return 4 // --sm-radius; card / panel corners
-
-	default:
-		// Defer to the default theme for any size we don't override
-		// (e.g. window-chrome sizes).
-		return theme.DefaultTheme().Size(name)
+	if s, ok := themeSizes[name]; ok {
+		return s
 	}
+	// Defer to the default theme for any size we don't override
+	// (e.g. window-chrome sizes).
+	return theme.DefaultTheme().Size(name)
 }
 
 // rgb builds an opaque color from 8-bit RGB components.
