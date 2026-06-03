@@ -82,8 +82,8 @@ func buildContent() fyne.CanvasObject {
 
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
-	status := vStackTight(hLine(), newStatusBar())
-	return newTightBorder(title, status, nil, nil, body)
+	statusRegion := vStackTight(hLine(), newStatusBar())
+	return newTightBorder(title, statusRegion, nil, nil, body)
 }
 
 // newSidebar wraps the top-aligned nav list in a surface-colored, fixed-width

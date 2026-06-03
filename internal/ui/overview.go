@@ -49,10 +49,10 @@ func typographyShowcase() fyne.CanvasObject {
 		{"Table data — Mono Regular 12", newTableText("chrome.exe    1284    3.2%")},
 		{"Column label — Mono Medium 11 UPPER", newColumnLabel("Process")},
 		{"Meta / axis — Mono Regular 9", newMeta("-60s    -30s    now")},
-		{"Status pill — healthy", container.NewHBox(newStatusPill("RUNNING", statusHealthy))},
-		{"Status pill — warning", container.NewHBox(newStatusPill("ELEVATED", statusWarning))},
-		{"Status pill — critical", container.NewHBox(newStatusPill("STOPPED", statusCritical))},
-		{"Status pill — neutral", container.NewHBox(newStatusPill("IDLE", statusNeutral))},
+		{"Status pill — healthy", container.NewHBox(newStatusPill("RUNNING", status.Healthy))},
+		{"Status pill — warning", container.NewHBox(newStatusPill("ELEVATED", status.Warning))},
+		{"Status pill — critical", container.NewHBox(newStatusPill("STOPPED", status.Critical))},
+		{"Status pill — neutral", container.NewHBox(newStatusPill("IDLE", status.Neutral))},
 	}
 
 	rows := make([]fyne.CanvasObject, 0, len(samples)+1)

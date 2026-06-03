@@ -80,21 +80,20 @@ func newMeta(text string) *canvas.Text {
 // statusKind selects the semantic color for a status readout.
 type statusKind int
 
-const (
-	statusHealthy  statusKind = iota // green  — running / healthy
-	statusWarning                    // yellow — elevated / warning
-	statusCritical                   // red    — stopped / critical
-	statusNeutral                    // muted  — unknown / idle
-)
+// status namespaces the statusKind values so call sites read status.Healthy /
+// status.Critical and the origin is obvious cross-file.
+var status = struct{ Healthy, Warning, Critical, Neutral statusKind }{
+	Healthy: 0, Warning: 1, Critical: 2, Neutral: 3,
+}
 
 // statusColor maps a statusKind onto the design palette.
 func statusColor(kind statusKind) color.Color {
 	switch kind {
-	case statusHealthy:
+	case status.Healthy:
 		return palette.Green
-	case statusWarning:
+	case status.Warning:
 		return palette.Yellow
-	case statusCritical:
+	case status.Critical:
 		return palette.Red
 	default:
 		return palette.Text2
@@ -120,11 +119,11 @@ const (
 // Neutral has no dedicated design token, so it falls back to surface-3.
 func pillFill(kind statusKind) color.Color {
 	switch kind {
-	case statusHealthy:
+	case status.Healthy:
 		return palette.GreenDim
-	case statusWarning:
+	case status.Warning:
 		return palette.YellowDim
-	case statusCritical:
+	case status.Critical:
 		return palette.RedDim
 	default:
 		return palette.Surface3
