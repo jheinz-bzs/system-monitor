@@ -3,46 +3,34 @@ package ui
 // Bundled nav icons — Lucide (line/stroke weight), ISC licensed (see
 // icons/LICENSE). Line glyphs draw with stroke="currentColor" (fill="none"), so
 // they're recolored per state with colorizeStroke (see colorize.go), not Fyne's
-// fill-only theme.NewColoredResource. The faces are embedded so the binary
-// stays self-contained.
+// fill-only theme.NewColoredResource. The bytes are compiled into the binary
+// via assets_gen.go and reached through resource() (see assets.go), so the
+// binary stays self-contained.
 
-import (
-	_ "embed"
+import "fyne.io/fyne/v2"
 
-	"fyne.io/fyne/v2"
-)
+// iconSet groups the bundled icons so call sites read icon.Overview rather than
+// a loose package global, making each icon's origin obvious cross-file.
+type iconSet struct {
+	Overview    fyne.Resource
+	CPU         fyne.Resource
+	Memory      fyne.Resource
+	Disk        fyne.Resource
+	Network     fyne.Resource
+	Processes   fyne.Resource
+	Ports       fyne.Resource
+	Connections fyne.Resource
+	Diamond     fyne.Resource // title-bar brand mark
+}
 
-//go:embed icons/overview.svg
-var iconOverviewSVG []byte
-
-//go:embed icons/cpu.svg
-var iconCPUSVG []byte
-
-//go:embed icons/memory.svg
-var iconMemorySVG []byte
-
-//go:embed icons/disk.svg
-var iconDiskSVG []byte
-
-//go:embed icons/network.svg
-var iconNetworkSVG []byte
-
-//go:embed icons/processes.svg
-var iconProcessesSVG []byte
-
-//go:embed icons/ports.svg
-var iconPortsSVG []byte
-
-//go:embed icons/connections.svg
-var iconConnectionsSVG []byte
-
-var (
-	iconOverview    = fyne.NewStaticResource("overview.svg", iconOverviewSVG)
-	iconCPU         = fyne.NewStaticResource("cpu.svg", iconCPUSVG)
-	iconMemory      = fyne.NewStaticResource("memory.svg", iconMemorySVG)
-	iconDisk        = fyne.NewStaticResource("disk.svg", iconDiskSVG)
-	iconNetwork     = fyne.NewStaticResource("network.svg", iconNetworkSVG)
-	iconProcesses   = fyne.NewStaticResource("processes.svg", iconProcessesSVG)
-	iconPorts       = fyne.NewStaticResource("ports.svg", iconPortsSVG)
-	iconConnections = fyne.NewStaticResource("connections.svg", iconConnectionsSVG)
-)
+var icon = iconSet{
+	Overview:    resource("icons/overview.svg"),
+	CPU:         resource("icons/cpu.svg"),
+	Memory:      resource("icons/memory.svg"),
+	Disk:        resource("icons/disk.svg"),
+	Network:     resource("icons/network.svg"),
+	Processes:   resource("icons/processes.svg"),
+	Ports:       resource("icons/ports.svg"),
+	Connections: resource("icons/connections.svg"),
+	Diamond:     resource("icons/diamond.svg"),
+}

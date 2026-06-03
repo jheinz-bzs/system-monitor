@@ -168,4 +168,5 @@ For project context, read these:
 
 ## Execution rules
 - Fyne requires CGO (`CGO_ENABLED=1`) and a C compiler. Ensure `gcc` is on `PATH` before building/running (Windows: WinLibs mingw-w64). Prefer the Makefile targets (`make run`/`build`/`vet`/`fmt`/`tidy`).
+- Bundled fonts/icons are compiled into `internal/ui/assets_gen.go` by `tools/genassets` (no `//go:embed`). That file is gitignored, so on a fresh clone run `make generate` once before a bare `go build`/`go vet` — the `make run`/`build`/`vet` targets do this automatically. Re-run after changing any file under `internal/ui/fonts/` or `internal/ui/icons/`.
 <!-- bizstream-bcs:end -->
