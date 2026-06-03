@@ -26,7 +26,8 @@ import (
 // newOverview builds the Overview tab: a scrollable column with a typography
 // catalog and a color-swatch grid.
 func newOverview() fyne.CanvasObject {
-	body := container.New(layout.NewCustomPaddedVBoxLayout(24),
+	body := container.New(
+		layout.NewCustomPaddedVBoxLayout(24),
 		newHeading("Overview"),
 		typographyShowcase(),
 		colorShowcase(),
@@ -57,10 +58,12 @@ func typographyShowcase() fyne.CanvasObject {
 	rows := make([]fyne.CanvasObject, 0, len(samples)+1)
 	rows = append(rows, newColumnLabel("Typography"))
 	for _, s := range samples {
-		rows = append(rows, container.New(layout.NewCustomPaddedVBoxLayout(2),
-			newMeta(s.role),
-			s.sample,
-		))
+		rows = append(
+			rows,
+			container.New(layout.NewCustomPaddedVBoxLayout(2),
+				newMeta(s.role),
+				s.sample,
+			))
 	}
 	return container.New(layout.NewCustomPaddedVBoxLayout(12), rows...)
 }

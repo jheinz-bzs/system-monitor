@@ -18,6 +18,17 @@ type tightBorderLayout struct {
 	top, bottom, left, right fyne.CanvasObject
 }
 
+// visible reports whether an edge object is present (non-nil) and shown.
+func visible(o fyne.CanvasObject) bool {
+	return o != nil && o.Visible()
+}
+
+// isEdge reports whether c is one of the pinned edge objects, so the center
+// pass can skip it.
+func (b *tightBorderLayout) isEdge(c fyne.CanvasObject) bool {
+	return c == b.top || c == b.bottom || c == b.left || c == b.right
+}
+
 // newTightBorder builds a container using tightBorderLayout. Any of the edge
 // objects may be nil; center fills whatever remains.
 func newTightBorder(top, bottom, left, right, center fyne.CanvasObject) *fyne.Container {
@@ -33,22 +44,22 @@ func newTightBorder(top, bottom, left, right, center fyne.CanvasObject) *fyne.Co
 
 func (b *tightBorderLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
 	var topH, bottomH, leftW, rightW float32
-	if b.top != nil && b.top.Visible() {
+	if visible(b.top) {
 		topH = b.top.MinSize().Height
 		b.top.Resize(fyne.NewSize(size.Width, topH))
 		b.top.Move(fyne.NewPos(0, 0))
 	}
-	if b.bottom != nil && b.bottom.Visible() {
+	if visible(b.bottom) {
 		bottomH = b.bottom.MinSize().Height
 		b.bottom.Resize(fyne.NewSize(size.Width, bottomH))
 		b.bottom.Move(fyne.NewPos(0, size.Height-bottomH))
 	}
-	if b.left != nil && b.left.Visible() {
+	if visible(b.left) {
 		leftW = b.left.MinSize().Width
 		b.left.Resize(fyne.NewSize(leftW, size.Height-topH-bottomH))
 		b.left.Move(fyne.NewPos(0, topH))
 	}
-	if b.right != nil && b.right.Visible() {
+	if visible(b.right) {
 		rightW = b.right.MinSize().Width
 		b.right.Resize(fyne.NewSize(rightW, size.Height-topH-bottomH))
 		b.right.Move(fyne.NewPos(size.Width-rightW, topH))
@@ -57,41 +68,36 @@ func (b *tightBorderLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) 
 	mid := fyne.NewSize(size.Width-leftW-rightW, size.Height-topH-bottomH)
 	pos := fyne.NewPos(leftW, topH)
 	for _, c := range objects {
-		if !c.Visible() {
+		if !c.Visible() || b.isEdge(c) {
 			continue
 		}
-		if c != b.top && c != b.bottom && c != b.left && c != b.right {
-			c.Resize(mid)
-			c.Move(pos)
-		}
+		c.Resize(mid)
+		c.Move(pos)
 	}
 }
 
 func (b *tightBorderLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	min := fyne.NewSize(0, 0)
 	for _, c := range objects {
-		if !c.Visible() {
+		if !c.Visible() || b.isEdge(c) {
 			continue
 		}
-		if c != b.top && c != b.bottom && c != b.left && c != b.right {
-			min = min.Max(c.MinSize())
+		min = min.Max(c.MinSize())
+	}
+
+	// Horizontal edges (left/right) add their width and only need to fit the
+	// tallest; vertical edges (top/bottom) add their height and fit the widest.
+	for _, o := range []fyne.CanvasObject{b.left, b.right} {
+		if visible(o) {
+			m := o.MinSize()
+			min = fyne.NewSize(min.Width+m.Width, fyne.Max(min.Height, m.Height))
 		}
 	}
-	if b.left != nil && b.left.Visible() {
-		m := b.left.MinSize()
-		min = fyne.NewSize(min.Width+m.Width, fyne.Max(min.Height, m.Height))
-	}
-	if b.right != nil && b.right.Visible() {
-		m := b.right.MinSize()
-		min = fyne.NewSize(min.Width+m.Width, fyne.Max(min.Height, m.Height))
-	}
-	if b.top != nil && b.top.Visible() {
-		m := b.top.MinSize()
-		min = fyne.NewSize(fyne.Max(min.Width, m.Width), min.Height+m.Height)
-	}
-	if b.bottom != nil && b.bottom.Visible() {
-		m := b.bottom.MinSize()
-		min = fyne.NewSize(fyne.Max(min.Width, m.Width), min.Height+m.Height)
+	for _, o := range []fyne.CanvasObject{b.top, b.bottom} {
+		if visible(o) {
+			m := o.MinSize()
+			min = fyne.NewSize(fyne.Max(min.Width, m.Width), min.Height+m.Height)
+		}
 	}
 	return min
 }
