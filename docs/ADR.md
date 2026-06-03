@@ -105,3 +105,43 @@ Fonts (IBM Plex faces, ~1.1 MB) and nav icons (Lucide SVGs) must ship inside the
 ### Rationale
 
 Codegen keeps the self-contained single `.exe` while making the data flow obvious — every asset is fetched by path through a normal function call, and there are no magic comment directives or bare `[]byte` globals. `resource()` uses `path.Base()` so Fyne resource names are unchanged (no behavior change). Tradeoffs accepted: (1) a build step — `make generate`, wired as a prerequisite of `build`/`run`/`vet`, and required once on a fresh clone since `assets_gen.go` is gitignored; (2) a missing asset becomes a runtime panic at first `resource()` call rather than a compile error (the generator `log.Fatal`s on an empty glob to catch the common case early). The base64 encoding keeps the generated source ~1.5 MB rather than ~6–7 MB of raw byte literals. This reintroduces a pre-`go:embed`-style "bindata" step by deliberate developer preference, valuing call-site clarity over the idiomatic directive.
+
+---
+
+## ADR-005: Namespaced struct dictionaries for package-level constants
+
+**Date:** 2026-06-03
+**Status:** Active
+**Area:** Architecture
+
+### Context
+
+The `internal/ui` package accumulated large families of related globals: ~22 color tokens, 6 font faces, 9 icons, custom theme size-name tokens, and the status kinds. As loose package-level vars/consts (`colorAccent`, `fontMonoRegular`, `iconOverview`, `sizeNameMetricValue`, `statusHealthy`, …) their origin was opaque at the call site — across files there was no signal that a bare identifier belonged to "the palette" or "the icon set," and the flat namespace invited collisions (the palette could not be named `color` because `image/color` owns that identifier).
+
+### Decision
+
+**Group each family of related package constants into a single struct-typed namespace var — `palette.X` (colors), `font.X` (faces), `icon.X` (icons), `sizeName.X` (custom theme size names), `status.X` (status kinds) — rather than loose package-level globals. The base-derived `space*` spacing scale (`spacing.go`) is the parallel standard for gaps/padding.**
+
+### Rationale
+
+A `dict.Field` read makes the origin obvious cross-file without import-path noise, namespaces away collisions (hence `palette` over `color`), and lets related values be defined and reviewed as one block. This is a plain, allocation-free Go idiom — a struct literal assigned to a package var — that changes only the *grouping*, not behavior: field types stay identical (`color.Color`, `fyne.Resource`, `fyne.ThemeSizeName`). Component dimensions that don't recur on the 4px grid stay as their own literal-px named consts rather than being forced onto the spacing scale, avoiding false coupling. The cost is a one-time sweep of every call site and a couple of local-variable renames to avoid shadowing the new namespaces (e.g. `status` → `statusRegion` in `buildContent`, `font` param → `fontSrc`).
+
+---
+
+## ADR-006: Typed tab IDs with self-describing tab definitions
+
+**Date:** 2026-06-03
+**Status:** Active
+**Area:** Architecture
+
+### Context
+
+The shell hosts eight tabs (Overview, CPU, …, Connections) and routes nav selection to per-tab content. The scaffold described tabs with a `{name string; icon}` struct and selected content by matching the display string — `if d.name == "Overview"`. That couples routing to a human-facing label (a typo or rename silently breaks routing), gives the compiler nothing to check exhaustiveness against, and offers no structural place to attach the real per-tab content panes that are coming next.
+
+### Decision
+
+**Identify each tab by a typed `tabID` enum (`tabOverview … tabConnections`), and give `tabDef` an `id`, `name`, `icon`, and `content []fyne.CanvasObject` with an `addChild` method. A `newTabs()` builder declares identity then populates `content` by switching on `id`; `buildContent` ranges the result and builds each pane from `content`. No routing keys off the display string.**
+
+### Rationale
+
+Switching on a typed `id` decouples routing from labels (rename `name` freely; routing is unaffected) and turns content assignment into a `switch` the compiler and reader can reason about. The `content []fyne.CanvasObject` slice is the deliberate seam for wiring real multi-pane tab content later — single-pane tabs render identically today via a one-child `container.NewStack`. `newTabs()` is a builder (not a package-level value literal) specifically so `content` is built fresh per call and repeated `buildContent` invocations never double-append to a shared slice. The cost is a little more declaration ceremony than a flat string-keyed list, accepted for type safety and the extension point.
