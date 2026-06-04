@@ -3,12 +3,24 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/shirou/gopsutil/v4/mem"
 
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/ringbuffer"
 )
+
+// memOption configures a MemoryCollector at construction. It exists so tests can
+// inject a sampler without a separate constructor; production code uses the
+// defaults.
+type memOption func(*MemoryCollector)
+
+// withMemSampler overrides the memory sampler. Tests use it to supply readings
+// without real hardware.
+func withMemSampler(s memSampler) memOption {
+	return func(c *MemoryCollector) { c.sample = s }
+}
 
 // memReading is one snapshot of memory in bytes. It is the value the collector
 // samples through so tests can supply readings without real hardware.
@@ -51,28 +63,27 @@ type MemoryCollector struct {
 }
 
 // NewMemoryCollector builds a collector backed by gopsutil. It takes one
-// initial sample to record total physical memory and seed the buffers.
-func NewMemoryCollector(ctx context.Context) (*MemoryCollector, error) {
-	return newMemoryCollector(ctx, defaultMemSampler)
-}
+// initial sample to record total physical memory and seed the buffers. It
+// returns nil (after logging) when that first sample fails, since there is
+// nothing useful a partially built collector could do.
+func NewMemoryCollector(ctx context.Context, opts ...memOption) *MemoryCollector {
+	c := &MemoryCollector{sample: defaultMemSampler}
+	for _, opt := range opts {
+		opt(c)
+	}
 
-// newMemoryCollector is the testable constructor: it samples through the given
-// seam to record total memory and seed the buffers.
-func newMemoryCollector(ctx context.Context, sample memSampler) (*MemoryCollector, error) {
-	reading, err := sample(ctx)
+	reading, err := c.sample(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sampling memory: %w", err)
+		slog.Error("building memory collector", "err", err)
+		return nil
 	}
 
-	c := &MemoryCollector{
-		sample: sample,
-		total:  reading.total,
-		used:   ringbuffer.New[uint64](metrics.HistoryCapacity),
-		cached: ringbuffer.New[uint64](metrics.HistoryCapacity),
-		free:   ringbuffer.New[uint64](metrics.HistoryCapacity),
-	}
+	c.total = reading.total
+	c.used = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.cached = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.free = ringbuffer.New[uint64](metrics.HistoryCapacity)
 	c.store(reading)
-	return c, nil
+	return c
 }
 
 // Collect samples memory usage and appends the used, cached, and free byte
@@ -81,7 +92,7 @@ func newMemoryCollector(ctx context.Context, sample memSampler) (*MemoryCollecto
 func (c *MemoryCollector) Collect(ctx context.Context) error {
 	reading, err := c.sample(ctx)
 	if err != nil {
-		return fmt.Errorf("sampling memory: %w", err)
+		return err
 	}
 	c.store(reading)
 	return nil

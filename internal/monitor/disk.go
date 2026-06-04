@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -11,6 +12,22 @@ import (
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/ringbuffer"
 )
+
+// diskOption configures a DiskCollector at construction. It exists so tests can
+// inject a sampler and clock without a separate constructor; production code
+// uses the defaults.
+type diskOption func(*DiskCollector)
+
+// withDiskSampler overrides the disk sampler. Tests use it to supply readings
+// without real hardware.
+func withDiskSampler(s diskSampler) diskOption {
+	return func(c *DiskCollector) { c.sample = s }
+}
+
+// withDiskClock overrides the clock. Tests use it to control elapsed time.
+func withDiskClock(now func() time.Time) diskOption {
+	return func(c *DiskCollector) { c.now = now }
+}
 
 // PartitionUsage is storage usage for one mounted partition, in bytes.
 type PartitionUsage struct {
@@ -94,36 +111,33 @@ type DiskCollector struct {
 }
 
 // NewDiskCollector builds a collector backed by gopsutil. It takes one initial
-// sample to record the seed usage snapshot and I/O counters.
-func NewDiskCollector(ctx context.Context) (*DiskCollector, error) {
-	return newDiskCollector(ctx, defaultDiskSampler, time.Now)
-}
+// sample to record the seed usage snapshot and I/O counters. It returns nil
+// (after logging) when that first sample fails, since there is nothing useful a
+// partially built collector could do.
+func NewDiskCollector(ctx context.Context, opts ...diskOption) *DiskCollector {
+	c := &DiskCollector{sample: defaultDiskSampler, now: time.Now}
+	for _, opt := range opts {
+		opt(c)
+	}
 
-// newDiskCollector is the testable constructor: it samples through the given
-// seam and reads the clock through now, so tests can control both readings and
-// elapsed time.
-func newDiskCollector(ctx context.Context, sample diskSampler, now func() time.Time) (*DiskCollector, error) {
-	reading, err := sample(ctx)
+	reading, err := c.sample(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sampling disk: %w", err)
+		slog.Error("building disk collector", "err", err)
+		return nil
 	}
 
-	c := &DiskCollector{
-		sample:    sample,
-		now:       now,
-		usage:     reading.partitions,
-		readRate:  ringbuffer.New[uint64](metrics.HistoryCapacity),
-		writeRate: ringbuffer.New[uint64](metrics.HistoryCapacity),
-		prevRead:  reading.readBytes,
-		prevWrite: reading.writeBytes,
-		prevTime:  now(),
-	}
+	c.usage = reading.partitions
+	c.readRate = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.writeRate = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.prevRead = reading.readBytes
+	c.prevWrite = reading.writeBytes
+	c.prevTime = c.now()
 	// The first sample has no prior reading to delta against, so seed the rate
 	// buffers with zero (mirrors how the CPU/memory collectors seed from their
 	// first reading).
 	c.readRate.Add(0)
 	c.writeRate.Add(0)
-	return c, nil
+	return c
 }
 
 // Collect samples disk state, replaces the usage snapshot, and appends the read
@@ -132,7 +146,7 @@ func newDiskCollector(ctx context.Context, sample diskSampler, now func() time.T
 func (c *DiskCollector) Collect(ctx context.Context) error {
 	reading, err := c.sample(ctx)
 	if err != nil {
-		return fmt.Errorf("sampling disk: %w", err)
+		return err
 	}
 
 	c.mu.Lock()
