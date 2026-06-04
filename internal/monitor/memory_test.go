@@ -23,9 +23,9 @@ func (f *fakeMemSampler) sample(ctx context.Context) (memReading, error) {
 func TestNewMemoryCollectorRecordsTotalAndSeedsBuffers(t *testing.T) {
 	f := &fakeMemSampler{readings: []memReading{{total: 16000, used: 4000, cached: 2000, free: 10000}}}
 
-	c, err := newMemoryCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newMemoryCollector: %v", err)
+	c := NewMemoryCollector(context.Background(), withMemSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewMemoryCollector returned nil")
 	}
 	if got := c.Total(); got != 16000 {
 		t.Errorf("Total() = %d, want 16000", got)
@@ -41,12 +41,12 @@ func TestNewMemoryCollectorRecordsTotalAndSeedsBuffers(t *testing.T) {
 	}
 }
 
-func TestNewMemoryCollectorErrorsOnSamplerFailure(t *testing.T) {
+func TestNewMemoryCollectorReturnsNilOnSamplerFailure(t *testing.T) {
 	sample := func(ctx context.Context) (memReading, error) {
 		return memReading{}, errors.New("boom")
 	}
-	if _, err := newMemoryCollector(context.Background(), sample); err == nil {
-		t.Fatal("newMemoryCollector did not return an error")
+	if c := NewMemoryCollector(context.Background(), withMemSampler(sample)); c != nil {
+		t.Fatal("NewMemoryCollector did not return nil on sampler error")
 	}
 }
 
@@ -57,9 +57,9 @@ func TestCollectAppendsToEachBuffer(t *testing.T) {
 		{total: 16000, used: 3000, cached: 300, free: 12700},
 	}}
 
-	c, err := newMemoryCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newMemoryCollector: %v", err)
+	c := NewMemoryCollector(context.Background(), withMemSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewMemoryCollector returned nil")
 	}
 	for i := 0; i < 2; i++ {
 		if err := c.Collect(context.Background()); err != nil {
@@ -88,9 +88,9 @@ func TestMemoryCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 		return memReading{}, errors.New("boom")
 	}
 
-	c, err := newMemoryCollector(context.Background(), sample)
-	if err != nil {
-		t.Fatalf("newMemoryCollector: %v", err)
+	c := NewMemoryCollector(context.Background(), withMemSampler(sample))
+	if c == nil {
+		t.Fatal("NewMemoryCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err == nil {
 		t.Fatal("Collect did not return an error when the sampler failed")
@@ -100,9 +100,9 @@ func TestMemoryCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 func TestMemoryReadMethodsReturnIndependentCopies(t *testing.T) {
 	f := &fakeMemSampler{readings: []memReading{{total: 16000, used: 4000, cached: 2000, free: 10000}}}
 
-	c, err := newMemoryCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newMemoryCollector: %v", err)
+	c := NewMemoryCollector(context.Background(), withMemSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewMemoryCollector returned nil")
 	}
 
 	c.Used()[0] = 999

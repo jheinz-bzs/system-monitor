@@ -24,9 +24,9 @@ func (f *fakeNetSampler) sample(ctx context.Context) (netReading, error) {
 func TestNewNetworkCollectorSeedsRates(t *testing.T) {
 	f := &fakeNetSampler{readings: []netReading{{bytesSent: 100, bytesRecv: 200}}}
 
-	c, err := newNetworkCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newNetworkCollector: %v", err)
+	c := NewNetworkCollector(context.Background(), withNetSampler(f.sample), withNetClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewNetworkCollector returned nil")
 	}
 	if got := c.UploadRate(); !reflect.DeepEqual(got, []uint64{0}) {
 		t.Errorf("UploadRate() = %v, want [0] (seed has no prior delta)", got)
@@ -39,12 +39,12 @@ func TestNewNetworkCollectorSeedsRates(t *testing.T) {
 	}
 }
 
-func TestNewNetworkCollectorErrorsOnSamplerFailure(t *testing.T) {
+func TestNewNetworkCollectorReturnsNilOnSamplerFailure(t *testing.T) {
 	sample := func(ctx context.Context) (netReading, error) {
 		return netReading{}, errors.New("boom")
 	}
-	if _, err := newNetworkCollector(context.Background(), sample, steppingClock(clockStart, time.Second)); err == nil {
-		t.Fatal("newNetworkCollector did not return an error")
+	if c := NewNetworkCollector(context.Background(), withNetSampler(sample), withNetClock(steppingClock(clockStart, time.Second))); c != nil {
+		t.Fatal("NewNetworkCollector did not return nil on sampler error")
 	}
 }
 
@@ -55,9 +55,9 @@ func TestNetworkCollectComputesRatesAndTotalFromDelta(t *testing.T) {
 		{bytesSent: 6000, bytesRecv: 800},
 	}}
 
-	c, err := newNetworkCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newNetworkCollector: %v", err)
+	c := NewNetworkCollector(context.Background(), withNetSampler(f.sample), withNetClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewNetworkCollector returned nil")
 	}
 	for i := 0; i < 2; i++ {
 		if err := c.Collect(context.Background()); err != nil {
@@ -84,9 +84,9 @@ func TestNetworkCollectDividesByElapsedTime(t *testing.T) {
 	}}
 
 	// A 2-second step means the 2000/4000-byte delta becomes a 1000/2000 B/s rate.
-	c, err := newNetworkCollector(context.Background(), f.sample, steppingClock(clockStart, 2*time.Second))
-	if err != nil {
-		t.Fatalf("newNetworkCollector: %v", err)
+	c := NewNetworkCollector(context.Background(), withNetSampler(f.sample), withNetClock(steppingClock(clockStart, 2*time.Second)))
+	if c == nil {
+		t.Fatal("NewNetworkCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -109,9 +109,9 @@ func TestNetworkCollectCounterWrapYieldsZeroRate(t *testing.T) {
 		{bytesSent: 1000, bytesRecv: 1000}, // counters reset/wrapped
 	}}
 
-	c, err := newNetworkCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newNetworkCollector: %v", err)
+	c := NewNetworkCollector(context.Background(), withNetSampler(f.sample), withNetClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewNetworkCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -138,9 +138,9 @@ func TestNetworkCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 		return netReading{}, errors.New("boom")
 	}
 
-	c, err := newNetworkCollector(context.Background(), sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newNetworkCollector: %v", err)
+	c := NewNetworkCollector(context.Background(), withNetSampler(sample), withNetClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewNetworkCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err == nil {
 		t.Fatal("Collect did not return an error when the sampler failed")
@@ -150,9 +150,9 @@ func TestNetworkCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 func TestNetworkReadMethodsReturnIndependentCopies(t *testing.T) {
 	f := &fakeNetSampler{readings: []netReading{{bytesSent: 10, bytesRecv: 20}}}
 
-	c, err := newNetworkCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newNetworkCollector: %v", err)
+	c := NewNetworkCollector(context.Background(), withNetSampler(f.sample), withNetClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewNetworkCollector returned nil")
 	}
 
 	c.UploadRate()[0] = 999
