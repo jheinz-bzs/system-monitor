@@ -53,18 +53,19 @@ func (r *RingBuffer[T]) Items() []T {
 	return out
 }
 
-// Latest returns the most recently added value. The second result is false
-// when the buffer is empty.
-func (r *RingBuffer[T]) Latest() (T, bool) {
+// Latest returns a pointer to the most recently added value, or nil when the
+// buffer is empty. The pointed-to value is a copy; mutating it does not affect
+// the buffer.
+func (r *RingBuffer[T]) Latest() *T {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	if r.count == 0 {
-		var zero T
-		return zero, false
+		return nil
 	}
 	newest := (r.head - 1 + len(r.buf)) % len(r.buf)
-	return r.buf[newest], true
+	v := r.buf[newest]
+	return &v
 }
 
 // Len reports the number of items currently stored, never more than Cap.

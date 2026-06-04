@@ -31,8 +31,8 @@ func TestEmptyBuffer(t *testing.T) {
 	if got := r.Items(); len(got) != 0 {
 		t.Errorf("Items() = %v, want empty", got)
 	}
-	if _, ok := r.Latest(); ok {
-		t.Error("Latest() ok = true on empty buffer, want false")
+	if got := r.Latest(); got != nil {
+		t.Errorf("Latest() = %v on empty buffer, want nil", got)
 	}
 }
 
@@ -48,8 +48,8 @@ func TestWritesBelowCapacity(t *testing.T) {
 	if want := []int{1, 2, 3}; !reflect.DeepEqual(r.Items(), want) {
 		t.Errorf("Items() = %v, want %v", r.Items(), want)
 	}
-	if v, ok := r.Latest(); !ok || v != 3 {
-		t.Errorf("Latest() = (%d, %t), want (3, true)", v, ok)
+	if v := r.Latest(); v == nil || *v != 3 {
+		t.Errorf("Latest() = %v, want 3", v)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestOverwriteOldest(t *testing.T) {
 	if want := []int{3, 4, 5}; !reflect.DeepEqual(r.Items(), want) {
 		t.Errorf("Items() = %v, want %v", r.Items(), want)
 	}
-	if v, ok := r.Latest(); !ok || v != 5 {
-		t.Errorf("Latest() = (%d, %t), want (5, true)", v, ok)
+	if v := r.Latest(); v == nil || *v != 5 {
+		t.Errorf("Latest() = %v, want 5", v)
 	}
 }
 
@@ -132,7 +132,7 @@ func TestConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 1000; i++ {
 				_ = r.Items()
-				_, _ = r.Latest()
+				_ = r.Latest()
 				_ = r.Len()
 			}
 		}()
