@@ -32,6 +32,7 @@ type colorPalette struct {
 	Surface      color.Color // panels, sidebar, cards
 	Surface2     color.Color // headers, nav, inputs, status bar
 	Surface3     color.Color // row hover / selected
+	PlotBG       color.Color // chart plot area (darker than the window body)
 	Border       color.Color // panel edges, h-grid
 	BorderStrong color.Color // emphasized dividers, pill outlines
 
@@ -54,6 +55,12 @@ type colorPalette struct {
 	YellowDim  color.Color // --sm-yellow-dim, 0.16α — warning pill fill
 	RedDim     color.Color // --sm-red-dim, 0.16α — critical pill fill
 
+	// Categorical series colors (c1–c8, design-system-01) for multi-series
+	// charts — per-core CPU lines, multi-line plots. Assigned in order and
+	// wrapped after eight. c1 is the accent, reserved in practice for an
+	// emphasized headline series, so secondary coloring starts at c2.
+	Series []color.NRGBA
+
 	// Derived shades that don't have a dedicated design token.
 	DisabledButton color.Color // dimmed panel for disabled buttons
 	Pressed        color.Color // between surface-3 and border-strong
@@ -67,6 +74,7 @@ var palette = colorPalette{
 	Surface:      rgb(0x16, 0x1a, 0x21),
 	Surface2:     rgb(0x1b, 0x21, 0x2b),
 	Surface3:     rgb(0x22, 0x2a, 0x36),
+	PlotBG:       rgb(0x0b, 0x0d, 0x11),
 	Border:       rgb(0x26, 0x2e, 0x3a),
 	BorderStrong: rgb(0x34, 0x41, 0x50),
 
@@ -86,6 +94,17 @@ var palette = colorPalette{
 	GreenDim:   color.NRGBA{R: 0x3f, G: 0xb8, B: 0x77, A: 0x29},
 	YellowDim:  color.NRGBA{R: 0xd8, G: 0xa1, B: 0x34, A: 0x29},
 	RedDim:     color.NRGBA{R: 0xe2, G: 0x56, B: 0x3f, A: 0x29},
+
+	Series: []color.NRGBA{
+		{R: 0x46, G: 0x79, B: 0xfa, A: 0xff}, // c1 (accent)
+		{R: 0x36, G: 0xc2, B: 0xd4, A: 0xff}, // c2
+		{R: 0x8b, G: 0x7c, B: 0xf6, A: 0xff}, // c3
+		{R: 0xd8, G: 0x7c, B: 0xc0, A: 0xff}, // c4
+		{R: 0x54, G: 0xb8, B: 0x6a, A: 0xff}, // c5
+		{R: 0xd8, G: 0xa1, B: 0x34, A: 0xff}, // c6
+		{R: 0xe2, G: 0x85, B: 0x6b, A: 0xff}, // c7
+		{R: 0x6e, G: 0x93, B: 0xfb, A: 0xff}, // c8
+	},
 
 	DisabledButton: rgb(0x14, 0x18, 0x1e),
 	Pressed:        rgb(0x2a, 0x34, 0x42),
