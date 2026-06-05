@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 
@@ -15,10 +16,25 @@ import (
 // can supply readings without real hardware.
 type coreSampler func(ctx context.Context) ([]float64, error)
 
+// cpuOption configures a CPUCollector at construction. It exists so tests can
+// inject a sampler without a separate constructor; production code uses the
+// defaults.
+type cpuOption func(*CPUCollector)
+
+// withCPUSampler overrides the CPU sampler. Tests use it to supply readings
+// without real hardware.
+func withCPUSampler(s coreSampler) cpuOption {
+	return func(c *CPUCollector) { c.sample = s }
+}
+
 // defaultSampler reads per-core usage via gopsutil. An interval of 0 measures
 // usage since the previous call, so it never blocks the ticker.
 func defaultSampler(ctx context.Context) ([]float64, error) {
-	return cpu.PercentWithContext(ctx, 0, true)
+	reading, err := cpu.PercentWithContext(ctx, 0, true)
+	if err != nil {
+		return nil, fmt.Errorf("sampling cpu: %w", err)
+	}
+	return reading, nil
 }
 
 // CPUCollector samples CPU usage on each Collect and stores the history in ring
@@ -32,34 +48,32 @@ type CPUCollector struct {
 }
 
 // NewCPUCollector builds a collector backed by gopsutil. It takes one initial
-// sample to learn the logical core count and seed the buffers.
-func NewCPUCollector(ctx context.Context) (*CPUCollector, error) {
-	return newCPUCollector(ctx, defaultSampler)
-}
+// sample to learn the logical core count and seed the buffers. It returns nil
+// (after logging) when that first sample fails or reports no cores, since
+// there is nothing useful a partially built collector could do.
+func NewCPUCollector(ctx context.Context, opts ...cpuOption) *CPUCollector {
+	c := &CPUCollector{sample: defaultSampler}
+	for _, opt := range opts {
+		opt(c)
+	}
 
-// newCPUCollector is the testable constructor: it samples through the given
-// seam to size the per-core buffers from the reading's length.
-func newCPUCollector(ctx context.Context, sample coreSampler) (*CPUCollector, error) {
-	reading, err := sample(ctx)
+	reading, err := c.sample(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sampling cpu: %w", err)
+		slog.Error("building cpu collector", "err", err)
+		return nil
 	}
 	if len(reading) == 0 {
-		return nil, fmt.Errorf("sampling cpu: no logical cores reported")
+		slog.Error("building cpu collector", "err", "no logical cores reported")
+		return nil
 	}
 
-	perCore := make([]*ringbuffer.RingBuffer[float64], len(reading))
-	for i := range perCore {
-		perCore[i] = ringbuffer.New[float64](metrics.HistoryCapacity)
-	}
-
-	c := &CPUCollector{
-		sample:  sample,
-		overall: ringbuffer.New[float64](metrics.HistoryCapacity),
-		perCore: perCore,
+	c.overall = ringbuffer.New[float64](metrics.HistoryCapacity)
+	c.perCore = make([]*ringbuffer.RingBuffer[float64], len(reading))
+	for i := range c.perCore {
+		c.perCore[i] = ringbuffer.New[float64](metrics.HistoryCapacity)
 	}
 	c.store(reading)
-	return c, nil
+	return c
 }
 
 // Collect samples CPU usage and appends the overall percentage and each core's
@@ -68,7 +82,7 @@ func newCPUCollector(ctx context.Context, sample coreSampler) (*CPUCollector, er
 func (c *CPUCollector) Collect(ctx context.Context) error {
 	reading, err := c.sample(ctx)
 	if err != nil {
-		return fmt.Errorf("sampling cpu: %w", err)
+		return err
 	}
 	if len(reading) != len(c.perCore) {
 		return fmt.Errorf("sampling cpu: got %d cores, want %d", len(reading), len(c.perCore))
@@ -83,7 +97,7 @@ func (c *CPUCollector) store(reading []float64) {
 	for i, v := range reading {
 		c.perCore[i].Add(v)
 	}
-	c.overall.Add(meanFloat64(reading))
+	c.overall.Add(metrics.Float64s(reading).Mean())
 }
 
 // Overall returns the overall CPU usage history, oldest to newest.
@@ -104,16 +118,4 @@ func (c *CPUCollector) PerCore() [][]float64 {
 // CoreCount returns the number of logical cores being tracked.
 func (c *CPUCollector) CoreCount() int {
 	return len(c.perCore)
-}
-
-// meanFloat64 returns the arithmetic mean of values, or 0 for an empty slice.
-func meanFloat64(values []float64) float64 {
-	if len(values) == 0 {
-		return 0
-	}
-	var sum float64
-	for _, v := range values {
-		sum += v
-	}
-	return sum / float64(len(values))
 }

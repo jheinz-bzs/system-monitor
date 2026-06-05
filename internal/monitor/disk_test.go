@@ -44,9 +44,9 @@ func TestNewDiskCollectorSeedsSnapshotAndRates(t *testing.T) {
 	parts := []PartitionUsage{{Mountpoint: "/", Fstype: "ext4", Total: 1000, Used: 400}}
 	f := &fakeDiskSampler{readings: []diskReading{{partitions: parts, readBytes: 100, writeBytes: 200}}}
 
-	c, err := newDiskCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(f.sample), withDiskClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 	if got := c.Usage(); !reflect.DeepEqual(got, parts) {
 		t.Errorf("Usage() = %v, want %v", got, parts)
@@ -59,12 +59,12 @@ func TestNewDiskCollectorSeedsSnapshotAndRates(t *testing.T) {
 	}
 }
 
-func TestNewDiskCollectorErrorsOnSamplerFailure(t *testing.T) {
+func TestNewDiskCollectorReturnsNilOnSamplerFailure(t *testing.T) {
 	sample := func(ctx context.Context) (diskReading, error) {
 		return diskReading{}, errors.New("boom")
 	}
-	if _, err := newDiskCollector(context.Background(), sample, steppingClock(clockStart, time.Second)); err == nil {
-		t.Fatal("newDiskCollector did not return an error")
+	if c := NewDiskCollector(context.Background(), withDiskSampler(sample), withDiskClock(steppingClock(clockStart, time.Second))); c != nil {
+		t.Fatal("NewDiskCollector did not return nil on sampler error")
 	}
 }
 
@@ -75,9 +75,9 @@ func TestCollectComputesRatesFromDelta(t *testing.T) {
 		{readBytes: 6000, writeBytes: 800},
 	}}
 
-	c, err := newDiskCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(f.sample), withDiskClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 	for i := 0; i < 2; i++ {
 		if err := c.Collect(context.Background()); err != nil {
@@ -100,9 +100,9 @@ func TestCollectDividesByElapsedTime(t *testing.T) {
 	}}
 
 	// A 2-second step means the 2000/4000-byte delta becomes a 1000/2000 B/s rate.
-	c, err := newDiskCollector(context.Background(), f.sample, steppingClock(clockStart, 2*time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(f.sample), withDiskClock(steppingClock(clockStart, 2*time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -122,9 +122,9 @@ func TestCollectCounterWrapYieldsZeroRate(t *testing.T) {
 		{readBytes: 1000, writeBytes: 1000}, // counters reset/wrapped
 	}}
 
-	c, err := newDiskCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(f.sample), withDiskClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -149,9 +149,9 @@ func TestCollectUpdatesUsageSnapshot(t *testing.T) {
 		{partitions: second},
 	}}
 
-	c, err := newDiskCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(f.sample), withDiskClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -172,9 +172,9 @@ func TestDiskCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 		return diskReading{}, errors.New("boom")
 	}
 
-	c, err := newDiskCollector(context.Background(), sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(sample), withDiskClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err == nil {
 		t.Fatal("Collect did not return an error when the sampler failed")
@@ -185,9 +185,9 @@ func TestDiskReadMethodsReturnIndependentCopies(t *testing.T) {
 	parts := []PartitionUsage{{Mountpoint: "/", Total: 1000, Used: 400}}
 	f := &fakeDiskSampler{readings: []diskReading{{partitions: parts, readBytes: 10, writeBytes: 20}}}
 
-	c, err := newDiskCollector(context.Background(), f.sample, steppingClock(clockStart, time.Second))
-	if err != nil {
-		t.Fatalf("newDiskCollector: %v", err)
+	c := NewDiskCollector(context.Background(), withDiskSampler(f.sample), withDiskClock(steppingClock(clockStart, time.Second)))
+	if c == nil {
+		t.Fatal("NewDiskCollector returned nil")
 	}
 
 	c.Usage()[0].Used = 999
