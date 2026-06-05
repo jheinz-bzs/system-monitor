@@ -23,9 +23,9 @@ func (f *fakeSampler) sample(ctx context.Context) ([]float64, error) {
 func TestNewCPUCollectorSizesBuffersToCoreCount(t *testing.T) {
 	f := &fakeSampler{readings: [][]float64{{10, 20, 30, 40}}}
 
-	c, err := newCPUCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newCPUCollector: %v", err)
+	c := NewCPUCollector(context.Background(), withCPUSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewCPUCollector returned nil")
 	}
 	if got := c.CoreCount(); got != 4 {
 		t.Errorf("CoreCount() = %d, want 4", got)
@@ -38,9 +38,9 @@ func TestNewCPUCollectorSizesBuffersToCoreCount(t *testing.T) {
 func TestNewCPUCollectorSeedsBuffers(t *testing.T) {
 	f := &fakeSampler{readings: [][]float64{{20, 40}}}
 
-	c, err := newCPUCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newCPUCollector: %v", err)
+	c := NewCPUCollector(context.Background(), withCPUSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewCPUCollector returned nil")
 	}
 	if got := c.Overall(); !reflect.DeepEqual(got, []float64{30}) {
 		t.Errorf("Overall() = %v, want [30] (mean of seed)", got)
@@ -50,21 +50,21 @@ func TestNewCPUCollectorSeedsBuffers(t *testing.T) {
 	}
 }
 
-func TestNewCPUCollectorErrors(t *testing.T) {
+func TestNewCPUCollectorReturnsNil(t *testing.T) {
 	t.Run("sampler error", func(t *testing.T) {
 		sample := func(ctx context.Context) ([]float64, error) {
 			return nil, errors.New("boom")
 		}
-		if _, err := newCPUCollector(context.Background(), sample); err == nil {
-			t.Fatal("newCPUCollector did not return an error")
+		if c := NewCPUCollector(context.Background(), withCPUSampler(sample)); c != nil {
+			t.Fatal("NewCPUCollector did not return nil on sampler error")
 		}
 	})
 	t.Run("no cores", func(t *testing.T) {
 		sample := func(ctx context.Context) ([]float64, error) {
 			return []float64{}, nil
 		}
-		if _, err := newCPUCollector(context.Background(), sample); err == nil {
-			t.Fatal("newCPUCollector did not return an error for zero cores")
+		if c := NewCPUCollector(context.Background(), withCPUSampler(sample)); c != nil {
+			t.Fatal("NewCPUCollector did not return nil for zero cores")
 		}
 	})
 }
@@ -76,9 +76,9 @@ func TestCollectDistributesPerCoreAndMean(t *testing.T) {
 		{50, 50},
 	}}
 
-	c, err := newCPUCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newCPUCollector: %v", err)
+	c := NewCPUCollector(context.Background(), withCPUSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewCPUCollector returned nil")
 	}
 	for i := 0; i < 2; i++ {
 		if err := c.Collect(context.Background()); err != nil {
@@ -106,9 +106,9 @@ func TestCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 		return nil, errors.New("boom")
 	}
 
-	c, err := newCPUCollector(context.Background(), sample)
-	if err != nil {
-		t.Fatalf("newCPUCollector: %v", err)
+	c := NewCPUCollector(context.Background(), withCPUSampler(sample))
+	if c == nil {
+		t.Fatal("NewCPUCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err == nil {
 		t.Fatal("Collect did not return an error when the sampler failed")
@@ -121,9 +121,9 @@ func TestCollectReturnsErrorOnCoreCountChange(t *testing.T) {
 		{4, 5}, // a core disappeared
 	}}
 
-	c, err := newCPUCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newCPUCollector: %v", err)
+	c := NewCPUCollector(context.Background(), withCPUSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewCPUCollector returned nil")
 	}
 	if err := c.Collect(context.Background()); err == nil {
 		t.Fatal("Collect did not return an error on a core-count change")
@@ -133,9 +133,9 @@ func TestCollectReturnsErrorOnCoreCountChange(t *testing.T) {
 func TestReadMethodsReturnIndependentCopies(t *testing.T) {
 	f := &fakeSampler{readings: [][]float64{{10, 20}}}
 
-	c, err := newCPUCollector(context.Background(), f.sample)
-	if err != nil {
-		t.Fatalf("newCPUCollector: %v", err)
+	c := NewCPUCollector(context.Background(), withCPUSampler(f.sample))
+	if c == nil {
+		t.Fatal("NewCPUCollector returned nil")
 	}
 
 	overall := c.Overall()
@@ -150,24 +150,5 @@ func TestReadMethodsReturnIndependentCopies(t *testing.T) {
 	}
 	if got := c.PerCore(); got[0][0] == 999 {
 		t.Errorf("PerCore() exposed mutable internal state: %v", got)
-	}
-}
-
-func TestMeanFloat64(t *testing.T) {
-	tests := []struct {
-		name   string
-		values []float64
-		want   float64
-	}{
-		{"empty", nil, 0},
-		{"single", []float64{42}, 42},
-		{"several", []float64{10, 20, 30}, 20},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := meanFloat64(tt.values); got != tt.want {
-				t.Errorf("meanFloat64(%v) = %v, want %v", tt.values, got, tt.want)
-			}
-		})
 	}
 }

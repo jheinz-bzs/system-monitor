@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/net"
@@ -10,6 +11,22 @@ import (
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/ringbuffer"
 )
+
+// netOption configures a NetworkCollector at construction. It exists so tests
+// can inject a sampler and clock without a separate constructor; production
+// code uses the defaults.
+type netOption func(*NetworkCollector)
+
+// withNetSampler overrides the network sampler. Tests use it to supply readings
+// without real hardware.
+func withNetSampler(s netSampler) netOption {
+	return func(c *NetworkCollector) { c.sample = s }
+}
+
+// withNetClock overrides the clock. Tests use it to control elapsed time.
+func withNetClock(now func() time.Time) netOption {
+	return func(c *NetworkCollector) { c.now = now }
+}
 
 // netReading is one snapshot of the cumulative network byte counters, summed
 // across all interfaces. It is the value the collector samples through so tests
@@ -60,36 +77,33 @@ type NetworkCollector struct {
 }
 
 // NewNetworkCollector builds a collector backed by gopsutil. It takes one
-// initial sample to record the seed counters.
-func NewNetworkCollector(ctx context.Context) (*NetworkCollector, error) {
-	return newNetworkCollector(ctx, defaultNetSampler, time.Now)
-}
+// initial sample to record the seed counters. It returns nil (after logging)
+// when that first sample fails, since there is nothing useful a partially
+// built collector could do.
+func NewNetworkCollector(ctx context.Context, opts ...netOption) *NetworkCollector {
+	c := &NetworkCollector{sample: defaultNetSampler, now: time.Now}
+	for _, opt := range opts {
+		opt(c)
+	}
 
-// newNetworkCollector is the testable constructor: it samples through the given
-// seam and reads the clock through now, so tests can control both readings and
-// elapsed time.
-func newNetworkCollector(ctx context.Context, sample netSampler, now func() time.Time) (*NetworkCollector, error) {
-	reading, err := sample(ctx)
+	reading, err := c.sample(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sampling network: %w", err)
+		slog.Error("building network collector", "err", err)
+		return nil
 	}
 
-	c := &NetworkCollector{
-		sample:       sample,
-		now:          now,
-		uploadRate:   ringbuffer.New[uint64](metrics.HistoryCapacity),
-		downloadRate: ringbuffer.New[uint64](metrics.HistoryCapacity),
-		totalRate:    ringbuffer.New[uint64](metrics.HistoryCapacity),
-		prevSent:     reading.bytesSent,
-		prevRecv:     reading.bytesRecv,
-		prevTime:     now(),
-	}
+	c.uploadRate = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.downloadRate = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.totalRate = ringbuffer.New[uint64](metrics.HistoryCapacity)
+	c.prevSent = reading.bytesSent
+	c.prevRecv = reading.bytesRecv
+	c.prevTime = c.now()
 	// The first sample has no prior reading to delta against, so seed the rate
 	// buffers with zero (mirrors how the disk collector seeds its rates).
 	c.uploadRate.Add(0)
 	c.downloadRate.Add(0)
 	c.totalRate.Add(0)
-	return c, nil
+	return c
 }
 
 // Collect samples network throughput and appends the upload, download, and
@@ -98,7 +112,7 @@ func newNetworkCollector(ctx context.Context, sample netSampler, now func() time
 func (c *NetworkCollector) Collect(ctx context.Context) error {
 	reading, err := c.sample(ctx)
 	if err != nil {
-		return fmt.Errorf("sampling network: %w", err)
+		return err
 	}
 
 	now := c.now()
