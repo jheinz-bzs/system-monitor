@@ -193,17 +193,15 @@ type ProcessCollector struct {
 }
 
 // NewProcessCollector builds a collector backed by gopsutil. It takes one
-// initial snapshot so the accessors return live data immediately.
-func NewProcessCollector(ctx context.Context) (*ProcessCollector, error) {
-	return newProcessCollector(ctx, defaultProcessSampler, defaultConnSampler)
-}
-
-// newProcessCollector is the testable constructor: it samples through the given
-// seams so tests can supply readings without a real OS.
-func newProcessCollector(ctx context.Context, sampleProcs processSampler, sampleConns connSampler) (*ProcessCollector, error) {
+// initial snapshot so the accessors return live data immediately, returning an
+// error when that first snapshot fails.
+func NewProcessCollector(ctx context.Context, opts ...processOption) (*ProcessCollector, error) {
 	c := &ProcessCollector{
-		sampleProcs: sampleProcs,
-		sampleConns: sampleConns,
+		sampleProcs: defaultProcessSampler,
+		sampleConns: defaultConnSampler,
+	}
+	for _, opt := range opts {
+		opt(c)
 	}
 	if err := c.Collect(ctx); err != nil {
 		return nil, err
