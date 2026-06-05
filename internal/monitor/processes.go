@@ -52,6 +52,23 @@ type processSampler func(ctx context.Context) ([]ProcessInfo, error)
 // Connections tabs. It is the seam the collector samples through.
 type connSampler func(ctx context.Context) ([]ConnectionInfo, error)
 
+// processOption configures a ProcessCollector at construction. It exists so
+// tests can inject samplers without a separate constructor; production code uses
+// the defaults.
+type processOption func(*ProcessCollector)
+
+// withProcessSampler overrides the process sampler. Tests use it to supply
+// readings without a real OS.
+func withProcessSampler(s processSampler) processOption {
+	return func(c *ProcessCollector) { c.sampleProcs = s }
+}
+
+// withConnSampler overrides the connection sampler. Tests use it to supply
+// readings without a real OS.
+func withConnSampler(s connSampler) processOption {
+	return func(c *ProcessCollector) { c.sampleConns = s }
+}
+
 // defaultProcessSampler enumerates processes via gopsutil. Failure to enumerate
 // the process table is returned as an error; per-process field reads that fail
 // (typically permission-restricted) fall back to the zero/empty value so the
