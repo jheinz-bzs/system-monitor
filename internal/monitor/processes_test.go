@@ -49,9 +49,9 @@ func TestNewProcessCollectorSeedsSnapshots(t *testing.T) {
 		{Protocol: "tcp", LocalAddr: "0.0.0.0:80", State: "LISTEN", PID: 1},
 	}}}
 
-	c, err := newProcessCollector(context.Background(), procs.sample, conns.sample)
+	c, err := NewProcessCollector(context.Background(), withProcessSampler(procs.sample), withConnSampler(conns.sample))
 	if err != nil {
-		t.Fatalf("newProcessCollector: %v", err)
+		t.Fatalf("NewProcessCollector: %v", err)
 	}
 
 	if got := c.Processes(); len(got) != 1 || got[0].PID != 1 {
@@ -67,15 +67,15 @@ func TestNewProcessCollectorSeedsSnapshots(t *testing.T) {
 
 func TestNewProcessCollectorErrorsOnProcessSamplerFailure(t *testing.T) {
 	boom := func(ctx context.Context) ([]ProcessInfo, error) { return nil, errors.New("boom") }
-	if _, err := newProcessCollector(context.Background(), boom, okConns()); err == nil {
-		t.Fatal("newProcessCollector did not return an error on process sampler failure")
+	if _, err := NewProcessCollector(context.Background(), withProcessSampler(boom), withConnSampler(okConns())); err == nil {
+		t.Fatal("NewProcessCollector did not return an error on process sampler failure")
 	}
 }
 
 func TestNewProcessCollectorErrorsOnConnSamplerFailure(t *testing.T) {
 	boom := func(ctx context.Context) ([]ConnectionInfo, error) { return nil, errors.New("boom") }
-	if _, err := newProcessCollector(context.Background(), okProcs(), boom); err == nil {
-		t.Fatal("newProcessCollector did not return an error on connection sampler failure")
+	if _, err := NewProcessCollector(context.Background(), withProcessSampler(okProcs()), withConnSampler(boom)); err == nil {
+		t.Fatal("NewProcessCollector did not return an error on connection sampler failure")
 	}
 }
 
@@ -89,9 +89,9 @@ func TestCollectReplacesSnapshots(t *testing.T) {
 		nil,
 	}}
 
-	c, err := newProcessCollector(context.Background(), procs.sample, conns.sample)
+	c, err := NewProcessCollector(context.Background(), withProcessSampler(procs.sample), withConnSampler(conns.sample))
 	if err != nil {
-		t.Fatalf("newProcessCollector: %v", err)
+		t.Fatalf("NewProcessCollector: %v", err)
 	}
 	if err := c.Collect(context.Background()); err != nil {
 		t.Fatalf("Collect: %v", err)
@@ -115,9 +115,9 @@ func TestProcessCollectReturnsErrorOnSamplerFailure(t *testing.T) {
 		return nil, errors.New("boom")
 	}
 
-	c, err := newProcessCollector(context.Background(), procs, okConns())
+	c, err := NewProcessCollector(context.Background(), withProcessSampler(procs), withConnSampler(okConns()))
 	if err != nil {
-		t.Fatalf("newProcessCollector: %v", err)
+		t.Fatalf("NewProcessCollector: %v", err)
 	}
 	if err := c.Collect(context.Background()); err == nil {
 		t.Fatal("Collect did not return an error when the sampler failed")
@@ -129,9 +129,9 @@ func TestProcessSnapshotRetainsZeroValueFields(t *testing.T) {
 	// PID; it must still be present in the snapshot.
 	procs := &fakeProcSampler{readings: [][]ProcessInfo{{{PID: 42}}}}
 
-	c, err := newProcessCollector(context.Background(), procs.sample, okConns())
+	c, err := NewProcessCollector(context.Background(), withProcessSampler(procs.sample), withConnSampler(okConns()))
 	if err != nil {
-		t.Fatalf("newProcessCollector: %v", err)
+		t.Fatalf("NewProcessCollector: %v", err)
 	}
 
 	got := c.Processes()
@@ -168,9 +168,9 @@ func TestProcessReadMethodsReturnIndependentCopies(t *testing.T) {
 		{Protocol: "tcp", LocalAddr: "0.0.0.0:80", State: "LISTEN", PID: 1},
 	}}}
 
-	c, err := newProcessCollector(context.Background(), procs.sample, conns.sample)
+	c, err := NewProcessCollector(context.Background(), withProcessSampler(procs.sample), withConnSampler(conns.sample))
 	if err != nil {
-		t.Fatalf("newProcessCollector: %v", err)
+		t.Fatalf("NewProcessCollector: %v", err)
 	}
 
 	c.Processes()[0].PID = 999
