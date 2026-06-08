@@ -22,6 +22,7 @@ type Collector interface {
 type Poller struct {
 	interval   time.Duration
 	collectors []Collector
+	onTick     func()
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -36,6 +37,17 @@ func NewPoller(interval time.Duration, collectors ...Collector) *Poller {
 		interval:   interval,
 		collectors: collectors,
 	}
+}
+
+// OnTick registers a callback invoked once after every collection pass —
+// including the immediate one on Start — so the data and any reaction to it
+// (e.g. a UI redraw) share a single clock. Without this, a separate ticker on
+// another goroutine drifts against the poll ticker and the two beat against
+// each other, producing uneven update cadence. Call before Start; the callback
+// runs on the poller goroutine, so any UI work inside it must be marshalled
+// onto the UI thread by the callback itself.
+func (p *Poller) OnTick(fn func()) {
+	p.onTick = fn
 }
 
 // Start launches the polling goroutine. It collects once immediately so the
@@ -79,14 +91,23 @@ func (p *Poller) run(ctx context.Context, done chan struct{}) {
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 
-	p.collectAll(ctx)
+	p.tick(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.collectAll(ctx)
+			p.tick(ctx)
 		}
+	}
+}
+
+// tick performs one collection pass and then fires the registered callback, so
+// observers react exactly once per pass, right after fresh data has landed.
+func (p *Poller) tick(ctx context.Context) {
+	p.collectAll(ctx)
+	if p.onTick != nil {
+		p.onTick()
 	}
 }
 
