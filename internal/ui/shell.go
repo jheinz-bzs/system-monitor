@@ -64,12 +64,20 @@ func (t *tabDef) addChild(child fyne.CanvasObject) {
 	t.content = append(t.content, child)
 }
 
-// newTabs returns the eight tab definitions with their content built fresh.
-// Identity (id/name/icon) is declared first, then each tab's content is
-// populated by switching on id — the seam where real per-tab content gets
-// wired in (see refactor plan §13). Returning fresh defs (rather than mutating
-// a shared global) keeps repeated buildContent calls from double-appending.
-func newTabs() []tabDef {
+// liveSources carries the metric Sources that live (poller-fed) tab content is
+// built from. A nil field means that metric isn't wired yet, so the tab falls
+// back to its placeholder; fields are added as more tabs go live.
+type liveSources struct {
+	cpuOverall Source
+}
+
+// newTabs returns the eight tab definitions with their content built fresh, and
+// a refresh closure that redraws every live pane (see buildContent). Identity
+// (id/name/icon) is declared first, then each tab's content is populated by
+// switching on id — the seam where real per-tab content gets wired in (see
+// refactor plan §13). Returning fresh defs (rather than mutating a shared
+// global) keeps repeated buildContent calls from double-appending.
+func newTabs(src liveSources) ([]tabDef, func()) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: "CPU", icon: icon.CPU},
@@ -80,22 +88,34 @@ func newTabs() []tabDef {
 		{id: tabPorts, name: "Ports", icon: icon.Ports},
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
 	}
+	var refreshers []func()
 	for i := range tabs {
 		t := &tabs[i]
-		switch t.id {
-		case tabOverview:
+		switch {
+		case t.id == tabOverview:
 			t.addChild(newOverview())
+		case t.id == tabCPU && src.cpuOverall != nil:
+			v := newCPUView(src.cpuOverall)
+			t.addChild(v.object())
+			refreshers = append(refreshers, v.refresh)
 		default:
 			t.addChild(newPlaceholder(t.name))
 		}
 	}
-	return tabs
+	refresh := func() {
+		for _, r := range refreshers {
+			r()
+		}
+	}
+	return tabs, refresh
 }
 
-// buildContent assembles the full window content and wires nav selection to
-// content switching.
-func buildContent() fyne.CanvasObject {
-	tabs := newTabs()
+// buildContent assembles the full window content from the given live Sources
+// and wires nav selection to content switching. It returns the content plus a
+// refresh closure that redraws every live pane; the caller drives it on the UI
+// goroutine each poll tick (see startUIRefresh).
+func buildContent(src liveSources) (fyne.CanvasObject, func()) {
+	tabs, refresh := newTabs(src)
 	n := len(tabs)
 	panes := make([]fyne.CanvasObject, n)
 	items := make([]*navItem, n)
@@ -124,7 +144,7 @@ func buildContent() fyne.CanvasObject {
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
 	statusRegion := vStackTight(hLine(), newStatusBar())
-	return newTightBorder(title, statusRegion, nil, nil, body)
+	return newTightBorder(title, statusRegion, nil, nil, body), refresh
 }
 
 // newSidebar wraps the top-aligned nav list in a surface-colored, fixed-width
