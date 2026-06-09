@@ -110,7 +110,7 @@ var tabRegistry = map[tabID]tabBuilder{
 // metric areas are additive — only a registry entry is required, not an edit
 // here. Returning fresh defs keeps repeated buildContent calls from
 // double-appending to a shared slice.
-func newTabs(src liveSources) ([]tabDef, func()) {
+func newTabs(src buildSources) ([]tabDef, func()) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: "CPU", icon: icon.CPU},

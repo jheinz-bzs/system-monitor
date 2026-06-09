@@ -20,7 +20,7 @@ func TestCPUViewRendersAndRefreshes(t *testing.T) {
 	app.Settings().SetTheme(newTheme())
 
 	overall := ringbuffer.New[float64](metrics.HistoryCapacity)
-	v := newCPUView(series.SourceFrom(overall))
+	v := newCPUView(series.SourceFrom(overall), nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()
