@@ -66,11 +66,17 @@ func (t *tabDef) addChild(child fyne.CanvasObject) {
 	t.content = append(t.content, child)
 }
 
-// liveSources carries the metric Sources that live (poller-fed) tab content is
-// built from. A nil entry means that metric isn't wired yet, so the tab falls
-// back to its placeholder. Keyed by tabID so new tabs add a map entry in
-// app.go without editing this file or newTabs.
+// liveSources carries the time-series Sources for live chart tabs, keyed by
+// tabID. A nil entry means that metric isn't wired yet; the tab falls back to
+// its placeholder. New chart tabs add a map entry in app.go only.
 type liveSources map[tabID]series.Source
+
+// buildSources bundles all live data sources the tab builders need. Extend
+// this struct (not the tabBuilder signature) when new source types are added.
+type buildSources struct {
+	charts liveSources   // time-series chart sources, keyed by tabID
+	procs  processSource // process snapshot source; nil when not wired
+}
 
 // tabContent is the built content for one tab: the object to display and an
 // optional refresh callback (nil for static tabs that never update).
@@ -80,20 +86,20 @@ type tabContent struct {
 }
 
 // tabBuilder constructs a tab's content from the available live sources.
-type tabBuilder func(src liveSources) tabContent
+type tabBuilder func(src buildSources) tabContent
 
 // tabRegistry maps tab IDs to their builder functions. To add a new live tab,
 // register its builder here — newTabs is never edited for new metric areas.
 var tabRegistry = map[tabID]tabBuilder{
-	tabOverview: func(_ liveSources) tabContent {
+	tabOverview: func(_ buildSources) tabContent {
 		return tabContent{object: newOverview()}
 	},
-	tabCPU: func(src liveSources) tabContent {
-		s := src[tabCPU]
+	tabCPU: func(src buildSources) tabContent {
+		s := src.charts[tabCPU]
 		if s == nil {
 			return tabContent{object: newPlaceholder("CPU")}
 		}
-		v := newCPUView(s)
+		v := newCPUView(s, src.procs)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 }
@@ -137,11 +143,11 @@ func newTabs(src liveSources) ([]tabDef, func()) {
 	return tabs, refresh
 }
 
-// buildContent assembles the full window content from the given live Sources
+// buildContent assembles the full window content from the available live sources
 // and wires nav selection to content switching. It returns the content plus a
 // refresh closure that redraws every live pane; the caller drives it on the UI
 // goroutine each poll tick (see startUIRefresh).
-func buildContent(src liveSources) (fyne.CanvasObject, func()) {
+func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	tabs, refresh := newTabs(src)
 	n := len(tabs)
 	panes := make([]fyne.CanvasObject, n)
