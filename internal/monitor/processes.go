@@ -23,12 +23,25 @@ type ProcessInfo struct {
 	Username    string
 }
 
+// Protocol identifies the transport-layer protocol for a connection or port.
+type Protocol string
+
+const (
+	protoTCP Protocol = "tcp"
+	protoUDP Protocol = "udp"
+)
+
+// ConnState is the gopsutil connection state string (e.g. "ESTABLISHED", "LISTEN").
+type ConnState string
+
+const connStateListen ConnState = "LISTEN"
+
 // PortInfo is a snapshot of one listening port. PID is the owning process,
 // matching the PID exposed in ProcessInfo so cross-tab navigation can resolve
 // a port to its process.
 type PortInfo struct {
 	Port      uint32
-	Protocol  string // "tcp" | "udp"
+	Protocol  Protocol
 	LocalAddr string // "ip:port"
 	PID       int32
 }
@@ -36,10 +49,10 @@ type PortInfo struct {
 // ConnectionInfo is a snapshot of one active TCP/UDP connection. State is the
 // gopsutil status string (e.g. "ESTABLISHED", "LISTEN") and is empty for UDP.
 type ConnectionInfo struct {
-	Protocol   string // "tcp" | "udp"
+	Protocol   Protocol
 	LocalAddr  string // "ip:port"
 	RemoteAddr string // "ip:port", empty when unbound
-	State      string
+	State      ConnState
 	PID        int32
 }
 
@@ -113,7 +126,7 @@ func defaultConnSampler(ctx context.Context) ([]ConnectionInfo, error) {
 			Protocol:   protocolName(c.Type),
 			LocalAddr:  formatAddr(c.Laddr),
 			RemoteAddr: formatAddr(c.Raddr),
-			State:      c.Status,
+			State:      ConnState(c.Status),
 			PID:        c.Pid,
 		})
 	}
@@ -122,12 +135,12 @@ func defaultConnSampler(ctx context.Context) ([]ConnectionInfo, error) {
 
 // protocolName maps a socket type to a protocol label. Anything other than a
 // stream or datagram socket reports an empty protocol.
-func protocolName(sockType uint32) string {
+func protocolName(sockType uint32) Protocol {
 	switch sockType {
 	case syscall.SOCK_STREAM:
-		return "tcp"
+		return protoTCP
 	case syscall.SOCK_DGRAM:
-		return "udp"
+		return protoUDP
 	default:
 		return ""
 	}
@@ -148,8 +161,8 @@ func formatAddr(a gnet.Addr) string {
 func deriveListeningPorts(conns []ConnectionInfo) []PortInfo {
 	ports := make([]PortInfo, 0)
 	for _, c := range conns {
-		listening := (c.Protocol == "tcp" && c.State == "LISTEN") ||
-			(c.Protocol == "udp" && c.RemoteAddr == "")
+		listening := (c.Protocol == protoTCP && c.State == connStateListen) ||
+			(c.Protocol == protoUDP && c.RemoteAddr == "")
 		if !listening {
 			continue
 		}

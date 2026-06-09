@@ -23,6 +23,8 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 const (
@@ -65,18 +67,43 @@ func (t *tabDef) addChild(child fyne.CanvasObject) {
 }
 
 // liveSources carries the metric Sources that live (poller-fed) tab content is
-// built from. A nil field means that metric isn't wired yet, so the tab falls
-// back to its placeholder; fields are added as more tabs go live.
-type liveSources struct {
-	cpuOverall Source
+// built from. A nil entry means that metric isn't wired yet, so the tab falls
+// back to its placeholder. Keyed by tabID so new tabs add a map entry in
+// app.go without editing this file or newTabs.
+type liveSources map[tabID]series.Source
+
+// tabContent is the built content for one tab: the object to display and an
+// optional refresh callback (nil for static tabs that never update).
+type tabContent struct {
+	object  fyne.CanvasObject
+	refresh func()
+}
+
+// tabBuilder constructs a tab's content from the available live sources.
+type tabBuilder func(src liveSources) tabContent
+
+// tabRegistry maps tab IDs to their builder functions. To add a new live tab,
+// register its builder here — newTabs is never edited for new metric areas.
+var tabRegistry = map[tabID]tabBuilder{
+	tabOverview: func(_ liveSources) tabContent {
+		return tabContent{object: newOverview()}
+	},
+	tabCPU: func(src liveSources) tabContent {
+		s := src[tabCPU]
+		if s == nil {
+			return tabContent{object: newPlaceholder("CPU")}
+		}
+		v := newCPUView(s)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
 }
 
 // newTabs returns the eight tab definitions with their content built fresh, and
 // a refresh closure that redraws every live pane (see buildContent). Identity
-// (id/name/icon) is declared first, then each tab's content is populated by
-// switching on id — the seam where real per-tab content gets wired in (see
-// refactor plan §13). Returning fresh defs (rather than mutating a shared
-// global) keeps repeated buildContent calls from double-appending.
+// (id/name/icon) is declared first; content is built via tabRegistry so new
+// metric areas are additive — only a registry entry is required, not an edit
+// here. Returning fresh defs keeps repeated buildContent calls from
+// double-appending to a shared slice.
 func newTabs(src liveSources) ([]tabDef, func()) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
@@ -91,15 +118,15 @@ func newTabs(src liveSources) ([]tabDef, func()) {
 	var refreshers []func()
 	for i := range tabs {
 		t := &tabs[i]
-		switch {
-		case t.id == tabOverview:
-			t.addChild(newOverview())
-		case t.id == tabCPU && src.cpuOverall != nil:
-			v := newCPUView(src.cpuOverall)
-			t.addChild(v.object())
-			refreshers = append(refreshers, v.refresh)
-		default:
-			t.addChild(newPlaceholder(t.name))
+		var content tabContent
+		if builder, ok := tabRegistry[t.id]; ok {
+			content = builder(src)
+		} else {
+			content = tabContent{object: newPlaceholder(t.name)}
+		}
+		t.addChild(content.object)
+		if content.refresh != nil {
+			refreshers = append(refreshers, content.refresh)
 		}
 	}
 	refresh := func() {
@@ -179,7 +206,7 @@ func newTitleBar() fyne.CanvasObject {
 	logoImg.FillMode = canvas.ImageFillContain
 	logo := container.NewGridWrap(fyne.NewSize(titleLogoSize, titleLogoSize), logoImg)
 
-	wordmark := newColumnLabel("System Monitor") // Mono 11 UPPERCASE, text-2
+	wordmark := newColumnLabel(appName) // Mono 11 UPPERCASE, text-2
 
 	brand := container.New(layout.NewCustomPaddedHBoxLayout(titleLogoGap), logo, wordmark)
 	return newBar(titleBarHeight, brand)

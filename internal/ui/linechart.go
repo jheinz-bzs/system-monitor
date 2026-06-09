@@ -46,51 +46,15 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/widget"
 	"golang.org/x/image/vector"
+
+	"github.com/josephheinz/system-monitor/internal/series"
 )
-
-// numeric is the set of element kinds a metric ring buffer can hold. It mirrors
-// the constraint a chart Source can be adapted from.
-type numeric interface {
-	~int | ~int8 | ~int16 | ~int32 | ~int64 |
-		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr |
-		~float32 | ~float64
-}
-
-// Source yields a series' samples ordered oldest → newest (the same order
-// RingBuffer.Items returns), which the chart plots left → right.
-type Source interface {
-	Values() []float64
-}
-
-// sourceFunc adapts a plain func to a Source.
-type sourceFunc func() []float64
-
-func (f sourceFunc) Values() []float64 { return f() }
-
-// sourceFrom adapts any numeric ring buffer — anything exposing Items() []T for
-// a numeric T — into a Source, converting samples to float64. The buffer is
-// re-read on every Values() call, so the chart always reflects the latest
-// window.
-//
-// Type inference usually picks T up from the argument; pass it explicitly if a
-// call site is ambiguous, e.g. sourceFrom[uint64](rxBuf).
-func sourceFrom[T numeric](buf interface{ Items() []T }) Source {
-	return sourceFunc(func() []float64 {
-		in := buf.Items()
-		out := make([]float64, len(in))
-		for i, v := range in {
-			out[i] = float64(v)
-		}
-		return out
-	})
-}
 
 // Chart geometry. Line weights and the secondary-line opacity come from the
 // chart-language spec; gutters/min-size are translated to the 4px grid.
@@ -158,7 +122,7 @@ func timeAxis(span time.Duration) lineChartOption {
 // chartSeries is one plotted line. Construct it with addSeries; style it with
 // the series options.
 type chartSeries struct {
-	src     Source
+	src     series.Source
 	stroke  color.Color
 	width   float32
 	visible bool
@@ -217,7 +181,7 @@ func newLineChart(opts ...lineChartOption) *lineChart {
 // addSeries adds a line fed by src and returns it so the caller can keep a
 // handle (e.g. to toggle visibility). Secondary series are auto-colored from
 // the categorical palette in the order they're added.
-func (c *lineChart) addSeries(src Source, opts ...seriesOption) *chartSeries {
+func (c *lineChart) addSeries(src series.Source, opts ...seriesOption) *chartSeries {
 	s := &chartSeries{src: src, width: chartSecondaryWidth, visible: true, autoColor: true}
 	for _, opt := range opts {
 		opt(s)
@@ -334,12 +298,6 @@ func (r *lineChartRenderer) arrange() {
 	r.series.Resize(fyne.NewSize(plot.width, plot.height))
 	r.series.Move(fyne.NewPos(plot.x, plot.y))
 	r.series.Refresh()
-}
-
-// chartBox is the pixel rectangle of the plot area (the framed region, excluding
-// the label gutters).
-type chartBox struct {
-	x, y, width, height float32
 }
 
 // layoutYLabels positions the Y tick labels (top→bottom: hi→lo) and returns the
@@ -499,76 +457,6 @@ func (r *lineChartRenderer) renderSeries(w, h int) image.Image {
 	return img
 }
 
-// strokePolyline adds a filled stroke for pts to the rasterizer: a quad per
-// segment plus a disc at every vertex for round joins and caps. All sub-paths
-// are wound consistently so the rasterizer unions them (rather than cancelling
-// overlaps), which is what keeps the opacity flat along the line.
-func strokePolyline(ras *vector.Rasterizer, pts []fyne.Position, sx, sy, width float32) {
-	hw := width / 2
-	at := func(i int) (float32, float32) { return pts[i].X * sx, pts[i].Y * sy }
-
-	for i := 0; i < len(pts)-1; i++ {
-		x0, y0 := at(i)
-		x1, y1 := at(i + 1)
-		dx, dy := x1-x0, y1-y0
-		l := float32(math.Hypot(float64(dx), float64(dy)))
-		if l == 0 {
-			continue
-		}
-		// Unit normal and along-segment vector, each scaled to the half-width.
-		nx, ny := -dy/l*hw, dx/l*hw
-		ex, ey := dx/l*hw, dy/l*hw // extend ends so quads overlap at joints
-		addPoly(ras, [][2]float32{
-			{x0 - ex + nx, y0 - ey + ny}, {x1 + ex + nx, y1 + ey + ny},
-			{x1 + ex - nx, y1 + ey - ny}, {x0 - ex - nx, y0 - ey - ny},
-		})
-	}
-	for i := range pts {
-		cx, cy := at(i)
-		addDisc(ras, cx, cy, hw)
-	}
-}
-
-// addPoly adds a closed polygon, normalizing it to a consistent (CCW) winding
-// so overlapping sub-paths union under the non-zero rule instead of cancelling.
-func addPoly(ras *vector.Rasterizer, p [][2]float32) {
-	if len(p) < 3 {
-		return
-	}
-	if signedArea(p) < 0 {
-		for i, j := 0, len(p)-1; i < j; i, j = i+1, j-1 {
-			p[i], p[j] = p[j], p[i]
-		}
-	}
-	ras.MoveTo(p[0][0], p[0][1])
-	for i := 1; i < len(p); i++ {
-		ras.LineTo(p[i][0], p[i][1])
-	}
-	ras.ClosePath()
-}
-
-// addDisc adds a 12-gon approximating a filled circle of radius rad at (cx, cy).
-func addDisc(ras *vector.Rasterizer, cx, cy, rad float32) {
-	const sides = 12
-	p := make([][2]float32, sides)
-	for k := 0; k < sides; k++ {
-		a := 2 * math.Pi * float64(k) / sides
-		p[k] = [2]float32{cx + rad*float32(math.Cos(a)), cy + rad*float32(math.Sin(a))}
-	}
-	addPoly(ras, p)
-}
-
-// signedArea returns twice the signed area of polygon p (shoelace); positive is
-// counter-clockwise in screen space.
-func signedArea(p [][2]float32) float32 {
-	var a float32
-	for i := range p {
-		j := (i + 1) % len(p)
-		a += p[i][0]*p[j][1] - p[j][0]*p[i][1]
-	}
-	return a
-}
-
 // resolveStroke returns the final stroke color for a series, assigning and
 // advancing the categorical palette slot for auto-colored series. c1 (the
 // accent) is skipped so secondary series stay distinct from an emphasized
@@ -632,90 +520,3 @@ func (c *lineChart) resolveRange(data [][]float64) (lo, hi float64) {
 	return niceRange(min, max, chartYTickCount-1)
 }
 
-// valueToY maps a data value onto a pixel Y within the plot box, with hi at the
-// top edge and lo at the bottom. Values are clamped to the range so a fixed
-// axis (e.g. 0–100) can't draw outside the frame.
-func valueToY(v, lo, hi float64, plot chartBox) float32 {
-	if hi == lo {
-		return plot.y + plot.height
-	}
-	frac := (v - lo) / (hi - lo)
-	frac = math.Max(0, math.Min(1, frac))
-	return plot.y + plot.height*float32(1-frac)
-}
-
-// tickValues returns the n tick values from top (hi) to bottom (lo), evenly
-// spaced — matching the top→bottom order of the Y label pool.
-func tickValues(lo, hi float64, n int) []float64 {
-	out := make([]float64, n)
-	for i := 0; i < n; i++ {
-		frac := float64(i) / float64(n-1)
-		out[i] = hi - frac*(hi-lo)
-	}
-	return out
-}
-
-// niceRange expands [min, max] to bounds that fall on "nice" round numbers,
-// giving readable tick labels for an auto-scaled axis. Adapted from the classic
-// Graphics Gems labeling algorithm.
-func niceRange(min, max float64, ticks int) (lo, hi float64) {
-	if min == max {
-		// Flat series: pad to a unit so the line sits mid-plot.
-		min -= 0.5
-		max += 0.5
-	}
-	step := niceNum((max-min)/float64(ticks), true)
-	lo = math.Floor(min/step) * step
-	hi = math.Ceil(max/step) * step
-	return lo, hi
-}
-
-// niceNum returns a "nice" number near x: rounded to 1/2/5×10ⁿ when round is
-// set, otherwise the next-larger such number.
-func niceNum(x float64, round bool) float64 {
-	if x <= 0 {
-		return 1
-	}
-	exp := math.Floor(math.Log10(x))
-	f := x / math.Pow(10, exp)
-	var nf float64
-	switch {
-	case round && f < 1.5, !round && f <= 1:
-		nf = 1
-	case round && f < 3, !round && f <= 2:
-		nf = 2
-	case round && f < 7, !round && f <= 5:
-		nf = 5
-	default:
-		nf = 10
-	}
-	return nf * math.Pow(10, exp)
-}
-
-// formatCompact is the default Y-label formatter: a trimmed decimal.
-func formatCompact(v float64) string {
-	return strconv.FormatFloat(v, 'f', -1, 64)
-}
-
-// formatAge renders an elapsed time for the X axis: "now" at zero, "−Ns" under
-// a minute, otherwise "−Mm".
-func formatAge(d time.Duration) string {
-	if d <= 0 {
-		return "now"
-	}
-	if d < time.Minute {
-		return "-" + strconv.Itoa(int(d.Round(time.Second)/time.Second)) + "s"
-	}
-	return "-" + strconv.Itoa(int(d.Round(time.Minute)/time.Minute)) + "m"
-}
-
-// clamp32 constrains v to [lo, hi].
-func clamp32(v, lo, hi float32) float32 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
-}

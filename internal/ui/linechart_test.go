@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/test"
 
 	"github.com/josephheinz/system-monitor/internal/ringbuffer"
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 // A chart built like the CPU multi-line use case (BZS253-46) must render
@@ -26,9 +27,9 @@ func TestLineChartRendersEndToEnd(t *testing.T) {
 	c := newLineChart(fixedRange(0, 100), valueFormat(func(v float64) string {
 		return strconv.FormatFloat(v, 'f', 0, 64) + "%"
 	}))
-	c.addSeries(sourceFrom(overall), emphasized())
-	core := c.addSeries(sourceFrom(core0))
-	c.addSeries(sourceFrom(rxBytes))
+	c.addSeries(series.SourceFrom(overall), emphasized())
+	core := c.addSeries(series.SourceFrom(core0))
+	c.addSeries(series.SourceFrom(rxBytes))
 
 	w := test.NewWindow(c)
 	defer w.Close()
@@ -67,7 +68,7 @@ func TestSourceFromIsTypeAgnostic(t *testing.T) {
 		rb.Add(40)
 		rb.Add(99.9)
 
-		got := sourceFrom(rb).Values()
+		got := series.SourceFrom(rb).Values()
 		want := []float64{12.5, 40, 99.9}
 		assertFloats(t, got, want)
 	})
@@ -78,7 +79,7 @@ func TestSourceFromIsTypeAgnostic(t *testing.T) {
 		rb.Add(2048)
 		rb.Add(1 << 40) // 1 TiB — well within float64's exact-integer range
 
-		got := sourceFrom(rb).Values()
+		got := series.SourceFrom(rb).Values()
 		want := []float64{1024, 2048, 1 << 40}
 		assertFloats(t, got, want)
 	})
@@ -88,7 +89,7 @@ func TestSourceFromIsTypeAgnostic(t *testing.T) {
 // latest window rather than a snapshot taken when the series was added.
 func TestSourceFromReflectsLatestWindow(t *testing.T) {
 	rb := ringbuffer.New[float64](2)
-	src := sourceFrom(rb)
+	src := series.SourceFrom(rb)
 
 	if got := src.Values(); len(got) != 0 {
 		t.Fatalf("empty buffer: got %v, want no values", got)
