@@ -14,18 +14,21 @@ import (
 	"fyne.io/fyne/v2/app"
 
 	"github.com/josephheinz/system-monitor/internal/monitor"
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 // pollInterval is the cadence at which collectors sample and the UI redraws:
 // 1s, matching the ring buffers' 1-second resolution (metrics.HistoryCapacity).
 const pollInterval = time.Second
 
+const appName = "System Monitor"
+
 // Run creates the application, starts metric collection, shows the main window,
 // and blocks until it is closed.
 func Run() {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
 	a.Settings().SetTheme(newTheme())
-	w := a.NewWindow("System Monitor")
+	w := a.NewWindow(appName)
 
 	// One context governs collection and the UI refresh loop; cancelling it on
 	// window close stops both cleanly.
@@ -35,10 +38,10 @@ func Run() {
 	// A collector that fails to start is nil; the matching tab then falls back
 	// to its placeholder rather than crashing.
 	cpu := monitor.NewCPUCollector(ctx)
-	var src liveSources
+	src := make(liveSources)
 	var collectors []monitor.Collector
 	if cpu != nil {
-		src.cpuOverall = sourceFunc(cpu.Overall)
+		src[tabCPU] = series.SourceFunc(cpu.Overall)
 		collectors = append(collectors, cpu)
 	}
 

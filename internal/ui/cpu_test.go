@@ -8,6 +8,7 @@ import (
 
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/ringbuffer"
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 // The CPU view must render through the full widget path and stay stable as its
@@ -19,7 +20,7 @@ func TestCPUViewRendersAndRefreshes(t *testing.T) {
 	app.Settings().SetTheme(newTheme())
 
 	overall := ringbuffer.New[float64](metrics.HistoryCapacity)
-	v := newCPUView(sourceFrom(overall))
+	v := newCPUView(series.SourceFrom(overall))
 
 	w := test.NewWindow(v.object())
 	defer w.Close()

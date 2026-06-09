@@ -127,7 +127,7 @@ func swatchCell(name string, col color.Color) fyne.CanvasObject {
 	chip.CornerRadius = theme.Size(sizeName.PanelRadius)
 	chip.SetMinSize(fyne.NewSize(0, swatchChipMinH))
 
-	return container.New(layout.NewCustomPaddedVBoxLayout(2),
+	return container.New(layout.NewCustomPaddedVBoxLayout(spaceXS),
 		chip,
 		newMeta(name),
 		newMeta(swatchHex(col)),

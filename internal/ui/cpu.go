@@ -22,13 +22,14 @@ import (
 	"fyne.io/fyne/v2/layout"
 
 	"github.com/josephheinz/system-monitor/internal/metrics"
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 // cpuView is the CPU tab's chart pane: the overall-utilization line chart plus
 // a headline readout of the most recent sample. Build it with newCPUView and
 // drive live updates through refresh.
 type cpuView struct {
-	overall Source
+	overall series.Source
 	chart   *lineChart
 	readout *canvas.Text
 }
@@ -36,7 +37,7 @@ type cpuView struct {
 // newCPUView builds the CPU chart pane fed by the overall-utilization Source
 // (oldest → newest). The chart is pinned to 0–100% and the X axis spans the
 // full retention window, so points keep stable spacing as the buffer fills.
-func newCPUView(overall Source) *cpuView {
+func newCPUView(overall series.Source) *cpuView {
 	chart := newLineChart(
 		fixedRange(0, 100),
 		valueFormat(formatPercent),
