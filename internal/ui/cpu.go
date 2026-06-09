@@ -25,19 +25,25 @@ import (
 	"github.com/josephheinz/system-monitor/internal/series"
 )
 
-// cpuView is the CPU tab's chart pane: the overall-utilization line chart plus
-// a headline readout of the most recent sample. Build it with newCPUView and
-// drive live updates through refresh.
+const (
+	labelCPUUtilization  = "CPU Utilization"
+	labelTopCPUProcesses = "Top CPU Processes"
+)
+
+// cpuView is the CPU tab: an overall-utilization line chart at the top and a
+// top-CPU-processes table at the bottom. Build with newCPUView and drive live
+// updates through refresh.
 type cpuView struct {
 	overall series.Source
+	procs   processSource // nil when ProcessCollector is not available
 	chart   *lineChart
+	table   *dataTable // nil when procs is nil
 	readout *canvas.Text
 }
 
-// newCPUView builds the CPU chart pane fed by the overall-utilization Source
-// (oldest → newest). The chart is pinned to 0–100% and the X axis spans the
-// full retention window, so points keep stable spacing as the buffer fills.
-func newCPUView(overall series.Source) *cpuView {
+// newCPUView builds the CPU tab content. overall feeds the chart; procs feeds
+// the process table and may be nil (the tab gracefully omits the table pane).
+func newCPUView(overall series.Source, procs processSource) *cpuView {
 	chart := newLineChart(
 		fixedRange(0, 100),
 		valueFormat(formatPercent),
@@ -46,32 +52,43 @@ func newCPUView(overall series.Source) *cpuView {
 	)
 	chart.addSeries(overall, emphasized())
 
-	return &cpuView{
+	v := &cpuView{
 		overall: overall,
+		procs:   procs,
 		chart:   chart,
 		readout: newMetricValue("--"),
 	}
+	if procs != nil {
+		v.table = newProcessTable(procs)
+	}
+	return v
 }
 
-// object assembles the pane: a header (label over the live readout) above the
-// chart, which fills the remaining space. The whole pane is inset from the tab
-// edges on the spacing scale.
+// object assembles the tab: the chart section fills the center; the process
+// table is pinned below it when available. The whole view is inset from the
+// tab edges on the spacing scale.
 func (v *cpuView) object() fyne.CanvasObject {
-	header := container.New(layout.NewCustomPaddedVBoxLayout(spaceXS),
-		newColumnLabel("CPU Utilization"),
+	chartHeader := container.New(layout.NewCustomPaddedVBoxLayout(spaceXS),
+		newColumnLabel(labelCPUUtilization),
 		v.readout,
 	)
-	// Gap the chart off the header without a stray spacer object.
-	chart := container.New(layout.NewCustomPaddedLayout(spaceLG, 0, 0, 0), v.chart)
-	body := newTightBorder(header, nil, nil, nil, chart)
+	chartBody := container.New(layout.NewCustomPaddedLayout(spaceLG, 0, 0, 0), v.chart)
+	chartSection := newTightBorder(chartHeader, nil, nil, nil, chartBody)
+
+	var body fyne.CanvasObject = chartSection
+	if v.table != nil {
+		tableHeader := newColumnLabel(labelTopCPUProcesses)
+		tableBody := container.New(layout.NewCustomPaddedLayout(spaceLG, 0, 0, 0), v.table)
+		tableSection := newTightBorder(tableHeader, nil, nil, nil, tableBody)
+		body = newTightBorder(nil, tableSection, nil, nil, chartSection)
+	}
+
 	return container.New(
 		layout.NewCustomPaddedLayout(space2XL, space2XL, space2XL, space2XL), body)
 }
 
-// refresh re-reads the overall history and redraws: it updates the headline
-// readout to the newest sample and regenerates the chart. It touches the
-// canvas, so callers driving it from a background poller must marshal it onto
-// the UI goroutine (fyne.Do); see startUIRefresh.
+// refresh re-reads live data and redraws both panes. It touches the canvas, so
+// callers on a background poller must marshal it onto the UI goroutine (fyne.Do).
 func (v *cpuView) refresh() {
 	vals := v.overall.Values()
 	if n := len(vals); n > 0 {
@@ -81,6 +98,9 @@ func (v *cpuView) refresh() {
 	}
 	v.readout.Refresh()
 	v.chart.Refresh()
+	if v.table != nil {
+		v.table.Refresh()
+	}
 }
 
 // formatPercent renders a CPU percentage as a whole-number "%": the chart's Y
