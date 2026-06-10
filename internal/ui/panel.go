@@ -28,13 +28,27 @@ const (
 // right-aligned header accessory (nil for a plain header). The body is inset
 // on all sides; pass the bare content, not pre-padded wrappers.
 func newPanel(title string, trailing, body fyne.CanvasObject) fyne.CanvasObject {
+	return assemblePanel(title, trailing, body, panelBodyPad)
+}
+
+// newFlushPanel is newPanel without the body inset: the body runs edge-to-edge
+// inside the card. The wireframes' table panels use this — the column-header
+// band, rows, and dividers span the full panel width and the rows fill the
+// panel down to its bottom edge.
+func newFlushPanel(title string, trailing, body fyne.CanvasObject) fyne.CanvasObject {
+	return assemblePanel(title, trailing, body, 0)
+}
+
+// assemblePanel builds the shared panel chrome: the rounded surface card, the
+// header band, and the body inset by bodyPad on all sides.
+func assemblePanel(title string, trailing, body fyne.CanvasObject, bodyPad float32) fyne.CanvasObject {
 	card := canvas.NewRectangle(palette.Surface)
 	card.StrokeColor = palette.Border
 	card.StrokeWidth = panelBorderWidth
 	card.CornerRadius = theme.Size(sizeName.PanelRadius)
 
 	paddedBody := container.New(
-		layout.NewCustomPaddedLayout(panelBodyPad, panelBodyPad, panelBodyPad, panelBodyPad), body)
+		layout.NewCustomPaddedLayout(bodyPad, bodyPad, bodyPad, bodyPad), body)
 	content := newTightBorder(newPanelHeader(title, trailing), nil, nil, nil, paddedBody)
 	// Inset the content by the stroke so the header band doesn't paint over
 	// the card's 1px outline.
