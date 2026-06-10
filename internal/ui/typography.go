@@ -70,6 +70,20 @@ func newColumnLabel(text string) *canvas.Text {
 	return styledText(strings.ToUpper(text), font.MonoMedium, theme.SizeNameCaptionText, palette.Text2)
 }
 
+// newPageSubtitle returns the muted page-header subtitle (e.g. the CPU tab's
+// "12 CORES · …") — Plex Mono Regular (400), 11px (caption size), UPPERCASE,
+// text-3.
+func newPageSubtitle(text string) *canvas.Text {
+	return styledText(strings.ToUpper(text), font.MonoRegular, theme.SizeNameCaptionText, palette.Text3)
+}
+
+// newTableHeaderLabel returns a data-table column header — the column-label
+// role recolored to the muted text-3 the table wireframes use for header rows
+// (panel titles keep text-2 via newColumnLabel).
+func newTableHeaderLabel(text string) *canvas.Text {
+	return styledText(strings.ToUpper(text), font.MonoMedium, theme.SizeNameCaptionText, palette.Text3)
+}
+
 // newMeta returns muted meta / axis text — Plex Mono Regular (400), 9px, text-3.
 func newMeta(text string) *canvas.Text {
 	return styledText(text, font.MonoRegular, sizeName.Meta, palette.Text3)
