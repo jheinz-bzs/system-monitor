@@ -11,10 +11,10 @@ package ui
 // for a percentage metric: a fixed 0–100 Y axis, "%"-suffixed tick labels, and
 // a time axis spanning the full history window.
 //
-// For now the chart plots a single emphasized "overall" (total) series. The
-// per-core lines (BZS253-46) attach to the SAME chart later via addSeries with
-// the default categorical styling, and the per-core panel body receives its
-// bar grid — no structural change here, just more content in reserved slots.
+// The chart plots the emphasized "overall" line plus one secondary line per
+// logical core (default categorical styling, c2–c8). The same per-core sources
+// feed the per-core panel's bar grid (coregrid.go), which shows each core's
+// newest sample.
 
 import (
 	"fmt"
@@ -64,8 +64,7 @@ const tabPad = spaceXL
 
 // perCoreSwatchSeries is the categorical-palette index of the wireframe's
 // per-core legend swatch hue (c3). The per-core lines themselves auto-color
-// across c2–c8 when they attach (BZS253-46); the legend shows one
-// representative hue.
+// across c2–c8; the legend shows one representative hue.
 const perCoreSwatchSeries = 2
 
 // cpuMeta is the static processor description shown in the page head's
@@ -79,15 +78,19 @@ type cpuMeta struct {
 // per-core + top-processes bottom row. Build with newCPUView and drive live
 // updates through refresh.
 type cpuView struct {
-	meta  cpuMeta
-	chart *lineChart
-	table *dataTable // nil when ProcessCollector is not available
+	meta       cpuMeta
+	chart      *lineChart
+	coreSeries []*chartSeries // chart handles for the per-core lines, core order
+	grid       *coreGrid      // nil when per-core sources are not available
+	table      *dataTable     // nil when ProcessCollector is not available
 }
 
-// newCPUView builds the CPU tab content. overall feeds the chart; procs feeds
-// the process table and may be nil (the tab gracefully omits the table pane);
+// newCPUView builds the CPU tab content. overall feeds the chart's emphasized
+// line; cores feed both the chart's secondary lines and the per-core bar grid,
+// and may be empty (the per-core panel body stays blank); procs feeds the
+// process table and may be nil (the tab gracefully omits the table pane);
 // meta fills the page-head subtitle.
-func newCPUView(overall series.Source, procs processSource, meta cpuMeta) *cpuView {
+func newCPUView(overall series.Source, cores []series.Source, procs processSource, meta cpuMeta) *cpuView {
 	chart := newLineChart(
 		fixedRange(0, percentMax),
 		valueFormat(formatPercent),
@@ -97,6 +100,13 @@ func newCPUView(overall series.Source, procs processSource, meta cpuMeta) *cpuVi
 	chart.addSeries(overall, emphasized())
 
 	v := &cpuView{meta: meta, chart: chart}
+	v.coreSeries = make([]*chartSeries, len(cores))
+	for i, core := range cores {
+		v.coreSeries[i] = chart.addSeries(core)
+	}
+	if len(cores) > 0 {
+		v.grid = newCoreGrid(cores)
+	}
 	if procs != nil {
 		v.table = newProcessTable(procs)
 	}
@@ -130,30 +140,60 @@ func (v *cpuView) pageHead() fyne.CanvasObject {
 	return row
 }
 
-// chartPanel wraps the utilisation chart in panel chrome with the
-// overall/per-core legend.
+// chartPanel wraps the utilisation chart in panel chrome. The header shows the
+// overall legend entry plus the per-core toggle — a tappable chip that shows
+// or hides every per-core line at once. Without per-core series the toggle
+// degrades to a plain legend entry (matching the tab's other nil fallbacks).
 func (v *cpuView) chartPanel() fyne.CanvasObject {
-	legend := newLegend(
-		legendEntry{label: labelLegendOverall, col: palette.Accent},
-		legendEntry{label: labelLegendPerCore, col: palette.Series[perCoreSwatchSeries]},
-	)
-	return newPanel(utilisationTitle(), legend, v.chart)
+	legend := newLegend(legendEntry{label: labelLegendOverall, col: palette.Accent})
+	perCore := v.perCoreControl()
+	trailing := container.New(
+		layout.NewCustomPaddedHBoxLayout(legendItemGap), legend, vCenter(perCore))
+	return newPanel(utilisationTitle(), trailing, v.chart)
 }
 
-// bottomRow pairs the per-core panel with the top-processes table panel. The
-// per-core body is reserved space for the bar grid (BZS253-46). When the
-// process source isn't available the per-core panel takes the full row instead
-// (nil-collector degradation, matching the chart tabs' placeholder fallback).
+// perCoreControl returns the header's per-core element: the visibility toggle
+// when per-core lines exist, otherwise the static legend entry.
+func (v *cpuView) perCoreControl() fyne.CanvasObject {
+	swatch := palette.Series[perCoreSwatchSeries]
+	if len(v.coreSeries) == 0 {
+		return newLegend(legendEntry{label: labelLegendPerCore, col: swatch})
+	}
+	return newToggleChip(labelLegendPerCore, swatch, true, v.setPerCoreVisible)
+}
+
+// setPerCoreVisible shows or hides every per-core line on the chart. The
+// overall line and the per-core bar grid stay live either way.
+func (v *cpuView) setPerCoreVisible(on bool) {
+	for _, s := range v.coreSeries {
+		s.setVisible(on)
+	}
+	v.chart.Refresh()
+}
+
+// bottomRow pairs the per-core panel with the top-processes table panel. When
+// the process source isn't available the per-core panel takes the full row
+// instead (nil-collector degradation, matching the chart tabs' placeholder
+// fallback); without per-core sources the panel body stays blank.
 func (v *cpuView) bottomRow() fyne.CanvasObject {
-	perCore := newPanel(labelPerCore, nil, layout.NewSpacer())
+	perCore := newPanel(labelPerCore, nil, v.perCoreBody())
 	if v.table == nil {
 		return perCore
 	}
-	procs := newPanel(labelTopCPUProcesses, newJumpLink(labelAllProcessesLink), v.table)
+	procs := newFlushPanel(labelTopCPUProcesses, newJumpLink(labelAllProcessesLink), v.table)
 	return newWeightedHBox(tabPad,
 		weightedPane{object: perCore, weight: perCorePaneWeight},
 		weightedPane{object: procs, weight: processPaneWeight},
 	)
+}
+
+// perCoreBody returns the per-core panel's content: the bar grid, or a spacer
+// while no per-core sources are wired.
+func (v *cpuView) perCoreBody() fyne.CanvasObject {
+	if v.grid == nil {
+		return layout.NewSpacer()
+	}
+	return v.grid
 }
 
 // utilisationTitle composes "Utilisation — last 1 min" from the actual history
@@ -163,10 +203,13 @@ func utilisationTitle() string {
 	return labelUtilisation + " — last " + formatSpan(span)
 }
 
-// refresh redraws both live panes. It touches the canvas, so callers on a
+// refresh redraws the live panes. It touches the canvas, so callers on a
 // background poller must marshal it onto the UI goroutine (fyne.Do).
 func (v *cpuView) refresh() {
 	v.chart.Refresh()
+	if v.grid != nil {
+		v.grid.Refresh()
+	}
 	if v.table != nil {
 		v.table.Refresh()
 	}
