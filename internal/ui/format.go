@@ -81,6 +81,46 @@ func formatCompact(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
+// percentMax is the top of the percentage domain shared by the CPU charts'
+// fixed Y axis and the process bars' fill fraction.
+const percentMax = 100
+
+// Byte-quantity formatting for formatBytesShort.
+const (
+	bytesPerStep = 1024 // binary unit step between suffixes
+	// Below this a scaled value keeps one decimal ("1.8G"); at or above it the
+	// decimal is dropped ("612M") — the wireframe table's compact style.
+	byteDecimalLimit = 10
+)
+
+// byteSuffixes are the unit suffixes for formatBytesShort, in ascending
+// bytesPerStep powers.
+var byteSuffixes = []string{"B", "K", "M", "G", "T", "P"}
+
+// formatBytesShort renders a byte count in the data table's compact style:
+// "88M", "612M", "1.8G".
+func formatBytesShort(b uint64) string {
+	v := float64(b)
+	step := 0
+	for v >= bytesPerStep && step < len(byteSuffixes)-1 {
+		v /= bytesPerStep
+		step++
+	}
+	if step > 0 && v < byteDecimalLimit {
+		return strconv.FormatFloat(v, 'f', 1, 64) + byteSuffixes[step]
+	}
+	return strconv.FormatFloat(v, 'f', 0, 64) + byteSuffixes[step]
+}
+
+// formatSpan renders a history window for panel titles: "45 s" under a minute,
+// otherwise "1 min".
+func formatSpan(d time.Duration) string {
+	if d < time.Minute {
+		return strconv.Itoa(int(d.Round(time.Second)/time.Second)) + " s"
+	}
+	return strconv.Itoa(int(d.Round(time.Minute)/time.Minute)) + " min"
+}
+
 // formatAge renders an elapsed time for the X axis: "now" at zero, "−Ns" under
 // a minute, otherwise "−Mm".
 func formatAge(d time.Duration) string {
