@@ -165,7 +165,6 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 
 	list := container.New(layout.NewCustomPaddedVBoxLayout(navItemGap))
 	for i, d := range tabs {
-		i := i // capture per iteration
 		// Stack the tab's content panes. For a single pane this renders
 		// identically to placing it directly; multi-pane tab layouts are a
 		// follow-up (see refactor plan §13).
