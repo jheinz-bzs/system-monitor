@@ -100,7 +100,13 @@ func topNByCPU(procs []monitor.ProcessInfo, n int) []processRow {
 	}
 	rows := make([]processRow, len(sorted))
 	for i, p := range sorted {
-		rows[i] = processRow{pid: PID(p.PID), name: p.Name, cpu: p.CPUPercent}
+		rows[i] = processRow{
+			pid:  PID(p.PID),
+			name: p.Name,
+			user: p.Username,
+			cpu:  p.CPUPercent,
+			mem:  p.MemoryBytes,
+		}
 	}
 	return rows
 }
