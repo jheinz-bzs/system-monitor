@@ -56,6 +56,7 @@ func Run() {
 	var collectors []monitor.Collector
 	if cpu != nil {
 		src.charts[tabCPU] = series.SourceFunc(cpu.Overall)
+		src.cpuCores = coreSources(cpu)
 		collectors = append(collectors, cpu)
 	}
 	if procs != nil {
@@ -91,6 +92,17 @@ func Run() {
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()
 	w.ShowAndRun()
+}
+
+// coreSources adapts each logical core's usage history into a series.Source,
+// in core order. Lives in app.go — the composition root — because that is the
+// only place that knows the CPUCollector concrete type.
+func coreSources(cpu *monitor.CPUCollector) []series.Source {
+	out := make([]series.Source, cpu.CoreCount())
+	for i := range out {
+		out[i] = series.SourceFunc(func() []float64 { return cpu.Core(i) })
+	}
+	return out
 }
 
 // topNByCPU adapts monitor.ProcessInfo to the UI's processRow type.
