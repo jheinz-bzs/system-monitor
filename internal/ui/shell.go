@@ -114,8 +114,8 @@ var tabRegistry = map[tabID]tabBuilder{
 func newTabs(src buildSources) ([]tabDef, func()) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
-		{id: tabCPU, name: "CPU", icon: icon.CPU},
-		{id: tabMemory, name: "Memory", icon: icon.Memory},
+		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
+		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
 		{id: tabDisk, name: "Disk", icon: icon.Disk},
 		{id: tabNetwork, name: "Network", icon: icon.Network},
 		{id: tabProcesses, name: "Processes", icon: icon.Processes},

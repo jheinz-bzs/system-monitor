@@ -19,7 +19,6 @@ package ui
 import (
 	"fmt"
 	"strconv"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -92,7 +91,7 @@ func newCPUView(overall series.Source, procs processSource, meta cpuMeta) *cpuVi
 		fixedRange(0, percentMax),
 		valueFormat(formatPercent),
 		window(metrics.HistoryCapacity),
-		timeAxis(metrics.HistoryCapacity*pollInterval),
+		timeAxis(historySpan()),
 	)
 	chart.addSeries(overall, emphasized())
 
@@ -137,7 +136,7 @@ func (v *cpuView) chartPanel() fyne.CanvasObject {
 		legendEntry{label: labelLegendOverall, col: palette.Accent},
 		legendEntry{label: labelLegendPerCore, col: palette.Series[perCoreSwatchSeries]},
 	)
-	return newPanel(utilisationTitle(), legend, v.chart)
+	return newPanel(historyTitle(labelUtilisation), legend, v.chart)
 }
 
 // bottomRow pairs the per-core panel with the top-processes table panel. The
@@ -155,13 +154,6 @@ func (v *cpuView) bottomRow() fyne.CanvasObject {
 		weightedPane{object: perCore, weight: perCorePaneWeight},
 		weightedPane{object: procs, weight: processPaneWeight},
 	)
-}
-
-// utilisationTitle composes "Utilisation — last 1 min" from the actual history
-// window so the panel header stays truthful if the buffer capacity changes.
-func utilisationTitle() string {
-	span := time.Duration(metrics.HistoryCapacity) * pollInterval
-	return labelUtilisation + " — last " + formatSpan(span)
 }
 
 // refresh redraws both live panes. It touches the canvas, so callers on a
