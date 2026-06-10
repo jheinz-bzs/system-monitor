@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"sync"
 	"syscall"
 
+	"github.com/shirou/gopsutil/v4/cpu"
 	gnet "github.com/shirou/gopsutil/v4/net"
 	"github.com/shirou/gopsutil/v4/process"
 )
@@ -82,34 +84,82 @@ func withConnSampler(s connSampler) processOption {
 	return func(c *ProcessCollector) { c.sampleConns = s }
 }
 
-// defaultProcessSampler enumerates processes via gopsutil. Failure to enumerate
-// the process table is returned as an error; per-process field reads that fail
-// (typically permission-restricted) fall back to the zero/empty value so the
-// process is still included in the snapshot.
-func defaultProcessSampler(ctx context.Context) ([]ProcessInfo, error) {
-	procs, err := process.ProcessesWithContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing processes: %w", err)
-	}
+// newDefaultProcessSampler builds the gopsutil-backed sampler. It is stateful:
+// per-PID process handles persist between calls because gopsutil computes
+// CPUPercent as the delta since that handle's previous reading — a fresh handle
+// every poll would instead average over the process's entire lifetime, which
+// overstates busy processes and never tracks live changes. Handles for exited
+// processes are dropped each call so the map cannot grow unboundedly.
+func newDefaultProcessSampler() processSampler {
+	handles := make(map[int32]*process.Process)
+	// gopsutil reports per-process CPU relative to ONE core (a process
+	// saturating four cores reads 400%), while the CPU charts plot a
+	// machine-wide 0..100. Dividing by the logical core count puts process
+	// rows on the same scale as the charts. Resolved lazily so the first call
+	// supplies the context.
+	var cores float64
 
-	out := make([]ProcessInfo, 0, len(procs))
-	for _, p := range procs {
-		info := ProcessInfo{PID: p.Pid}
-		if name, err := p.NameWithContext(ctx); err == nil {
-			info.Name = name
+	return func(ctx context.Context) ([]ProcessInfo, error) {
+		if cores == 0 {
+			cores = float64(logicalCoreCount(ctx))
 		}
-		if cpu, err := p.CPUPercentWithContext(ctx); err == nil {
-			info.CPUPercent = cpu
+		procs, err := process.ProcessesWithContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing processes: %w", err)
 		}
-		if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
-			info.MemoryBytes = mem.RSS
+
+		alive := make(map[int32]struct{}, len(procs))
+		out := make([]ProcessInfo, 0, len(procs))
+		for _, p := range procs {
+			alive[p.Pid] = struct{}{}
+			h, ok := handles[p.Pid]
+			if !ok {
+				h = p
+				handles[p.Pid] = h
+			}
+			out = append(out, readProcess(ctx, h, cores))
 		}
-		if user, err := p.UsernameWithContext(ctx); err == nil {
-			info.Username = user
+		for pid := range handles {
+			if _, ok := alive[pid]; !ok {
+				delete(handles, pid)
+			}
 		}
-		out = append(out, info)
+		return out, nil
 	}
-	return out, nil
+}
+
+// logicalCoreCount returns the machine's logical core count from the same
+// gopsutil authority CPUInfo reports, so the table's normalized percentages
+// stay consistent with the advertised core count. It falls back to
+// runtime.NumCPU (which can differ under CPU affinity limits) only when
+// gopsutil cannot read the count.
+func logicalCoreCount(ctx context.Context) int {
+	if n, err := cpu.CountsWithContext(ctx, true); err == nil && n > 0 {
+		return n
+	}
+	return runtime.NumCPU()
+}
+
+// readProcess snapshots one process through its persistent handle. PID is
+// always populated; per-process field reads that fail (typically
+// permission-restricted) fall back to the zero/empty value so the process is
+// still included in the snapshot. cores normalizes CPUPercent's per-core scale
+// to machine-wide 0..100.
+func readProcess(ctx context.Context, p *process.Process, cores float64) ProcessInfo {
+	info := ProcessInfo{PID: p.Pid}
+	if name, err := p.NameWithContext(ctx); err == nil {
+		info.Name = name
+	}
+	if cpu, err := p.CPUPercentWithContext(ctx); err == nil {
+		info.CPUPercent = cpu / cores
+	}
+	if mem, err := p.MemoryInfoWithContext(ctx); err == nil && mem != nil {
+		info.MemoryBytes = mem.RSS
+	}
+	if user, err := p.UsernameWithContext(ctx); err == nil {
+		info.Username = user
+	}
+	return info
 }
 
 // defaultConnSampler enumerates all TCP/UDP connections via gopsutil. Failure to
@@ -210,7 +260,7 @@ type ProcessCollector struct {
 // error when that first snapshot fails.
 func NewProcessCollector(ctx context.Context, opts ...processOption) (*ProcessCollector, error) {
 	c := &ProcessCollector{
-		sampleProcs: defaultProcessSampler,
+		sampleProcs: newDefaultProcessSampler(),
 		sampleConns: defaultConnSampler,
 	}
 	for _, opt := range opts {
