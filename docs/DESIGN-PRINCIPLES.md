@@ -45,7 +45,8 @@ them in a browser) or the CLAUDE.md quick reference — don't improvise:
   cards/panels/buttons, 2–3px on bars/pills, 50% on status dots; fixed chrome
   heights (title 38, tab 40, panel header 34, status 26, row ~29). Spacing steps
   derive from the 4px base as a t-shirt scale (sm/md/lg…); component dimensions
-  off the grid keep their own values (see CODING-STANDARDS).
+  off the grid keep their own values (see docs/conventions/no-magic-numbers.md
+  and docs/conventions/ui-conventions.md).
 - **Icons:** Lucide line glyphs — stroke-drawn (`stroke="currentColor"`,
   `fill="none"`) so they recolor per state via `colorizeStroke` rather than a
   fill-only colored resource. Source new icons (incl. the title-bar diamond logo)

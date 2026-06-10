@@ -128,6 +128,34 @@ A `dict.Field` read makes the origin obvious cross-file without import-path nois
 
 ---
 
+## ADR-007: Source seam, linechart split, and tab registry (§6 phase 1)
+
+**Date:** 2026-06-09
+**Status:** Active
+**Area:** Architecture
+
+### Context
+
+Three pressure points identified in CODE-FLOWMAP.md §6 were addressed together because they form a coherent dependency chain: extracting the `Source` seam enables the tab registry; splitting `linechart.go` reduces SRP debt; extracting tokens separates the design system from the Fyne binding layer.
+
+### Decision
+
+**Three mechanical refactors were applied as §6 phase 1: (1) `Source` interface + adapters extracted to `internal/series`; (2) `linechart.go` split into `format.go` (chart math) and `raster.go` (vector geometry); (3) design-system tokens extracted from `theme.go` into `tokens.go`; (4) `liveSources` converted from a struct to `map[tabID]series.Source` and the `newTabs` switch replaced with a `tabRegistry` lookup map.**
+
+### Rationale
+
+**(1) `internal/series` (DIP):** `Source` lived inside `internal/ui/linechart.go`, forcing `ui` to import `internal/monitor` concretely in `app.go` and hand-adapt each collector. Moving the interface to a neutral package lets both sides depend only on the seam. The composition root (`app.go`) retains the monitor import legitimately for collector construction; the cross-layer adaptation concern is gone.
+
+**(2) `linechart.go` split (SRP):** The 722-line file had four unrelated reasons to change. `format.go` (pure math/string, no Fyne dependency) and `raster.go` (vector geometry, independently testable) are now separate files. The widget API + renderer remain in `linechart.go`. No logic was changed; this was a pure grouping move within `package ui`.
+
+**(3) `tokens.go` extraction (SRP):** `theme.go` held both the Fyne theme implementation (`monitorTheme`, `themeColors`, `themeSizes`) and the design-system token dictionaries (`palette`, `sizeName`, `colorNameTextSecondary`, `rgb`). Two distinct reasons to change — a color update vs. a Fyne API change — now live in separate files.
+
+**(4) Tab registry (OCP):** The `newTabs` switch required editing for every new live tab (alongside `liveSources` and `app.go`). `liveSources` is now `map[tabID]series.Source` and `tabRegistry` is a `map[tabID]tabBuilder`. Adding a new live tab = one registry entry in `tabRegistry` + one map assignment in `app.go`. `newTabs` is not edited.
+
+**Remaining §6 work:** moving chart files to an `internal/ui/chart/` sub-package (requires tokens in a neutral sub-package to avoid a circular import) is deferred as §6 phase 2.
+
+---
+
 ## ADR-006: Typed tab IDs with self-describing tab definitions
 
 **Date:** 2026-06-03

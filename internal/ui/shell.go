@@ -23,6 +23,8 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 const (
@@ -64,12 +66,45 @@ func (t *tabDef) addChild(child fyne.CanvasObject) {
 	t.content = append(t.content, child)
 }
 
-// newTabs returns the eight tab definitions with their content built fresh.
-// Identity (id/name/icon) is declared first, then each tab's content is
-// populated by switching on id — the seam where real per-tab content gets
-// wired in (see refactor plan §13). Returning fresh defs (rather than mutating
-// a shared global) keeps repeated buildContent calls from double-appending.
-func newTabs() []tabDef {
+// liveSources carries the metric Sources that live (poller-fed) tab content is
+// built from. A nil entry means that metric isn't wired yet, so the tab falls
+// back to its placeholder. Keyed by tabID so new tabs add a map entry in
+// app.go without editing this file or newTabs.
+type liveSources map[tabID]series.Source
+
+// tabContent is the built content for one tab: the object to display and an
+// optional refresh callback (nil for static tabs that never update).
+type tabContent struct {
+	object  fyne.CanvasObject
+	refresh func()
+}
+
+// tabBuilder constructs a tab's content from the available live sources.
+type tabBuilder func(src liveSources) tabContent
+
+// tabRegistry maps tab IDs to their builder functions. To add a new live tab,
+// register its builder here — newTabs is never edited for new metric areas.
+var tabRegistry = map[tabID]tabBuilder{
+	tabOverview: func(_ liveSources) tabContent {
+		return tabContent{object: newOverview()}
+	},
+	tabCPU: func(src liveSources) tabContent {
+		s := src[tabCPU]
+		if s == nil {
+			return tabContent{object: newPlaceholder("CPU")}
+		}
+		v := newCPUView(s)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
+}
+
+// newTabs returns the eight tab definitions with their content built fresh, and
+// a refresh closure that redraws every live pane (see buildContent). Identity
+// (id/name/icon) is declared first; content is built via tabRegistry so new
+// metric areas are additive — only a registry entry is required, not an edit
+// here. Returning fresh defs keeps repeated buildContent calls from
+// double-appending to a shared slice.
+func newTabs(src liveSources) ([]tabDef, func()) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: "CPU", icon: icon.CPU},
@@ -80,22 +115,34 @@ func newTabs() []tabDef {
 		{id: tabPorts, name: "Ports", icon: icon.Ports},
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
 	}
+	var refreshers []func()
 	for i := range tabs {
 		t := &tabs[i]
-		switch t.id {
-		case tabOverview:
-			t.addChild(newOverview())
-		default:
-			t.addChild(newPlaceholder(t.name))
+		var content tabContent
+		if builder, ok := tabRegistry[t.id]; ok {
+			content = builder(src)
+		} else {
+			content = tabContent{object: newPlaceholder(t.name)}
+		}
+		t.addChild(content.object)
+		if content.refresh != nil {
+			refreshers = append(refreshers, content.refresh)
 		}
 	}
-	return tabs
+	refresh := func() {
+		for _, r := range refreshers {
+			r()
+		}
+	}
+	return tabs, refresh
 }
 
-// buildContent assembles the full window content and wires nav selection to
-// content switching.
-func buildContent() fyne.CanvasObject {
-	tabs := newTabs()
+// buildContent assembles the full window content from the given live Sources
+// and wires nav selection to content switching. It returns the content plus a
+// refresh closure that redraws every live pane; the caller drives it on the UI
+// goroutine each poll tick (see startUIRefresh).
+func buildContent(src liveSources) (fyne.CanvasObject, func()) {
+	tabs, refresh := newTabs(src)
 	n := len(tabs)
 	panes := make([]fyne.CanvasObject, n)
 	items := make([]*navItem, n)
@@ -124,7 +171,7 @@ func buildContent() fyne.CanvasObject {
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
 	statusRegion := vStackTight(hLine(), newStatusBar())
-	return newTightBorder(title, statusRegion, nil, nil, body)
+	return newTightBorder(title, statusRegion, nil, nil, body), refresh
 }
 
 // newSidebar wraps the top-aligned nav list in a surface-colored, fixed-width
@@ -159,7 +206,7 @@ func newTitleBar() fyne.CanvasObject {
 	logoImg.FillMode = canvas.ImageFillContain
 	logo := container.NewGridWrap(fyne.NewSize(titleLogoSize, titleLogoSize), logoImg)
 
-	wordmark := newColumnLabel("System Monitor") // Mono 11 UPPERCASE, text-2
+	wordmark := newColumnLabel(appName) // Mono 11 UPPERCASE, text-2
 
 	brand := container.New(layout.NewCustomPaddedHBoxLayout(titleLogoGap), logo, wordmark)
 	return newBar(titleBarHeight, brand)

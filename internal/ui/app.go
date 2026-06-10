@@ -2,23 +2,71 @@
 //
 // The window hosts a persistent shell — a title bar, a vertical tab navigation,
 // and a status bar — with one tab per metric area (Overview, CPU, Memory, Disk,
-// Network, Processes, Ports, Connections). At this scaffolding stage the tab
-// contents are placeholders; real panes are added in later work.
+// Network, Processes, Ports, Connections). Tabs go live as their collectors are
+// wired in; the CPU tab is the first, fed by a poller-driven CPUCollector.
 package ui
 
-import "fyne.io/fyne/v2/app"
+import (
+	"context"
+	"time"
 
-// Run creates the application, shows the main window, and blocks until it is
-// closed.
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+
+	"github.com/josephheinz/system-monitor/internal/monitor"
+	"github.com/josephheinz/system-monitor/internal/series"
+)
+
+// pollInterval is the cadence at which collectors sample and the UI redraws:
+// 1s, matching the ring buffers' 1-second resolution (metrics.HistoryCapacity).
+const pollInterval = time.Second
+
+const appName = "System Monitor"
+
+// Run creates the application, starts metric collection, shows the main window,
+// and blocks until it is closed.
 func Run() {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
 	a.Settings().SetTheme(newTheme())
-	w := a.NewWindow("System Monitor")
+	w := a.NewWindow(appName)
+
+	// One context governs collection and the UI refresh loop; cancelling it on
+	// window close stops both cleanly.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Build the live collectors and adapt their histories into chart Sources.
+	// A collector that fails to start is nil; the matching tab then falls back
+	// to its placeholder rather than crashing.
+	cpu := monitor.NewCPUCollector(ctx)
+	src := make(liveSources)
+	var collectors []monitor.Collector
+	if cpu != nil {
+		src[tabCPU] = series.SourceFunc(cpu.Overall)
+		collectors = append(collectors, cpu)
+	}
+
+	content, refresh := buildContent(src)
 
 	// The shell draws its own chrome flush to the window edges, so suppress
 	// Fyne's default padding around window content.
 	w.SetPadded(false)
-	w.SetContent(buildContent())
+	w.SetContent(content)
+
+	// Drive the redraw from the poller so the UI updates exactly once per poll,
+	// right after fresh data lands. A separate UI ticker would run on its own
+	// clock and drift against the poll clock, making the visible update cadence
+	// beat between the two (sometimes <1s apart, sometimes >1s). The poller runs
+	// the callback off the UI goroutine, so marshal the canvas work back with
+	// fyne.Do (RingBuffer reads are concurrency-safe; touching the canvas is not).
+	poller := monitor.NewPoller(pollInterval, collectors...)
+	poller.OnTick(func() { fyne.Do(refresh) })
+	poller.Start(ctx)
+
+	w.SetCloseIntercept(func() {
+		cancel()
+		poller.Stop()
+		w.Close()
+	})
 
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()
