@@ -99,9 +99,16 @@ var tabRegistry = map[tabID]tabBuilder{
 	tabCPU: func(src buildSources) tabContent {
 		s := src.charts[tabCPU]
 		if s == nil {
-			return tabContent{object: newPlaceholder("CPU")}
+			return tabContent{object: newPlaceholder(labelCPUPageTitle)}
 		}
 		v := newCPUView(s, src.procs, src.cpuInfo)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
+	tabMemory: func(src buildSources) tabContent {
+		if !src.mem.wired() {
+			return tabContent{object: newPlaceholder(labelMemoryPageTitle)}
+		}
+		v := newMemoryView(src.mem)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 }
