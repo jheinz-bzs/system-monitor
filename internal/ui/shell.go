@@ -101,7 +101,7 @@ var tabRegistry = map[tabID]tabBuilder{
 		if s == nil {
 			return tabContent{object: newPlaceholder(labelCPUPageTitle)}
 		}
-		v := newCPUView(s, src.procs, src.cpuInfo)
+		v := newCPUView(s, src.cpuCores, src.procs, src.cpuInfo)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabMemory: func(src buildSources) tabContent {
