@@ -74,8 +74,9 @@ type liveSources map[tabID]series.Source
 // buildSources bundles all live data sources the tab builders need. Extend
 // this struct (not the tabBuilder signature) when new source types are added.
 type buildSources struct {
-	charts liveSources   // time-series chart sources, keyed by tabID
-	procs  processSource // process snapshot source; nil when not wired
+	charts  liveSources   // time-series chart sources, keyed by tabID
+	procs   processSource // process snapshot source; nil when not wired
+	cpuInfo cpuMeta       // static processor description; zero when unknown
 }
 
 // tabContent is the built content for one tab: the object to display and an
@@ -99,7 +100,7 @@ var tabRegistry = map[tabID]tabBuilder{
 		if s == nil {
 			return tabContent{object: newPlaceholder("CPU")}
 		}
-		v := newCPUView(s, src.procs)
+		v := newCPUView(s, src.procs, src.cpuInfo)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 }
