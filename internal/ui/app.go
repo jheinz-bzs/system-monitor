@@ -44,8 +44,15 @@ func Run() {
 	if err != nil {
 		log.Printf("process collector: %v", err)
 	}
+	cpuInfo, err := monitor.CPUInfo(ctx)
+	if err != nil {
+		log.Printf("cpu info: %v", err) // subtitle is omitted; the tab still works
+	}
 
-	src := buildSources{charts: make(liveSources)}
+	src := buildSources{
+		charts:  make(liveSources),
+		cpuInfo: cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
+	}
 	var collectors []monitor.Collector
 	if cpu != nil {
 		src.charts[tabCPU] = series.SourceFunc(cpu.Overall)
