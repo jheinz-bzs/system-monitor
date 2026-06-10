@@ -74,10 +74,11 @@ type liveSources map[tabID]series.Source
 // buildSources bundles all live data sources the tab builders need. Extend
 // this struct (not the tabBuilder signature) when new source types are added.
 type buildSources struct {
-	charts  liveSources   // time-series chart sources, keyed by tabID
-	procs   processSource // process snapshot source; nil when not wired
-	cpuInfo cpuMeta       // static processor description; zero when unknown
-	mem     memSources    // memory band sources + total; zero when not wired
+	charts   liveSources     // time-series chart sources, keyed by tabID
+	cpuCores []series.Source // per-core CPU sources, core order; empty when not wired
+	procs    processSource   // process snapshot source; nil when not wired
+	cpuInfo  cpuMeta         // static processor description; zero when unknown
+	mem      memSources      // memory band sources + total; zero when not wired
 }
 
 // tabContent is the built content for one tab: the object to display and an
