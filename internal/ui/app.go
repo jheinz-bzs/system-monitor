@@ -49,6 +49,7 @@ func Run() {
 	// A collector that fails to start is nil; its tab falls back to the
 	// placeholder rather than crashing.
 	cpu := monitor.NewCPUCollector(ctx)
+	memory := monitor.NewMemoryCollector(ctx)
 	procs, err := monitor.NewProcessCollector(ctx)
 	if err != nil {
 		log.Printf("process collector: %v", err)
@@ -66,6 +67,15 @@ func Run() {
 	if cpu != nil {
 		src.charts[tabCPU] = series.SourceFunc(cpu.Overall)
 		collectors = append(collectors, cpu)
+	}
+	if memory != nil {
+		src.mem = memSources{
+			used:   series.SourceOf(memory.Used),
+			cached: series.SourceOf(memory.Cached),
+			free:   series.SourceOf(memory.Free),
+			total:  memory.Total(),
+		}
+		collectors = append(collectors, memory)
 	}
 	if procs != nil {
 		src.procs = processSourceFunc(func(n int) []processRow {
