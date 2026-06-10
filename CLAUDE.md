@@ -155,12 +155,43 @@ Sidebar: expanded 178px, compact 54px.
 4. **Respect tab pane structure** — don't add or remove panes from a tab without a deliberate reason. The number of panes per tab was chosen to fit the data.
 5. **Chart types are not interchangeable** — use the chart type specified per tab (see table above and `design-system-06-chart-language.html` for chart language conventions).
 
+## Project Standards (conventions)
+
+Ten engineering standards govern code changes in `internal/*` and `cmd/*`.
+`docs/conventions/` is their single home (it absorbed the former
+`docs/CODING-STANDARDS.md`). **Consult the relevant standard before writing or
+changing code in its area** — do not paste these files in wholesale; open the
+one you need on demand. Index: `docs/conventions/README.md`.
+
+| Standard | Quick rule (`.claude/rules/`) | Full doc (`docs/conventions/`) |
+|----------|-------------------------------|--------------------------------|
+| No string literals | `.claude/rules/no-string-literals.md` | `docs/conventions/no-string-literals.md` |
+| No magic numbers | `.claude/rules/no-magic-numbers.md` | `docs/conventions/no-magic-numbers.md` |
+| SOLID & modularity | `.claude/rules/solid-modularity.md` | `docs/conventions/solid-modularity.md` |
+| DRY | `.claude/rules/dry.md` | `docs/conventions/dry.md` |
+| Dependency-inverted layered seams (codeflow) | `.claude/rules/dependency-inverted-layered-seams.md` | `docs/conventions/dependency-inverted-layered-seams.md` |
+| Naming | `.claude/rules/naming.md` | `docs/conventions/naming.md` |
+| Function design | `.claude/rules/function-design.md` | `docs/conventions/function-design.md` |
+| Idiomatic Go | `.claude/rules/idiomatic-go.md` | `docs/conventions/idiomatic-go.md` |
+| Type safety | `.claude/rules/type-safety.md` | `docs/conventions/type-safety.md` |
+| UI & architecture conventions | `.claude/rules/ui-conventions.md` | `docs/conventions/ui-conventions.md` |
+
+- The **rules** files are the terse MUST/MUST NOT constraints; the **docs** carry
+  rationale, project examples, and the exception lists. Read a doc when you need
+  detail, then apply.
+- These are Go standards — Go idiom wins ties; honor each doc's "Allowed / not a
+  violation" section.
+- The codeflow standard is the pattern from `docs/CODE-FLOWMAP.md` §6 (the
+  proposed diagram) — the target end-state, not today's structure.
+- After non-trivial code changes, audit with the **`standards-reviewer`** agent
+  (`.claude/agents/standards-reviewer.md`).
+
 <!-- bizstream-bcs:start -->
 ## BizStream BCS docs
 
 For project context, read these:
 - `docs/TECH-STACK.md`
-- `docs/CODING-STANDARDS.md`
+- `docs/conventions/` — engineering standards (replaced `docs/CODING-STANDARDS.md`; see the Project Standards table above)
 - `docs/DESIGN-PRINCIPLES.md`
 - `docs/TESTING-CONSIDERATIONS.md`
 - `docs/ADR.md`

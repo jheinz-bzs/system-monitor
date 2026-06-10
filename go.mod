@@ -5,6 +5,7 @@ go 1.26.3
 require (
 	fyne.io/fyne/v2 v2.7.4
 	github.com/shirou/gopsutil/v4 v4.26.5
+	golang.org/x/image v0.24.0
 )
 
 require (
@@ -44,7 +45,6 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.22.0 // indirect

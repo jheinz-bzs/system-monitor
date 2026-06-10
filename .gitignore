@@ -31,3 +31,6 @@ fyne-cross/
 *.swp
 .DS_Store
 Thumbs.db
+
+
+/docs/pitch
