@@ -52,6 +52,12 @@ type colorPalette struct {
 	// emphasized headline series, so secondary coloring starts at c2.
 	Series []color.NRGBA
 
+	// SeriesMuted is the quiet slate hue for a "remainder" series — the memory
+	// chart's free band — taken from the tab-03 wireframe's Free swatch
+	// (#3a4452). Muted on purpose: headroom shouldn't compete with the
+	// categorical hues that mark real usage.
+	SeriesMuted color.NRGBA
+
 	// Derived shades that don't have a dedicated design token.
 	DisabledButton color.Color // dimmed panel for disabled buttons
 	Pressed        color.Color // between surface-3 and border-strong
@@ -97,6 +103,8 @@ var palette = colorPalette{
 		{R: 0x6e, G: 0x93, B: 0xfb, A: 0xff}, // c8
 	},
 
+	SeriesMuted: rgb(0x3a, 0x44, 0x52),
+
 	DisabledButton: rgb(0x14, 0x18, 0x1e),
 	Pressed:        rgb(0x2a, 0x34, 0x42),
 	Shadow:         color.NRGBA{R: 0, G: 0, B: 0, A: 0x66},
@@ -134,4 +142,12 @@ const colorNameTextSecondary fyne.ThemeColorName = "monitor.textSecondary" // te
 // rgb builds an opaque color from 8-bit RGB components.
 func rgb(r, g, b uint8) color.NRGBA {
 	return color.NRGBA{R: r, G: g, B: b, A: 0xff}
+}
+
+// withAlpha returns c with its alpha channel replaced by a — how translucent
+// chart fills are derived from their series' full-hue stroke.
+func withAlpha(c color.Color, a uint8) color.NRGBA {
+	n := color.NRGBAModel.Convert(c).(color.NRGBA)
+	n.A = a
+	return n
 }
