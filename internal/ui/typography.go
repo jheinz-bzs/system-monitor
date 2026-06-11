@@ -79,9 +79,11 @@ func newPageSubtitle(text string) *canvas.Text {
 
 // newTableHeaderLabel returns a data-table column header — the column-label
 // role recolored to the muted text-3 the table wireframes use for header rows
-// (panel titles keep text-2 via newColumnLabel).
+// (panel titles keep text-2 via newColumnLabel). The text is rendered as
+// given: dataTable's layoutHeader owns the UPPERCASE transform, re-applying
+// it on every arrange so header rewrites (sort markers) stay uppercase too.
 func newTableHeaderLabel(text string) *canvas.Text {
-	return styledText(strings.ToUpper(text), font.MonoMedium, theme.SizeNameCaptionText, palette.Text3)
+	return styledText(text, font.MonoMedium, theme.SizeNameCaptionText, palette.Text3)
 }
 
 // newMeta returns muted meta / axis text — Plex Mono Regular (400), 9px, text-3.
