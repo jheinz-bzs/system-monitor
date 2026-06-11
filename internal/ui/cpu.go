@@ -181,7 +181,8 @@ func (v *cpuView) bottomRow() fyne.CanvasObject {
 		return perCore
 	}
 	procs := newFlushPanel(labelTopCPUProcesses, newJumpLink(labelAllProcessesLink), v.table)
-	return newWeightedHBox(tabPad,
+	return newWeightedHBox(
+		tabPad,
 		weightedPane{object: perCore, weight: perCorePaneWeight},
 		weightedPane{object: procs, weight: processPaneWeight},
 	)
