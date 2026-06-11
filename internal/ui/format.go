@@ -112,6 +112,26 @@ func formatBytesShort(b uint64) string {
 	return strconv.FormatFloat(v, 'f', 0, 64) + byteSuffixes[step]
 }
 
+// formatBytesAxis renders a Y tick value as a compact byte label ("8.0G").
+// Ticks on a 0-based byte axis are never negative; clamp defensively so a
+// misuse can't wrap the uint64 conversion.
+func formatBytesAxis(v float64) string {
+	if v < 0 {
+		v = 0
+	}
+	return formatBytesShort(uint64(v))
+}
+
+// labelSpanSep joins a live panel's label to its history window in the
+// wireframes' em-dash title style ("Utilisation — last 1 min").
+const labelSpanSep = " — last "
+
+// historyTitle composes a live panel's header from its label and the actual
+// history window, so titles stay truthful if the buffer capacity changes.
+func historyTitle(label string) string {
+	return label + labelSpanSep + formatSpan(historySpan())
+}
+
 // formatSpan renders a history window for panel titles: "45 s" under a minute,
 // otherwise "1 min".
 func formatSpan(d time.Duration) string {

@@ -95,7 +95,7 @@ func newCPUView(overall series.Source, cores []series.Source, procs processSourc
 		fixedRange(0, percentMax),
 		valueFormat(formatPercent),
 		window(metrics.HistoryCapacity),
-		timeAxis(metrics.HistoryCapacity*pollInterval),
+		timeAxis(historySpan()),
 	)
 	chart.addSeries(overall, emphasized())
 
