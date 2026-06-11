@@ -162,6 +162,65 @@ func TestDeriveListeningPorts(t *testing.T) {
 	}
 }
 
+func TestCoarseStateFoldsOSVocabulary(t *testing.T) {
+	cases := []struct {
+		os   string
+		want ProcState
+	}{
+		{"running", StateRunning},
+		{"sleep", StateSleeping},
+		{"idle", StateSleeping},
+		{"wait", StateSleeping},
+		{"lock", StateSleeping},
+		{"blocked", StateSleeping},
+		{"stop", StateStopped},
+		{"zombie", StateStopped},
+		{"", ""},
+		{"something-new", ""},
+	}
+	for _, c := range cases {
+		if got := coarseState(c.os); got != c.want {
+			t.Errorf("coarseState(%q) = %q, want %q", c.os, got, c.want)
+		}
+	}
+}
+
+func TestTerminatePassesPIDToTerminator(t *testing.T) {
+	var got int32
+	rec := func(ctx context.Context, pid int32) error {
+		got = pid
+		return nil
+	}
+
+	c, err := NewProcessCollector(context.Background(),
+		withProcessSampler(okProcs()), withConnSampler(okConns()), withProcessTerminator(rec))
+	if err != nil {
+		t.Fatalf("NewProcessCollector: %v", err)
+	}
+
+	if err := c.Terminate(context.Background(), 1234); err != nil {
+		t.Fatalf("Terminate: %v", err)
+	}
+	if got != 1234 {
+		t.Errorf("terminator received PID %d, want 1234", got)
+	}
+}
+
+func TestTerminatePropagatesTerminatorError(t *testing.T) {
+	boom := errors.New("access denied")
+	failing := func(ctx context.Context, pid int32) error { return boom }
+
+	c, err := NewProcessCollector(context.Background(),
+		withProcessSampler(okProcs()), withConnSampler(okConns()), withProcessTerminator(failing))
+	if err != nil {
+		t.Fatalf("NewProcessCollector: %v", err)
+	}
+
+	if err := c.Terminate(context.Background(), 1); !errors.Is(err, boom) {
+		t.Errorf("Terminate error = %v, want %v", err, boom)
+	}
+}
+
 func TestProcessReadMethodsReturnIndependentCopies(t *testing.T) {
 	procs := &fakeProcSampler{readings: [][]ProcessInfo{{{PID: 1}}}}
 	conns := &fakeConnSampler{readings: [][]ConnectionInfo{{

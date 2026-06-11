@@ -198,7 +198,42 @@ func readProcess(ctx context.Context, p *process.Process, cores float64) Process
 	if user, err := p.UsernameWithContext(ctx); err == nil {
 		info.Username = user
 	}
+	info.State = readState(ctx, p, info.CPUPercent)
 	return info
+}
+
+// readState resolves a process's coarse state. gopsutil has no status support
+// on Windows (ErrNotImplementedError), so when the OS read yields nothing the
+// state derives from observed CPU activity instead: a process that used CPU
+// during the last sample is running, otherwise sleeping. Coarse, but truthful
+// to what was actually observed.
+func readState(ctx context.Context, p *process.Process, cpuPercent float64) ProcState {
+	if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
+		if s := coarseState(statuses[0]); s != "" {
+			return s
+		}
+	}
+	if cpuPercent > 0 {
+		return StateRunning
+	}
+	return StateSleeping
+}
+
+// coarseState folds gopsutil's OS status vocabulary into the three states the
+// Processes tab shows. Zombie lands in stopped — terminated-but-unreaped is
+// closest to "not running" of the visible buckets. Unknown strings report
+// empty so the caller can fall back to the activity heuristic.
+func coarseState(s string) ProcState {
+	switch s {
+	case process.Running:
+		return StateRunning
+	case process.Sleep, process.Idle, process.Wait, process.Lock, process.Blocked:
+		return StateSleeping
+	case process.Stop, process.Zombie:
+		return StateStopped
+	default:
+		return ""
+	}
 }
 
 // defaultConnSampler enumerates all TCP/UDP connections via gopsutil. Failure to
