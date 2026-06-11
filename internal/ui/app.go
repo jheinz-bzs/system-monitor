@@ -15,6 +15,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 
+	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/monitor"
 	"github.com/josephheinz/system-monitor/internal/series"
 )
@@ -22,6 +23,14 @@ import (
 // pollInterval is the cadence at which collectors sample and the UI redraws:
 // 1s, matching the ring buffers' 1-second resolution (metrics.HistoryCapacity).
 const pollInterval = time.Second
+
+// historySpan is the wall-clock window the metric ring buffers cover — the
+// span charts' time axes and "last N" panel titles describe. It derives from
+// the same pair of constants the buffers and poller use, so the axes stay
+// truthful if either changes.
+func historySpan() time.Duration {
+	return metrics.HistoryCapacity * pollInterval
+}
 
 const appName = "System Monitor"
 
@@ -40,6 +49,7 @@ func Run() {
 	// A collector that fails to start is nil; its tab falls back to the
 	// placeholder rather than crashing.
 	cpu := monitor.NewCPUCollector(ctx)
+	memory := monitor.NewMemoryCollector(ctx)
 	procs, err := monitor.NewProcessCollector(ctx)
 	if err != nil {
 		log.Printf("process collector: %v", err)
@@ -58,6 +68,15 @@ func Run() {
 		src.charts[tabCPU] = series.SourceFunc(cpu.Overall)
 		src.cpuCores = coreSources(cpu)
 		collectors = append(collectors, cpu)
+	}
+	if memory != nil {
+		src.mem = memSources{
+			used:   series.SourceOf(memory.Used),
+			cached: series.SourceOf(memory.Cached),
+			free:   series.SourceOf(memory.Free),
+			total:  memory.Total(),
+		}
+		collectors = append(collectors, memory)
 	}
 	if procs != nil {
 		src.procs = processSourceFunc(func(n int) []processRow {

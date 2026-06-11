@@ -9,9 +9,10 @@ package ui
 // type of the metric history:
 //
 //   - Decoupled from the type. A series is fed by a Source (Values() []float64).
-//     The generic helper sourceFrom adapts ANY ring buffer whose elements are a
-//     numeric kind — *ringbuffer.RingBuffer[float64] (CPU percent),
-//     *ringbuffer.RingBuffer[uint64] (memory / network bytes), etc. — by
+//     The generic helpers series.SourceFrom / series.SourceOf adapt ANY ring
+//     buffer or snapshot func whose elements are a numeric kind —
+//     *ringbuffer.RingBuffer[float64] (CPU percent), MemoryCollector.Used
+//     (memory / network bytes), etc. — by
 //     converting samples to float64 once, at the chart boundary. The chart core
 //     does all pixel math in float64. (float64 represents integers exactly up to
 //     2^53, far above any realistic byte count, so the conversion is lossless in
@@ -160,11 +161,12 @@ func seriesColor(c color.Color) seriesOption {
 type lineChart struct {
 	widget.BaseWidget
 
-	series []*chartSeries
-	yr     yRange
-	format func(float64) string
-	window int
-	span   time.Duration
+	series  []*chartSeries
+	yr      yRange
+	format  func(float64) string
+	window  int
+	span    time.Duration
+	stacked bool
 }
 
 // newLineChart returns a chart configured by opts. Default Y range is
@@ -234,10 +236,12 @@ type lineChartRenderer struct {
 	// rasterizer. A single coverage pass per series gives a smooth line of
 	// uniform opacity — stacking many translucent canvas.Line segments instead
 	// compounds alpha at every overlap and beads the line. lines holds the
-	// plot-local polylines to stroke on the next generation; plot is the box
-	// the raster fills (cached so the generator can scale DP → device pixels).
+	// plot-local polylines to stroke on the next generation; fills holds the
+	// band polygons drawn beneath them in stacked mode; plot is the box the
+	// raster fills (cached so the generator can scale DP → device pixels).
 	series *canvas.Raster
 	lines  []polyline
+	fills  []bandFill
 	plot   chartBox
 
 	size fyne.Size
@@ -270,12 +274,17 @@ func (r *lineChartRenderer) arrange() {
 	}
 
 	// Pull data first; the left gutter depends on the widest Y label, which
-	// depends on the resolved range.
+	// depends on the resolved range. In stacked mode the plotted values are the
+	// cumulative band boundaries, so the transform happens before the range is
+	// resolved.
 	data := make([][]float64, len(r.chart.series))
 	for i, s := range r.chart.series {
 		if s.visible {
 			data[i] = s.src.Values()
 		}
+	}
+	if r.chart.stacked {
+		data = stackSeries(data)
 	}
 	lo, hi := r.chart.resolveRange(data)
 
@@ -291,10 +300,14 @@ func (r *lineChartRenderer) arrange() {
 	r.layoutPlotFrame(plot)
 	r.layoutGrid(plot)
 
-	// Resolve the series into plot-local polylines, then (re)generate the
-	// raster that draws them.
+	// Resolve the series into plot-local polylines (plus band fills when
+	// stacked), then (re)generate the raster that draws them.
 	r.plot = plot
-	r.lines = r.buildLines(plot, lo, hi, data)
+	if r.chart.stacked {
+		r.lines, r.fills = r.buildStack(plot, lo, hi, data)
+	} else {
+		r.lines, r.fills = r.buildLines(plot, lo, hi, data), nil
+	}
 	r.series.Resize(fyne.NewSize(plot.width, plot.height))
 	r.series.Move(fyne.NewPos(plot.x, plot.y))
 	r.series.Refresh()
@@ -438,7 +451,8 @@ func (r *lineChartRenderer) seriesPoints(plot chartBox, lo, hi float64, vals []f
 // renderSeries is the raster generator: it strokes each resolved polyline into
 // a w×h image (device pixels). Scaling DP → pixels here keeps the lines crisp
 // at any output scale, and one anti-aliased fill per series gives a smooth line
-// of uniform opacity.
+// of uniform opacity. Band fills (stacked mode) go down first so every boundary
+// stroke stays crisp on top of its neighbor's translucent fill.
 func (r *lineChartRenderer) renderSeries(w, h int) image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	if w <= 0 || h <= 0 || r.plot.width <= 0 || r.plot.height <= 0 {
@@ -446,6 +460,14 @@ func (r *lineChartRenderer) renderSeries(w, h int) image.Image {
 	}
 	sx := float32(w) / r.plot.width
 	sy := float32(h) / r.plot.height
+	for _, f := range r.fills {
+		if len(f.pts) < 3 {
+			continue
+		}
+		ras := vector.NewRasterizer(w, h)
+		fillPolygon(ras, f.pts, sx, sy)
+		ras.Draw(img, img.Bounds(), image.NewUniform(f.col), image.Point{})
+	}
 	for _, ln := range r.lines {
 		if len(ln.pts) < 2 {
 			continue

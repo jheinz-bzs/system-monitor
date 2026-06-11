@@ -78,6 +78,7 @@ type buildSources struct {
 	cpuCores []series.Source // per-core CPU sources, core order; empty when not wired
 	procs    processSource   // process snapshot source; nil when not wired
 	cpuInfo  cpuMeta         // static processor description; zero when unknown
+	mem      memSources      // memory band sources + total; zero when not wired
 }
 
 // tabContent is the built content for one tab: the object to display and an
@@ -99,9 +100,16 @@ var tabRegistry = map[tabID]tabBuilder{
 	tabCPU: func(src buildSources) tabContent {
 		s := src.charts[tabCPU]
 		if s == nil {
-			return tabContent{object: newPlaceholder("CPU")}
+			return tabContent{object: newPlaceholder(labelCPUPageTitle)}
 		}
 		v := newCPUView(s, src.cpuCores, src.procs, src.cpuInfo)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
+	tabMemory: func(src buildSources) tabContent {
+		if !src.mem.wired() {
+			return tabContent{object: newPlaceholder(labelMemoryPageTitle)}
+		}
+		v := newMemoryView(src.mem)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 }
@@ -115,8 +123,8 @@ var tabRegistry = map[tabID]tabBuilder{
 func newTabs(src buildSources) ([]tabDef, func()) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
-		{id: tabCPU, name: "CPU", icon: icon.CPU},
-		{id: tabMemory, name: "Memory", icon: icon.Memory},
+		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
+		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
 		{id: tabDisk, name: "Disk", icon: icon.Disk},
 		{id: tabNetwork, name: "Network", icon: icon.Network},
 		{id: tabProcesses, name: "Processes", icon: icon.Processes},

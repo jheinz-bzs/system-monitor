@@ -34,8 +34,17 @@ func (f SourceFunc) Values() []float64 { return f() }
 // Type inference usually picks T up from the argument; pass it explicitly if a
 // call site is ambiguous, e.g. SourceFrom[uint64](rxBuf).
 func SourceFrom[T Numeric](buf interface{ Items() []T }) Source {
+	return SourceOf(buf.Items)
+}
+
+// SourceOf adapts a snapshot func returning numeric samples into a Source,
+// converting them to float64. It serves collectors that expose history through
+// methods rather than a bare ring buffer (e.g. MemoryCollector.Used). The func
+// is re-invoked on every Values() call so the chart always reflects the latest
+// window.
+func SourceOf[T Numeric](snap func() []T) Source {
 	return SourceFunc(func() []float64 {
-		in := buf.Items()
+		in := snap()
 		out := make([]float64, len(in))
 		for i, v := range in {
 			out[i] = float64(v)

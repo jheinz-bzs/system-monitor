@@ -40,6 +40,17 @@ func strokePolyline(ras *vector.Rasterizer, pts []fyne.Position, sx, sy, width f
 	}
 }
 
+// fillPolygon adds the closed polygon pts (widget DP) to the rasterizer,
+// scaled to device pixels — the fill counterpart of strokePolyline, used for
+// stacked-area bands.
+func fillPolygon(ras *vector.Rasterizer, pts []fyne.Position, sx, sy float32) {
+	p := make([][2]float32, len(pts))
+	for i, pt := range pts {
+		p[i] = [2]float32{pt.X * sx, pt.Y * sy}
+	}
+	addPoly(ras, p)
+}
+
 // addPoly adds a closed polygon, normalizing it to a consistent (CCW) winding
 // so overlapping sub-paths union under the non-zero rule instead of cancelling.
 func addPoly(ras *vector.Rasterizer, p [][2]float32) {
