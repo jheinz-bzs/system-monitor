@@ -24,6 +24,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -41,6 +42,11 @@ const (
 	tableBarWidth  = 66 // px; bar track width
 	tableBarHeight = 5  // px; bar track/fill height
 )
+
+// tableCellHPad insets cell content from its column edge — the wireframe
+// table's 12px th/td padding. With a flush table panel this is also what
+// separates the first/last columns from the panel border.
+const tableCellHPad = spaceLG // 12
 
 // TableSource is the data seam for dataTable. Snapshot returns the current
 // row set as pre-formatted cells — one inner slice per row, one tableCell per
@@ -204,9 +210,19 @@ func newCellPools(cols []tableColumn) ([]*canvas.Text, []*tableBar) {
 // newTableBar builds a pooled mini bar: surface-3 track, accent fill.
 func newTableBar() *tableBar {
 	return &tableBar{
-		track: canvas.NewRectangle(palette.Surface3),
-		fill:  canvas.NewRectangle(palette.Accent),
+		track: newBarRect(palette.Surface3),
+		fill:  newBarRect(palette.Accent),
 	}
+}
+
+// newBarRect builds a bar track/fill rectangle in the wireframes' bar chrome:
+// a flat color with rounded ends (the 2px chip radius every wireframe bar
+// carries). Shared by the table mini-bars and the CPU per-core grid so the
+// bar language stays uniform.
+func newBarRect(col color.Color) *canvas.Rectangle {
+	r := canvas.NewRectangle(col)
+	r.CornerRadius = theme.Size(theme.SizeNameInputRadius)
+	return r
 }
 
 // newTableDivider builds a 1px border-colored horizontal line.
@@ -283,12 +299,12 @@ func (r *dataTableRenderer) layoutHeader() {
 
 // alignedCellX is the single home of the column-alignment rule, shared by the
 // header labels and the data cells: trailing columns right-align against the
-// column edge, everything else leads, both inset by spaceSM.
+// column edge, everything else leads, both inset by tableCellHPad.
 func alignedCellX(colX float32, align fyne.TextAlign, colW, contentW float32) float32 {
 	if align == fyne.TextAlignTrailing {
-		return colX + colW - contentW - spaceSM
+		return colX + colW - contentW - tableCellHPad
 	}
-	return colX + spaceSM
+	return colX + tableCellHPad
 }
 
 func (r *dataTableRenderer) layoutRows() {
