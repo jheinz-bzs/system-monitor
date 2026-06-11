@@ -78,15 +78,21 @@ type buildSources struct {
 	cpuCores []series.Source  // per-core CPU sources, core order; empty when not wired
 	procs    processSource    // top-by-CPU process source; nil when not wired
 	memProcs memProcessSource // top-by-memory process source; nil when not wired
+	allProcs allProcessSource // full process list; nil when not wired
+	killProc processKiller    // process termination; nil when not wired
 	cpuInfo  cpuMeta          // static processor description; zero when unknown
 	mem      memSources       // memory band sources + total; zero when not wired
 }
 
-// tabContent is the built content for one tab: the object to display and an
-// optional refresh callback (nil for static tabs that never update).
+// tabContent is the built content for one tab: the object to display, an
+// optional refresh callback (nil for static tabs that never update), and an
+// optional cross-tab entry point selecting a process by PID (only the
+// Processes tab populates it; a future cross-nav card collects these so
+// jump links can land on a highlighted row).
 type tabContent struct {
-	object  fyne.CanvasObject
-	refresh func()
+	object    fyne.CanvasObject
+	refresh   func()
+	selectPID func(PID)
 }
 
 // tabBuilder constructs a tab's content from the available live sources.
@@ -113,6 +119,13 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newMemoryView(src.mem, src.memProcs)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabProcesses: func(src buildSources) tabContent {
+		if src.allProcs == nil {
+			return tabContent{object: newPlaceholder(labelProcessesPageTitle)}
+		}
+		v := newProcessesView(src.allProcs, src.killProc)
+		return tabContent{object: v.object(), refresh: v.refresh, selectPID: v.selectPID}
+	},
 }
 
 // newTabs returns the eight tab definitions with their content built fresh, and
@@ -128,7 +141,7 @@ func newTabs(src buildSources) ([]tabDef, func()) {
 		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
 		{id: tabDisk, name: "Disk", icon: icon.Disk},
 		{id: tabNetwork, name: "Network", icon: icon.Network},
-		{id: tabProcesses, name: "Processes", icon: icon.Processes},
+		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: "Ports", icon: icon.Ports},
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
 	}
