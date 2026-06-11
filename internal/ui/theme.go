@@ -17,6 +17,7 @@ import (
 	"image/color"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 )
 
@@ -53,7 +54,7 @@ var themeColors = map[fyne.ThemeColorName]color.Color{
 	theme.ColorNameMenuBackground:      palette.Surface,
 	theme.ColorNameOverlayBackground:   palette.Surface,
 	theme.ColorNamePlaceHolder:         palette.Text3,
-	theme.ColorNamePressed:             palette.Pressed,
+	theme.ColorNamePressed:             color.Transparent, // suppresses the button/select tap ripple — interactions stay flat
 	theme.ColorNamePrimary:             palette.Accent,
 	theme.ColorNameScrollBar:           palette.BorderStrong,
 	theme.ColorNameScrollBarBackground: palette.Surface,
@@ -100,6 +101,28 @@ func (m *monitorTheme) Font(style fyne.TextStyle) fyne.Resource {
 // Icon delegates to Fyne's default icon set.
 func (m *monitorTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	return theme.DefaultTheme().Icon(name)
+}
+
+// flatFocusTheme is the app theme with the focus color quieted to the
+// row-hover surface. widget.Select paints theme.ColorNameFocus across its
+// entire background while focused, which with the app mapping is a solid
+// accent-blue flash on every click. Scoped per-widget via flatFocus rather
+// than changed globally, because widget.Entry uses the same color name for
+// its 1px focus ring — which should stay accent per the design system.
+type flatFocusTheme struct{ fyne.Theme }
+
+// Color quiets the focus color; everything else defers to the app theme.
+func (t *flatFocusTheme) Color(name fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	if name == theme.ColorNameFocus {
+		return palette.Surface3
+	}
+	return t.Theme.Color(name, v)
+}
+
+// flatFocus hosts a control under flatFocusTheme, so its focused state reads
+// as the quiet hover surface instead of a solid accent fill.
+func flatFocus(o fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewThemeOverride(o, &flatFocusTheme{newTheme()})
 }
 
 // themeSizes maps Fyne's size names onto the design system's typographic scale,

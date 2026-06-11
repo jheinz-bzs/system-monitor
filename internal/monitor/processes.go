@@ -14,6 +14,18 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
+// ProcState is the coarse process-state vocabulary the Processes tab shows
+// (the wireframe's status pills and "status:" filter share it). The richer
+// OS-level states (idle, wait, zombie, …) fold into these three; empty means
+// the state could not be determined.
+type ProcState string
+
+const (
+	StateRunning  ProcState = "running"
+	StateSleeping ProcState = "sleeping"
+	StateStopped  ProcState = "stopped"
+)
+
 // ProcessInfo is a snapshot of one running process. PID is always populated;
 // fields that are permission-restricted on the running system are left at their
 // zero/empty value rather than dropping the record.
@@ -23,6 +35,7 @@ type ProcessInfo struct {
 	CPUPercent  float64 // 0..100
 	MemoryBytes uint64  // resident set size
 	Username    string
+	State       ProcState
 }
 
 // Protocol identifies the transport-layer protocol for a connection or port.
@@ -67,6 +80,11 @@ type processSampler func(ctx context.Context) ([]ProcessInfo, error)
 // Connections tabs. It is the seam the collector samples through.
 type connSampler func(ctx context.Context) ([]ConnectionInfo, error)
 
+// processTerminator ends one process by PID. It is the seam Terminate calls
+// through so tests can observe termination requests without ending a real
+// process.
+type processTerminator func(ctx context.Context, pid int32) error
+
 // processOption configures a ProcessCollector at construction. It exists so
 // tests can inject samplers without a separate constructor; production code uses
 // the defaults.
@@ -82,6 +100,27 @@ func withProcessSampler(s processSampler) processOption {
 // readings without a real OS.
 func withConnSampler(s connSampler) processOption {
 	return func(c *ProcessCollector) { c.sampleConns = s }
+}
+
+// withProcessTerminator overrides the terminator. Tests use it to observe
+// termination requests without ending a real process.
+func withProcessTerminator(t processTerminator) processOption {
+	return func(c *ProcessCollector) { c.terminate = t }
+}
+
+// defaultProcessTerminator asks the OS to end the process gracefully (SIGTERM
+// rather than SIGKILL, so the process can clean up). NewProcessWithContext
+// validates the PID still exists, so a stale request resolves to a clear error
+// instead of signalling a recycled PID.
+func defaultProcessTerminator(ctx context.Context, pid int32) error {
+	p, err := process.NewProcessWithContext(ctx, pid)
+	if err != nil {
+		return fmt.Errorf("finding process %d: %w", pid, err)
+	}
+	if err := p.TerminateWithContext(ctx); err != nil {
+		return fmt.Errorf("terminating process %d: %w", pid, err)
+	}
+	return nil
 }
 
 // newDefaultProcessSampler builds the gopsutil-backed sampler. It is stateful:
@@ -159,7 +198,42 @@ func readProcess(ctx context.Context, p *process.Process, cores float64) Process
 	if user, err := p.UsernameWithContext(ctx); err == nil {
 		info.Username = user
 	}
+	info.State = readState(ctx, p, info.CPUPercent)
 	return info
+}
+
+// readState resolves a process's coarse state. gopsutil has no status support
+// on Windows (ErrNotImplementedError), so when the OS read yields nothing the
+// state derives from observed CPU activity instead: a process that used CPU
+// during the last sample is running, otherwise sleeping. Coarse, but truthful
+// to what was actually observed.
+func readState(ctx context.Context, p *process.Process, cpuPercent float64) ProcState {
+	if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
+		if s := coarseState(statuses[0]); s != "" {
+			return s
+		}
+	}
+	if cpuPercent > 0 {
+		return StateRunning
+	}
+	return StateSleeping
+}
+
+// coarseState folds gopsutil's OS status vocabulary into the three states the
+// Processes tab shows. Zombie lands in stopped — terminated-but-unreaped is
+// closest to "not running" of the visible buckets. Unknown strings report
+// empty so the caller can fall back to the activity heuristic.
+func coarseState(s string) ProcState {
+	switch s {
+	case process.Running:
+		return StateRunning
+	case process.Sleep, process.Idle, process.Wait, process.Lock, process.Blocked:
+		return StateSleeping
+	case process.Stop, process.Zombie:
+		return StateStopped
+	default:
+		return ""
+	}
 }
 
 // defaultConnSampler enumerates all TCP/UDP connections via gopsutil. Failure to
@@ -248,6 +322,7 @@ func localPort(addr string) uint32 {
 type ProcessCollector struct {
 	sampleProcs processSampler
 	sampleConns connSampler
+	terminate   processTerminator
 
 	mu          sync.RWMutex
 	processes   []ProcessInfo
@@ -262,6 +337,7 @@ func NewProcessCollector(ctx context.Context, opts ...processOption) (*ProcessCo
 	c := &ProcessCollector{
 		sampleProcs: newDefaultProcessSampler(),
 		sampleConns: defaultConnSampler,
+		terminate:   defaultProcessTerminator,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -292,6 +368,12 @@ func (c *ProcessCollector) Collect(ctx context.Context) error {
 	c.ports = ports
 	c.mu.Unlock()
 	return nil
+}
+
+// Terminate asks the OS to end the process with the given PID. It does not
+// touch the snapshots — the next Collect naturally drops the exited process.
+func (c *ProcessCollector) Terminate(ctx context.Context, pid int32) error {
+	return c.terminate(ctx, pid)
 }
 
 // Processes returns a copy of the latest process snapshot.

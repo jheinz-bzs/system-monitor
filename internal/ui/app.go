@@ -80,7 +80,16 @@ func Run() {
 	}
 	if procs != nil {
 		src.procs = processSourceFunc(func(n int) []processRow {
-			return topNByCPU(procs.Processes(), n)
+			return topProcessRows(procs.Processes(), n, byCPUDesc)
+		})
+		src.memProcs = memProcessSourceFunc(func(n int) []processRow {
+			return topProcessRows(procs.Processes(), n, byMemoryDesc)
+		})
+		src.allProcs = allProcessSourceFunc(func() []processRow {
+			return toProcessRows(procs.Processes())
+		})
+		src.killProc = processKillerFunc(func(pid PID) error {
+			return procs.Terminate(ctx, int32(pid))
 		})
 		collectors = append(collectors, procs)
 	}
@@ -124,27 +133,41 @@ func coreSources(cpu *monitor.CPUCollector) []series.Source {
 	return out
 }
 
-// topNByCPU adapts monitor.ProcessInfo to the UI's processRow type.
+// topProcessRows adapts monitor.ProcessInfo to the UI's processRow type,
+// returning the top n processes under the given hottest-first ordering.
 // Lives in app.go — the composition root — because that is the only place
 // that knows both the monitor and ui concrete types.
-func topNByCPU(procs []monitor.ProcessInfo, n int) []processRow {
+func topProcessRows(procs []monitor.ProcessInfo, n int, hotter func(a, b monitor.ProcessInfo) bool) []processRow {
 	sorted := make([]monitor.ProcessInfo, len(procs))
 	copy(sorted, procs)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].CPUPercent > sorted[j].CPUPercent
+		return hotter(sorted[i], sorted[j])
 	})
 	if n < len(sorted) {
 		sorted = sorted[:n]
 	}
-	rows := make([]processRow, len(sorted))
-	for i, p := range sorted {
+	return toProcessRows(sorted)
+}
+
+// toProcessRows adapts monitor.ProcessInfo records to the UI's processRow
+// type, order preserved. The returned slice is freshly allocated per call, as
+// allProcessSource requires.
+func toProcessRows(procs []monitor.ProcessInfo) []processRow {
+	rows := make([]processRow, len(procs))
+	for i, p := range procs {
 		rows[i] = processRow{
-			pid:  PID(p.PID),
-			name: p.Name,
-			user: p.Username,
-			cpu:  p.CPUPercent,
-			mem:  p.MemoryBytes,
+			pid:    PID(p.PID),
+			name:   p.Name,
+			user:   p.Username,
+			cpu:    p.CPUPercent,
+			mem:    p.MemoryBytes,
+			status: procStatus(p.State),
 		}
 	}
 	return rows
 }
+
+// byCPUDesc and byMemoryDesc are the hottest-first orderings for the CPU and
+// Memory tabs' top-process tables.
+func byCPUDesc(a, b monitor.ProcessInfo) bool    { return a.CPUPercent > b.CPUPercent }
+func byMemoryDesc(a, b monitor.ProcessInfo) bool { return a.MemoryBytes > b.MemoryBytes }

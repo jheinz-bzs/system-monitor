@@ -102,7 +102,6 @@ func colorShowcase() fyne.CanvasObject {
 		{"yellow-dim", palette.YellowDim},
 		{"red-dim", palette.RedDim},
 		{"disabled-btn", palette.DisabledButton},
-		{"pressed", palette.Pressed},
 		{"shadow", palette.Shadow},
 	}
 
