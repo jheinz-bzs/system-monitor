@@ -11,6 +11,31 @@ import (
 	"github.com/josephheinz/system-monitor/internal/ringbuffer"
 )
 
+// CPUSummary is a static description of the processor: the logical core count
+// and the marketing model name. It feeds the CPU tab's page header.
+type CPUSummary struct {
+	Cores     int
+	ModelName string
+}
+
+// CPUInfo reads the processor description once via gopsutil. It is static data,
+// so callers fetch it at startup rather than through a polled collector.
+func CPUInfo(ctx context.Context) (CPUSummary, error) {
+	cores, err := cpu.CountsWithContext(ctx, true)
+	if err != nil {
+		return CPUSummary{}, fmt.Errorf("counting logical cores: %w", err)
+	}
+	infos, err := cpu.InfoWithContext(ctx)
+	if err != nil {
+		return CPUSummary{}, fmt.Errorf("reading cpu info: %w", err)
+	}
+	summary := CPUSummary{Cores: cores}
+	if len(infos) > 0 {
+		summary.ModelName = infos[0].ModelName
+	}
+	return summary, nil
+}
+
 // coreSampler returns the per-logical-core CPU usage percentages (0..100), one
 // value per logical core. It is the seam the collector samples through so tests
 // can supply readings without real hardware.

@@ -8,6 +8,8 @@ package ui
 
 import (
 	"context"
+	"log"
+	"sort"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -34,15 +36,33 @@ func Run() {
 	// window close stops both cleanly.
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Build the live collectors and adapt their histories into chart Sources.
-	// A collector that fails to start is nil; the matching tab then falls back
-	// to its placeholder rather than crashing.
+	// Build the live collectors and adapt their data into the UI sources.
+	// A collector that fails to start is nil; its tab falls back to the
+	// placeholder rather than crashing.
 	cpu := monitor.NewCPUCollector(ctx)
-	src := make(liveSources)
+	procs, err := monitor.NewProcessCollector(ctx)
+	if err != nil {
+		log.Printf("process collector: %v", err)
+	}
+	cpuInfo, err := monitor.CPUInfo(ctx)
+	if err != nil {
+		log.Printf("cpu info: %v", err) // subtitle is omitted; the tab still works
+	}
+
+	src := buildSources{
+		charts:  make(liveSources),
+		cpuInfo: cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
+	}
 	var collectors []monitor.Collector
 	if cpu != nil {
-		src[tabCPU] = series.SourceFunc(cpu.Overall)
+		src.charts[tabCPU] = series.SourceFunc(cpu.Overall)
 		collectors = append(collectors, cpu)
+	}
+	if procs != nil {
+		src.procs = processSourceFunc(func(n int) []processRow {
+			return topNByCPU(procs.Processes(), n)
+		})
+		collectors = append(collectors, procs)
 	}
 
 	content, refresh := buildContent(src)
@@ -71,4 +91,29 @@ func Run() {
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()
 	w.ShowAndRun()
+}
+
+// topNByCPU adapts monitor.ProcessInfo to the UI's processRow type.
+// Lives in app.go — the composition root — because that is the only place
+// that knows both the monitor and ui concrete types.
+func topNByCPU(procs []monitor.ProcessInfo, n int) []processRow {
+	sorted := make([]monitor.ProcessInfo, len(procs))
+	copy(sorted, procs)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].CPUPercent > sorted[j].CPUPercent
+	})
+	if n < len(sorted) {
+		sorted = sorted[:n]
+	}
+	rows := make([]processRow, len(sorted))
+	for i, p := range sorted {
+		rows[i] = processRow{
+			pid:  PID(p.PID),
+			name: p.Name,
+			user: p.Username,
+			cpu:  p.CPUPercent,
+			mem:  p.MemoryBytes,
+		}
+	}
+	return rows
 }
