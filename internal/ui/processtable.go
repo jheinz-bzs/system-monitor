@@ -1,16 +1,18 @@
 package ui
 
-// Process table adapter — wires process data into the generic dataTable widget.
+// Process table adapters — wire process data into the generic dataTable widget.
 //
 // This file is the process-domain analog of cpu.go's relationship to lineChart:
-// it knows about processRow and processSource, formats cell values, declares
-// the wireframe's six columns (PID / Process / User / CPU% / bar / Mem), and
-// builds a *dataTable via newProcessTable. The generic dataTable widget
-// (datatable.go) never sees processRow.
+// it knows about processRow, formats cell values, and declares the wireframes'
+// two top-process tables — the CPU tab's (PID / Process / User / CPU% / bar /
+// Mem, newProcessTable) and the Memory tab's (PID / Process / User / RSS / bar
+// / %Mem, newMemProcessTable). The generic dataTable widget (datatable.go)
+// never sees processRow.
 //
-// processSource is the seam between the monitor layer and this adapter; it is
-// consumed here and implemented in app.go (the composition root), which is the
-// only place that knows both monitor.ProcessInfo and processRow.
+// processSource and memProcessSource are the seams between the monitor layer
+// and these adapters; they are consumed here and implemented in app.go (the
+// composition root), which is the only place that knows both
+// monitor.ProcessInfo and processRow.
 
 import (
 	"strconv"
@@ -22,18 +24,22 @@ import (
 // Process data constants.
 const (
 	topCPUProcessLimit    = 10 // rows returned by topByCPU
+	topMemProcessLimit    = 10 // rows returned by topByMemory
 	processTableRowHeight = 29 // px; passed as rowHeight() option to dataTable
 )
 
-// Process table column widths (px), taken from the CPU tab wireframe's table.
-// All are off-grid component dimensions, not spacing-scale steps.
+// Process table column widths (px), taken from the CPU tab wireframe's table
+// and shared by the Memory tab's table (the same design-system component; the
+// flex name column absorbs the wider pane). All are off-grid component
+// dimensions, not spacing-scale steps.
 const (
 	procColPIDW  = 74  // px; PID
 	procColNameW = 195 // px; process name
 	procColUserW = 74  // px; owning user
 	procColCPUW  = 87  // px; CPU% value — right-aligned numeric
-	procColBarW  = 90  // px; inline CPU mini-bar
+	procColBarW  = 90  // px; inline mini-bar
 	procColMemW  = 74  // px; resident memory — right-aligned numeric
+	procColPctW  = 74  // px; %Mem value — right-aligned numeric
 )
 
 // Column header labels. Named constants so changes propagate from one place.
@@ -43,7 +49,14 @@ const (
 	colHeaderUser    = "User"
 	colHeaderCPU     = "CPU%"
 	colHeaderMem     = "Mem"
+	colHeaderRSS     = "RSS"
+	colHeaderPctMem  = "Mem%"
 )
+
+// sortDescMarker tags the column a table is sorted by, descending. The
+// wireframes draw ▾ (U+25BE), which the bundled IBM Plex fonts lack; ↓ is the
+// closest covered glyph.
+const sortDescMarker = " ↓"
 
 // processSource is the data seam between the monitor layer and this adapter.
 // Defined here at the consumer (ui package) per idiomatic Go; app.go adapts
@@ -107,8 +120,8 @@ func shortUsername(user string) string {
 	return user
 }
 
-// formatPercent1 renders a CPU percentage for the table's numeric column:
-// one decimal, no unit suffix ("42.0"), matching the wireframe cells.
+// formatPercent1 renders a percentage for the tables' numeric columns (CPU%,
+// %Mem): one decimal, no unit suffix ("42.0"), matching the wireframe cells.
 func formatPercent1(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
@@ -128,5 +141,80 @@ func newProcessTable(src processSource) *dataTable {
 			tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing},
 		),
 		rowHeight(processTableRowHeight),
+	)
+}
+
+// memProcessSource is the Memory tab's data seam to the monitor layer: the
+// top-by-memory analog of processSource. Defined here at the consumer per
+// idiomatic Go; app.go adapts the concrete ProcessCollector to it.
+type memProcessSource interface {
+	topByMemory(n int) []processRow
+}
+
+// memProcessSourceFunc adapts any func(int)[]processRow to memProcessSource.
+type memProcessSourceFunc func(n int) []processRow
+
+func (f memProcessSourceFunc) topByMemory(n int) []processRow { return f(n) }
+
+// memBarFullScalePct is the Mem% value at which a memory-table bar fills its
+// whole track, measured from the wireframe's fills (its 5.6%-of-total row
+// fills 56% of the track). Percentage points, not a fraction.
+const memBarFullScalePct = 10
+
+// memProcessTableSource implements TableSource for the Memory tab's table. It
+// formats each processRow into the wireframe's columns; total (physical memory
+// bytes) scales the Mem% column and the bars.
+type memProcessTableSource struct {
+	src   memProcessSource
+	total uint64
+}
+
+// Snapshot calls topByMemory on every Refresh to return a live snapshot. The
+// bars fill linearly with each row's share of physical memory, reaching a full
+// track at memBarFullScalePct (the wireframe's scale — against the raw 0..100%
+// domain every bar would sit near-empty).
+func (s *memProcessTableSource) Snapshot() [][]tableCell {
+	rows := s.src.topByMemory(topMemProcessLimit)
+	cells := make([][]tableCell, len(rows))
+	for i, r := range rows {
+		pct := byteFraction(r.mem, s.total) * percentMax
+		cells[i] = []tableCell{
+			{text: strconv.Itoa(int(r.pid))},
+			{text: r.name},
+			{text: shortUsername(r.user)},
+			{text: formatBytesShort(r.mem)},
+			{frac: min(pct/memBarFullScalePct, 1)},
+			{text: formatPercent1(pct)},
+		}
+	}
+	return cells
+}
+
+// byteFraction returns part/whole as a 0..1 fraction, 0 when whole is zero
+// (an unknown total must not divide by zero or fill a bar).
+func byteFraction(part, whole uint64) float64 {
+	if whole == 0 {
+		return 0
+	}
+	return float64(part) / float64(whole)
+}
+
+// newMemProcessTable builds a *dataTable configured for the Memory tab's
+// top-processes pane: the wireframe's columns fed by src, with total physical
+// memory scaling the %Mem column. minVisibleRows keeps every top-N row
+// reachable when the table sits in a scroll container.
+func newMemProcessTable(src memProcessSource, total uint64) *dataTable {
+	return newDataTable(
+		&memProcessTableSource{src: src, total: total},
+		tableColumns(
+			tableColumn{header: colHeaderPID, width: procColPIDW, align: fyne.TextAlignLeading},
+			tableColumn{header: colHeaderProcess, width: procColNameW, align: fyne.TextAlignLeading, color: palette.Text, flex: true},
+			tableColumn{header: colHeaderUser, width: procColUserW, align: fyne.TextAlignLeading},
+			tableColumn{header: colHeaderRSS + sortDescMarker, width: procColMemW, align: fyne.TextAlignTrailing},
+			tableColumn{header: "", width: procColBarW, kind: columnBar},
+			tableColumn{header: colHeaderPctMem, width: procColPctW, align: fyne.TextAlignTrailing},
+		),
+		rowHeight(processTableRowHeight),
+		minVisibleRows(topMemProcessLimit),
 	)
 }
