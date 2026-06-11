@@ -130,6 +130,13 @@ func (c *CPUCollector) Overall() []float64 {
 	return c.overall.Items()
 }
 
+// Core returns one logical core's usage history, oldest to newest. The index
+// must be in [0, CoreCount()); it is the caller's loop variable, not external
+// input, so out-of-range panics like any slice index.
+func (c *CPUCollector) Core(i int) []float64 {
+	return c.perCore[i].Items()
+}
+
 // PerCore returns each logical core's usage history, oldest to newest, indexed
 // by core.
 func (c *CPUCollector) PerCore() [][]float64 {
