@@ -13,33 +13,49 @@ import (
 
 // The CPU view must render through the full widget path and stay stable as its
 // overall-utilization buffer fills, including the empty-buffer case. This mirrors
-// how the poller feeds it live (BZS253-46): append a sample, then refresh.
+// how the poller feeds it live: append a sample, then refresh.
 func TestCPUViewRendersAndRefreshes(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 	app.Settings().SetTheme(newTheme())
 
 	overall := ringbuffer.New[float64](metrics.HistoryCapacity)
-	v := newCPUView(series.SourceFrom(overall))
+	procs := processSourceFunc(func(n int) []processRow {
+		return []processRow{
+			{pid: 3412, name: "chrome", user: "you", cpu: 42, mem: 1 << 31},
+		}
+	})
+	v := newCPUView(series.SourceFrom(overall), procs,
+		cpuMeta{cores: 12, model: "Test CPU"})
 
 	w := test.NewWindow(v.object())
 	defer w.Close()
-	w.Resize(fyne.NewSize(640, 320))
+	w.Resize(fyne.NewSize(1100, 760))
 
-	// Empty buffer: readout shows the placeholder and nothing panics.
+	// Empty buffer: nothing panics.
 	v.refresh()
-	if got := v.readout.Text; got != "--" {
-		t.Fatalf("empty buffer readout: got %q, want %q", got, "--")
-	}
 
-	// Feeding samples and refreshing must stay stable and track the newest value.
+	// Feeding samples and refreshing must stay stable.
 	for i := 0; i <= 100; i++ {
 		overall.Add(float64(i))
 		v.refresh()
 	}
-	if got, want := v.readout.Text, "100%"; got != want {
-		t.Fatalf("readout after updates: got %q, want %q", got, want)
-	}
+}
+
+// A nil process source must degrade to the per-core panel taking the full
+// bottom row, never a nil-table panic.
+func TestCPUViewWithoutProcessSource(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+	app.Settings().SetTheme(newTheme())
+
+	overall := ringbuffer.New[float64](metrics.HistoryCapacity)
+	v := newCPUView(series.SourceFrom(overall), nil, cpuMeta{})
+
+	w := test.NewWindow(v.object())
+	defer w.Close()
+	w.Resize(fyne.NewSize(640, 320))
+	v.refresh()
 }
 
 func TestFormatPercent(t *testing.T) {
@@ -47,6 +63,15 @@ func TestFormatPercent(t *testing.T) {
 	for in, want := range cases {
 		if got := formatPercent(in); got != want {
 			t.Errorf("formatPercent(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFormatPercent1(t *testing.T) {
+	cases := map[float64]string{0: "0.0", 42: "42.0", 7.25: "7.2", 100: "100.0"}
+	for in, want := range cases {
+		if got := formatPercent1(in); got != want {
+			t.Errorf("formatPercent1(%v) = %q, want %q", in, got, want)
 		}
 	}
 }

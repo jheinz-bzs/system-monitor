@@ -519,4 +519,3 @@ func (c *lineChart) resolveRange(data [][]float64) (lo, hi float64) {
 	}
 	return niceRange(min, max, chartYTickCount-1)
 }
-

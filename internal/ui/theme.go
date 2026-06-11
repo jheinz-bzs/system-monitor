@@ -142,4 +142,3 @@ func (m *monitorTheme) Size(name fyne.ThemeSizeName) float32 {
 	// (e.g. window-chrome sizes).
 	return theme.DefaultTheme().Size(name)
 }
-
