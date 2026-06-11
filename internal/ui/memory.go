@@ -56,7 +56,11 @@ type memSources struct {
 // wired reports whether the memory collector was successfully adapted; an
 // unwired tab falls back to its placeholder.
 func (m memSources) wired() bool {
-	return m.used != nil && m.cached != nil && m.free != nil && m.total > 0
+	hasUsed := m.used != nil
+	hasCached := m.cached != nil
+	hasFree := m.free != nil
+	hasTotal := m.total > 0
+	return hasUsed && hasCached && hasFree && hasTotal
 }
 
 // memoryView is the Memory tab: page head, composition chart panel, and the
