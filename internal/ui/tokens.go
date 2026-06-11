@@ -60,7 +60,6 @@ type colorPalette struct {
 
 	// Derived shades that don't have a dedicated design token.
 	DisabledButton color.Color // dimmed panel for disabled buttons
-	Pressed        color.Color // between surface-3 and border-strong
 	Shadow         color.Color
 }
 
@@ -106,7 +105,6 @@ var palette = colorPalette{
 	SeriesMuted: rgb(0x3a, 0x44, 0x52),
 
 	DisabledButton: rgb(0x14, 0x18, 0x1e),
-	Pressed:        rgb(0x2a, 0x34, 0x42),
 	Shadow:         color.NRGBA{R: 0, G: 0, B: 0, A: 0x66},
 }
 
