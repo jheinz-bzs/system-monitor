@@ -34,7 +34,7 @@ const (
 	tableHeaderHeight = 34 // px; design-system-03 panel/column header height
 	tableDefaultRowH  = 29 // px; design-system-03 table row height
 	tableRowPoolSize  = 20 // renderer pre-allocation; not a display cap
-	tableMinVisRows   = 3  // minimum visible data rows contributing to MinSize
+	tableMinVisRows   = 3  // default data rows contributing to MinSize (minVisibleRows overrides)
 )
 
 // Mini-bar geometry for bar columns (wireframe table bar-cell).
@@ -107,19 +107,32 @@ func rowHeight(h float32) tableOption {
 	}
 }
 
+// minVisibleRows overrides how many data rows contribute to MinSize (default:
+// tableMinVisRows). A table wrapped in a scroll container raises this to its
+// row limit so a short pane scrolls to reach every row instead of clipping the
+// list at the pane's edge.
+func minVisibleRows(n int) tableOption {
+	return func(t *dataTable) {
+		if n > 0 {
+			t.minRows = n
+		}
+	}
+}
+
 // dataTable is a design-system-styled data table widget. Build with
 // newDataTable; drive live updates with Refresh().
 type dataTable struct {
 	widget.BaseWidget
 
-	src  TableSource
-	cols []tableColumn
-	rowH float32
+	src     TableSource
+	cols    []tableColumn
+	rowH    float32
+	minRows int
 }
 
 // newDataTable builds a dataTable fed by src and configured by opts.
 func newDataTable(src TableSource, opts ...tableOption) *dataTable {
-	t := &dataTable{src: src, rowH: tableDefaultRowH}
+	t := &dataTable{src: src, rowH: tableDefaultRowH, minRows: tableMinVisRows}
 	for _, opt := range opts {
 		opt(t)
 	}
@@ -132,7 +145,7 @@ func (t *dataTable) MinSize() fyne.Size {
 	for _, c := range t.cols {
 		totalW += c.width
 	}
-	minH := tableHeaderHeight + t.rowH*tableMinVisRows
+	minH := tableHeaderHeight + t.rowH*float32(t.minRows)
 	return fyne.NewSize(totalW, minH)
 }
 
