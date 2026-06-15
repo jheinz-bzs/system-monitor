@@ -39,7 +39,7 @@ func TestMemoryViewRendersAndRefreshes(t *testing.T) {
 			{pid: 540, name: "postgres", user: "pg", mem: 1 << 29},
 		}
 	})
-	v := newMemoryView(testMemSources(used, cached, free), procs)
+	v := newMemoryView(testMemSources(used, cached, free), procs, nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()
@@ -69,7 +69,7 @@ func TestMemoryViewWithoutProcessSource(t *testing.T) {
 	used := ringbuffer.New[uint64](metrics.HistoryCapacity)
 	cached := ringbuffer.New[uint64](metrics.HistoryCapacity)
 	free := ringbuffer.New[uint64](metrics.HistoryCapacity)
-	v := newMemoryView(testMemSources(used, cached, free), nil)
+	v := newMemoryView(testMemSources(used, cached, free), nil, nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()

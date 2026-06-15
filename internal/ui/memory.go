@@ -67,16 +67,18 @@ func (m memSources) wired() bool {
 // top-processes-by-memory table pane. Build with newMemoryView and drive live
 // updates through refresh.
 type memoryView struct {
-	total uint64
-	chart *lineChart
-	table *dataTable // nil when ProcessCollector is not available
+	total    uint64
+	chart    *lineChart
+	table    *dataTable             // nil when ProcessCollector is not available
+	tableSrc *memProcessTableSource // backs row tap → PID; nil with no table
+	nav      processNavigator       // cross-tab navigation; nil when not wired
 }
 
 // newMemoryView builds the Memory tab content from the adapted collector
 // sources. Series are added bottom → top: used anchors the stack, cached sits
 // on it, free tops it off at ≈ total. procs feeds the top-processes table and
 // may be nil (the bottom pane keeps its placeholder body).
-func newMemoryView(src memSources, procs memProcessSource) *memoryView {
+func newMemoryView(src memSources, procs memProcessSource, nav processNavigator) *memoryView {
 	chart := newLineChart(
 		fixedRange(0, float64(src.total)),
 		valueFormat(formatBytesAxis),
@@ -88,11 +90,23 @@ func newMemoryView(src memSources, procs memProcessSource) *memoryView {
 	chart.addSeries(src.cached, seriesColor(palette.Series[memCachedSeriesIndex]))
 	chart.addSeries(src.free, seriesColor(palette.SeriesMuted))
 
-	v := &memoryView{total: src.total, chart: chart}
+	v := &memoryView{total: src.total, chart: chart, nav: nav}
 	if procs != nil {
-		v.table = newMemProcessTable(procs, src.total)
+		v.table, v.tableSrc = newMemProcessTable(procs, src.total, v.tapRow)
 	}
 	return v
+}
+
+// tapRow follows a tapped top-process row to the Processes tab, highlighting the
+// process it represents. A row whose process vanished between snapshot and tap
+// (index out of range) is ignored.
+func (v *memoryView) tapRow(row int) {
+	if v.nav == nil {
+		return
+	}
+	if pid, ok := v.tableSrc.pidAt(row); ok {
+		v.nav.showProcess(pid)
+	}
 }
 
 // object assembles the tab: page head pinned on top, then the chart panel and
@@ -130,18 +144,30 @@ func (v *memoryView) chartPanel() fyne.CanvasObject {
 	return newPanel(historyTitle(labelComposition), legend, v.chart)
 }
 
-// bottomPane is the top-processes-by-memory table panel, with the wireframe's
-// RSS/% unit toggle as header chrome (static, like the CPU page head's unit
-// control; the toggle relabels the RSS column, so it shares that column's
-// label const). The table scrolls when the pane is too short for the full
-// top-N list. Without a process source the panel body stays blank
-// (nil-collector degradation, matching the CPU tab's fallbacks).
+// bottomPane is the top-processes-by-memory table panel. Its header carries the
+// wireframe's RSS/% unit toggle (static, like the CPU page head's unit control;
+// the toggle relabels the RSS column, so it shares that column's label const)
+// plus the "→ all processes" cross-nav link to the Processes tab — the CPU
+// tab's top-processes panel precedent. The table scrolls when the pane is too
+// short for the full top-N list. Without a process source the panel body stays
+// blank (nil-collector degradation, matching the CPU tab's fallbacks).
 func (v *memoryView) bottomPane() fyne.CanvasObject {
 	if v.table == nil {
 		return newPanel(labelTopMemProcesses, nil, layout.NewSpacer())
 	}
 	toggle := newSegmented(0, colHeaderRSS, segLabelPercent)
-	return newFlushPanel(labelTopMemProcesses, toggle, container.NewVScroll(v.table))
+	link := newJumpLink(labelAllProcessesLink, v.showAllProcesses)
+	trailing := container.New(layout.NewCustomPaddedHBoxLayout(legendItemGap),
+		vCenter(toggle), vCenter(link))
+	return newFlushPanel(labelTopMemProcesses, trailing, container.NewVScroll(v.table))
+}
+
+// showAllProcesses follows the "→ all processes" header link to the Processes
+// tab. Inert when navigation isn't wired (the link still renders as chrome).
+func (v *memoryView) showAllProcesses() {
+	if v.nav != nil {
+		v.nav.showProcesses()
+	}
 }
 
 // refresh redraws the live panes. It touches the canvas, so callers on a
