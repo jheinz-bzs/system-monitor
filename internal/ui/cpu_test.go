@@ -31,7 +31,7 @@ func TestCPUViewRendersAndRefreshes(t *testing.T) {
 		coreBufs[i] = ringbuffer.New[float64](metrics.HistoryCapacity)
 		cores[i] = series.SourceFrom(coreBufs[i])
 	}
-	procs := processSourceFunc(func(n int) []processRow {
+	procs := allProcessSourceFunc(func() []processRow {
 		return []processRow{
 			{pid: 3412, name: "chrome", user: "you", cpu: 42, mem: 1 << 31},
 		}
