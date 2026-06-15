@@ -252,6 +252,10 @@ func (t *dataTable) setViewport(y, h float32) {
 	t.viewportH = h
 }
 
+// rowPixelHeight reports the per-row height in pixels, for a scroll host
+// computing row offsets (scrollTable).
+func (t *dataTable) rowPixelHeight() float32 { return t.rowH }
+
 // setColumnHeader rewrites one column's header label (sort markers); the next
 // arrange picks it up.
 func (t *dataTable) setColumnHeader(i int, header string) {
