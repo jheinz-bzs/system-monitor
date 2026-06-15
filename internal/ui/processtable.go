@@ -620,6 +620,93 @@ func (s *allProcessTableSource) rowIndexOf(pid PID) int {
 	return noTableRow
 }
 
+// treemapMetric selects which resource the Processes tab's dominance treemap
+// sizes its blocks by — the metric behind the panel header's CPU/Mem toggle.
+type treemapMetric int
+
+const (
+	treemapMetricCPU treemapMetric = iota
+	treemapMetricMem
+)
+
+// processTreemapSource implements treemapSource over the full process list: it
+// sizes the top treemapBlockLimit processes by the active metric (CPU% or
+// resident memory), largest first, and colors them from the categorical palette
+// so neighboring blocks stay distinguishable. setMetric switches the metric
+// live; the next treemapBlocks reflects it (the toggle never resets the table's
+// own sort, which lives in allProcessTableSource). Reusing sortRows keeps the
+// ordering identical to the table's column sorts.
+type processTreemapSource struct {
+	src    allProcessSource
+	metric treemapMetric
+	pids   []PID // PID per block of the last treemapBlocks, for tap → PID mapping
+}
+
+// newProcessTreemapSource builds the adapter sizing by CPU% — the dominance
+// map's default, matching the table's default order.
+func newProcessTreemapSource(src allProcessSource) *processTreemapSource {
+	return &processTreemapSource{src: src, metric: treemapMetricCPU}
+}
+
+// setMetric switches the sizing metric; the next treemapBlocks applies it.
+func (s *processTreemapSource) setMetric(m treemapMetric) { s.metric = m }
+
+// treemapBlocks returns the largest-N processes as treemap items, ordered
+// largest-first (the squarified layout wants descending weights). A process
+// with zero weight contributes no block; since the list is sorted descending,
+// the first zero ends the run.
+func (s *processTreemapSource) treemapBlocks() []treemapItem {
+	rows := s.src.allProcesses()
+	sortRows(rows, s.sortColumn(), sortDescending)
+	if len(rows) > treemapBlockLimit {
+		rows = rows[:treemapBlockLimit]
+	}
+	items := make([]treemapItem, 0, len(rows))
+	s.pids = s.pids[:0]
+	for i, r := range rows {
+		weight := s.weight(r)
+		if weight <= 0 {
+			break
+		}
+		items = append(items, treemapItem{
+			label:  r.name,
+			weight: weight,
+			fill:   palette.Series[i%len(palette.Series)],
+		})
+		s.pids = append(s.pids, r.pid)
+	}
+	return items
+}
+
+// pidAt returns the PID of the block at index in the last treemapBlocks result,
+// false when index is out of range. The treemap records hit regions and this
+// adapter records pids in the same pass, so a tapped block's index resolves to
+// the process it represents.
+func (s *processTreemapSource) pidAt(index int) (PID, bool) {
+	if index < 0 || index >= len(s.pids) {
+		return 0, false
+	}
+	return s.pids[index], true
+}
+
+// sortColumn maps the active metric onto the table's matching sort column, so
+// the treemap and a same-metric table sort agree on order.
+func (s *processTreemapSource) sortColumn() procSortColumn {
+	if s.metric == treemapMetricMem {
+		return sortByMem
+	}
+	return sortByCPU
+}
+
+// weight returns a row's size under the active metric: CPU percent or resident
+// bytes, both as a positive relative weight.
+func (s *processTreemapSource) weight(r processRow) float64 {
+	if s.metric == treemapMetricMem {
+		return float64(r.mem)
+	}
+	return r.cpu
+}
+
 // newAllProcessTable builds the Processes tab's full table: the card's five
 // columns fed by src, scroll-hosted (sizeToRows + the viewport pool) with
 // tap-to-sort headers and tap-to-select rows.
