@@ -639,6 +639,22 @@ func (s *allProcessTableSource) selectRow(i int) {
 	s.selRow = i
 }
 
+// toggleRow selects the process at row i, or clears the selection when that row
+// is already selected — so a second tap on a selected row deselects it.
+func (s *allProcessTableSource) toggleRow(i int) {
+	if s.hasSelected && i >= 0 && i < len(s.rowPIDs) && s.rowPIDs[i] == s.selected {
+		s.clearSelection()
+		return
+	}
+	s.selectRow(i)
+}
+
+// clearSelection drops any active selection.
+func (s *allProcessTableSource) clearSelection() {
+	s.selected, s.hasSelected = 0, false
+	s.selRow = noTableRow
+}
+
 // selectPID selects the given PID. Its row index resolves on the next
 // Snapshot (refresh the table before reading rowIndexOf).
 func (s *allProcessTableSource) selectPID(pid PID) {
