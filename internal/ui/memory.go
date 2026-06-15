@@ -67,18 +67,18 @@ func (m memSources) wired() bool {
 // top-processes-by-memory table pane. Build with newMemoryView and drive live
 // updates through refresh.
 type memoryView struct {
-	total    uint64
-	chart    *lineChart
-	table    *dataTable             // nil when ProcessCollector is not available
-	tableSrc *memProcessTableSource // backs row tap → PID; nil with no table
-	nav      processNavigator       // cross-tab navigation; nil when not wired
+	total       uint64
+	chart       *lineChart
+	tableScroll *scrollTable       // scroll-hosted top-processes table; nil when no source
+	tableSrc    *processTableModel // backs row tap → PID and header sorting; nil with no table
+	nav         processNavigator   // cross-tab navigation; nil when not wired
 }
 
 // newMemoryView builds the Memory tab content from the adapted collector
 // sources. Series are added bottom → top: used anchors the stack, cached sits
 // on it, free tops it off at ≈ total. procs feeds the top-processes table and
 // may be nil (the bottom pane keeps its placeholder body).
-func newMemoryView(src memSources, procs memProcessSource, nav processNavigator) *memoryView {
+func newMemoryView(src memSources, procs allProcessSource, nav processNavigator) *memoryView {
 	chart := newLineChart(
 		fixedRange(0, float64(src.total)),
 		valueFormat(formatBytesAxis),
@@ -92,7 +92,10 @@ func newMemoryView(src memSources, procs memProcessSource, nav processNavigator)
 
 	v := &memoryView{total: src.total, chart: chart, nav: nav}
 	if procs != nil {
-		v.table, v.tableSrc = newMemProcessTable(procs, src.total, v.tapRow)
+		table, ts := newMemProcessTable(procs, src.total, v.tapRow, v.tapHeader)
+		v.tableSrc = ts
+		v.tableScroll = newScrollTable(table)
+		syncSortHeaders(table, ts)
 	}
 	return v
 }
@@ -107,6 +110,13 @@ func (v *memoryView) tapRow(row int) {
 	if pid, ok := v.tableSrc.pidAt(row); ok {
 		v.nav.showProcess(pid)
 	}
+}
+
+// tapHeader re-sorts the top-processes table by the tapped column (tap again to
+// flip), re-tagging the sort markers — the same header behavior as the
+// Processes tab.
+func (v *memoryView) tapHeader(col int) {
+	tapSortHeader(v.tableScroll.table, v.tableSrc, col)
 }
 
 // object assembles the tab: page head pinned on top, then the chart panel and
@@ -152,14 +162,14 @@ func (v *memoryView) chartPanel() fyne.CanvasObject {
 // short for the full top-N list. Without a process source the panel body stays
 // blank (nil-collector degradation, matching the CPU tab's fallbacks).
 func (v *memoryView) bottomPane() fyne.CanvasObject {
-	if v.table == nil {
+	if v.tableScroll == nil {
 		return newPanel(labelTopMemProcesses, nil, layout.NewSpacer())
 	}
 	toggle := newSegmented(0, colHeaderRSS, segLabelPercent)
 	link := newJumpLink(labelAllProcessesLink, v.showAllProcesses)
 	trailing := container.New(layout.NewCustomPaddedHBoxLayout(legendItemGap),
 		vCenter(toggle), vCenter(link))
-	return newFlushPanel(labelTopMemProcesses, trailing, container.NewVScroll(v.table))
+	return newFlushPanel(labelTopMemProcesses, trailing, v.tableScroll.object())
 }
 
 // showAllProcesses follows the "→ all processes" header link to the Processes
@@ -174,7 +184,7 @@ func (v *memoryView) showAllProcesses() {
 // background poller must marshal it onto the UI goroutine (fyne.Do).
 func (v *memoryView) refresh() {
 	v.chart.Refresh()
-	if v.table != nil {
-		v.table.Refresh()
+	if v.tableScroll != nil {
+		v.tableScroll.refresh()
 	}
 }
