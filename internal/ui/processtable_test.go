@@ -180,6 +180,43 @@ func TestTallyCountsWholeMachineDespiteFilters(t *testing.T) {
 	}
 }
 
+// The CPU and Memory top-process tables must record a PID per row each
+// Snapshot so a tapped row resolves to its process for cross-tab navigation;
+// out-of-range indices (a row that vanished before the tap) resolve to false.
+func TestTopProcessTablesResolveRowPID(t *testing.T) {
+	rows := []processRow{
+		{pid: 3412, name: "chrome", cpu: 42, mem: 5 << 30},
+		{pid: 540, name: "postgres", cpu: 3, mem: 1 << 28},
+	}
+
+	cpu := &processTableSource{src: processSourceFunc(func(int) []processRow { return rows })}
+	cpu.Snapshot()
+	assertPIDAt(t, "cpu", cpu.pidAt, 0, 3412)
+	assertPIDAt(t, "cpu", cpu.pidAt, 1, 540)
+	if _, ok := cpu.pidAt(2); ok {
+		t.Error("cpu pidAt(2) resolved past the last row")
+	}
+
+	mem := &memProcessTableSource{
+		src:   memProcessSourceFunc(func(int) []processRow { return rows }),
+		total: testTotalMem,
+	}
+	mem.Snapshot()
+	assertPIDAt(t, "mem", mem.pidAt, 0, 3412)
+	assertPIDAt(t, "mem", mem.pidAt, 1, 540)
+	if _, ok := mem.pidAt(-1); ok {
+		t.Error("mem pidAt(-1) resolved a negative index")
+	}
+}
+
+func assertPIDAt(t *testing.T, label string, pidAt func(int) (PID, bool), row int, want PID) {
+	t.Helper()
+	got, ok := pidAt(row)
+	if !ok || got != want {
+		t.Errorf("%s pidAt(%d) = %d,%v, want %d,true", label, row, got, ok, want)
+	}
+}
+
 func TestSelectPIDResolvesOnNextSnapshot(t *testing.T) {
 	s := newAllProcessTableSource(fixedProcs(testRows()))
 	s.selectPID(30)
