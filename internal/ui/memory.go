@@ -1,12 +1,12 @@
 package ui
 
-// Memory tab content (BZS253-49), laid out to match
+// Memory tab content (BZS253-49/-50), laid out to match
 // tab-03-memory-line-chart-breakdown.html:
 //
 //	page head   — "Memory" title, total-physical-memory subtitle
 //	top pane    — composition panel: stacked area chart (used / cached / free)
-//	bottom pane — reserved for the top-processes-by-memory table (BZS253-50);
-//	              the final split layout lands with BZS253-51
+//	bottom pane — top-processes-by-memory table (the final split layout lands
+//	              with BZS253-51)
 //
 // The chart is the generic lineChart widget in stacked-area mode: series stack
 // bottom → top in declaration order (used, cached, free), the Y axis is FIXED
@@ -64,17 +64,19 @@ func (m memSources) wired() bool {
 }
 
 // memoryView is the Memory tab: page head, composition chart panel, and the
-// reserved bottom pane. Build with newMemoryView and drive live updates
-// through refresh.
+// top-processes-by-memory table pane. Build with newMemoryView and drive live
+// updates through refresh.
 type memoryView struct {
 	total uint64
 	chart *lineChart
+	table *dataTable // nil when ProcessCollector is not available
 }
 
 // newMemoryView builds the Memory tab content from the adapted collector
 // sources. Series are added bottom → top: used anchors the stack, cached sits
-// on it, free tops it off at ≈ total.
-func newMemoryView(src memSources) *memoryView {
+// on it, free tops it off at ≈ total. procs feeds the top-processes table and
+// may be nil (the bottom pane keeps its placeholder body).
+func newMemoryView(src memSources, procs memProcessSource) *memoryView {
 	chart := newLineChart(
 		fixedRange(0, float64(src.total)),
 		valueFormat(formatBytesAxis),
@@ -86,11 +88,15 @@ func newMemoryView(src memSources) *memoryView {
 	chart.addSeries(src.cached, seriesColor(palette.Series[memCachedSeriesIndex]))
 	chart.addSeries(src.free, seriesColor(palette.SeriesMuted))
 
-	return &memoryView{total: src.total, chart: chart}
+	v := &memoryView{total: src.total, chart: chart}
+	if procs != nil {
+		v.table = newMemProcessTable(procs, src.total)
+	}
+	return v
 }
 
 // object assembles the tab: page head pinned on top, then the chart panel and
-// the reserved bottom pane splitting the remaining height by the same weights
+// the top-processes pane splitting the remaining height by the same weights
 // as the CPU tab (BZS253-51 finalizes the Memory split).
 func (v *memoryView) object() fyne.CanvasObject {
 	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), v.pageHead())
@@ -124,14 +130,25 @@ func (v *memoryView) chartPanel() fyne.CanvasObject {
 	return newPanel(historyTitle(labelComposition), legend, v.chart)
 }
 
-// bottomPane is reserved space for the top-processes-by-memory table
-// (BZS253-50), mirroring how the CPU tab reserved its per-core panel.
+// bottomPane is the top-processes-by-memory table panel, with the wireframe's
+// RSS/% unit toggle as header chrome (static, like the CPU page head's unit
+// control; the toggle relabels the RSS column, so it shares that column's
+// label const). The table scrolls when the pane is too short for the full
+// top-N list. Without a process source the panel body stays blank
+// (nil-collector degradation, matching the CPU tab's fallbacks).
 func (v *memoryView) bottomPane() fyne.CanvasObject {
-	return newPanel(labelTopMemProcesses, nil, layout.NewSpacer())
+	if v.table == nil {
+		return newPanel(labelTopMemProcesses, nil, layout.NewSpacer())
+	}
+	toggle := newSegmented(0, colHeaderRSS, segLabelPercent)
+	return newFlushPanel(labelTopMemProcesses, toggle, container.NewVScroll(v.table))
 }
 
-// refresh redraws the live chart. It touches the canvas, so callers on a
+// refresh redraws the live panes. It touches the canvas, so callers on a
 // background poller must marshal it onto the UI goroutine (fyne.Do).
 func (v *memoryView) refresh() {
 	v.chart.Refresh()
+	if v.table != nil {
+		v.table.Refresh()
+	}
 }
