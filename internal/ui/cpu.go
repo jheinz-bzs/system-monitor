@@ -78,13 +78,13 @@ type cpuMeta struct {
 // per-core + top-processes bottom row. Build with newCPUView and drive live
 // updates through refresh.
 type cpuView struct {
-	meta       cpuMeta
-	chart      *lineChart
-	coreSeries []*chartSeries      // chart handles for the per-core lines, core order
-	grid       *coreGrid           // nil when per-core sources are not available
-	table      *dataTable          // nil when ProcessCollector is not available
-	tableSrc   *processTableSource // backs row tap → PID; nil with no table
-	nav        processNavigator    // cross-tab navigation; nil when not wired
+	meta        cpuMeta
+	chart       *lineChart
+	coreSeries  []*chartSeries      // chart handles for the per-core lines, core order
+	grid        *coreGrid           // nil when per-core sources are not available
+	tableScroll *scrollTable       // scroll-hosted top-processes table; nil when no source
+	tableSrc    *processTableModel // backs row tap → PID and header sorting; nil with no table
+	nav         processNavigator   // cross-tab navigation; nil when not wired
 }
 
 // newCPUView builds the CPU tab content. overall feeds the chart's emphasized
@@ -92,7 +92,7 @@ type cpuView struct {
 // and may be empty (the per-core panel body stays blank); procs feeds the
 // process table and may be nil (the tab gracefully omits the table pane);
 // meta fills the page-head subtitle.
-func newCPUView(overall series.Source, cores []series.Source, procs processSource, meta cpuMeta, nav processNavigator) *cpuView {
+func newCPUView(overall series.Source, cores []series.Source, procs allProcessSource, meta cpuMeta, nav processNavigator) *cpuView {
 	chart := newLineChart(
 		fixedRange(0, percentMax),
 		valueFormat(formatPercent),
@@ -110,7 +110,10 @@ func newCPUView(overall series.Source, cores []series.Source, procs processSourc
 		v.grid = newCoreGrid(cores)
 	}
 	if procs != nil {
-		v.table, v.tableSrc = newProcessTable(procs, v.tapRow)
+		table, src := newCPUProcessTable(procs, v.tapRow, v.tapHeader)
+		v.tableSrc = src
+		v.tableScroll = newScrollTable(table)
+		syncSortHeaders(table, src)
 	}
 	return v
 }
@@ -179,10 +182,11 @@ func (v *cpuView) setPerCoreVisible(on bool) {
 // fallback); without per-core sources the panel body stays blank.
 func (v *cpuView) bottomRow() fyne.CanvasObject {
 	perCore := newPanel(labelPerCore, nil, v.perCoreBody())
-	if v.table == nil {
+	if v.tableScroll == nil {
 		return perCore
 	}
-	procs := newFlushPanel(labelTopCPUProcesses, newJumpLink(labelAllProcessesLink, v.showAllProcesses), v.table)
+	procs := newFlushPanel(labelTopCPUProcesses,
+		newJumpLink(labelAllProcessesLink, v.showAllProcesses), v.tableScroll.object())
 	return newWeightedHBox(
 		tabPad,
 		weightedPane{object: perCore, weight: perCorePaneWeight},
@@ -210,6 +214,13 @@ func (v *cpuView) tapRow(row int) {
 	}
 }
 
+// tapHeader re-sorts the top-processes table by the tapped column (tap again to
+// flip), re-tagging the sort markers — the same header behavior as the
+// Processes tab.
+func (v *cpuView) tapHeader(col int) {
+	tapSortHeader(v.tableScroll.table, v.tableSrc, col)
+}
+
 // perCoreBody returns the per-core panel's content: the bar grid, or a spacer
 // while no per-core sources are wired.
 func (v *cpuView) perCoreBody() fyne.CanvasObject {
@@ -233,8 +244,8 @@ func (v *cpuView) refresh() {
 	if v.grid != nil {
 		v.grid.Refresh()
 	}
-	if v.table != nil {
-		v.table.Refresh()
+	if v.tableScroll != nil {
+		v.tableScroll.refresh()
 	}
 }
 
