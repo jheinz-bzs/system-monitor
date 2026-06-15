@@ -76,9 +76,7 @@ type liveSources map[tabID]series.Source
 type buildSources struct {
 	charts   liveSources      // time-series chart sources, keyed by tabID
 	cpuCores []series.Source  // per-core CPU sources, core order; empty when not wired
-	procs    processSource    // top-by-CPU process source; nil when not wired
-	memProcs memProcessSource // top-by-memory process source; nil when not wired
-	allProcs allProcessSource // full process list; nil when not wired
+	allProcs allProcessSource // full process list, feeding all process tables; nil when not wired
 	killProc processKiller    // process termination; nil when not wired
 	cpuInfo  cpuMeta          // static processor description; zero when unknown
 	mem      memSources       // memory band sources + total; zero when not wired
@@ -143,14 +141,14 @@ var tabRegistry = map[tabID]tabBuilder{
 		if s == nil {
 			return tabContent{object: newPlaceholder(labelCPUPageTitle)}
 		}
-		v := newCPUView(s, src.cpuCores, src.procs, src.cpuInfo, src.nav)
+		v := newCPUView(s, src.cpuCores, src.allProcs, src.cpuInfo, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabMemory: func(src buildSources) tabContent {
 		if !src.mem.wired() {
 			return tabContent{object: newPlaceholder(labelMemoryPageTitle)}
 		}
-		v := newMemoryView(src.mem, src.memProcs, src.nav)
+		v := newMemoryView(src.mem, src.allProcs, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabProcesses: func(src buildSources) tabContent {
