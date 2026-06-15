@@ -128,6 +128,17 @@ func (f processSourceFunc) topByCPU(n int) []processRow { return f(n) }
 // cross-tab navigation links resolve without string parsing or type assertions.
 type PID int32
 
+// pidAtRow returns pids[index] guarded by bounds, false when index is out of
+// range. Each process visualization records a PID per drawn element (table row
+// or treemap block) in draw order, so a tapped element resolves to the process
+// it represents through this one lookup.
+func pidAtRow(pids []PID, index int) (PID, bool) {
+	if index < 0 || index >= len(pids) {
+		return 0, false
+	}
+	return pids[index], true
+}
+
 // processRow is the display-layer shape for one process. app.go selects and
 // converts from monitor.ProcessInfo when building the adapter, so this type
 // never appears in the monitor package.
@@ -142,9 +153,12 @@ type processRow struct {
 
 // processTableSource implements TableSource for a processSource. It formats
 // each processRow into the six wireframe columns; the CPU value feeds both the
-// numeric column and the bar column's fill fraction.
+// numeric column and the bar column's fill fraction. It records each row's PID
+// per snapshot (rowPIDs) so a tapped row resolves to its process for cross-tab
+// navigation (CPU tab → Processes tab).
 type processTableSource struct {
-	src processSource
+	src     processSource
+	rowPIDs []PID // PID per row of the last snapshot (tap → PID mapping)
 }
 
 // Snapshot calls topByCPU on every Refresh to return a live snapshot, exactly
@@ -152,6 +166,7 @@ type processTableSource struct {
 func (s *processTableSource) Snapshot() [][]tableCell {
 	rows := s.src.topByCPU(topCPUProcessLimit)
 	cells := make([][]tableCell, len(rows))
+	s.rowPIDs = s.rowPIDs[:0]
 	for i, r := range rows {
 		cells[i] = append(
 			processIdentityCells(r),
@@ -159,8 +174,15 @@ func (s *processTableSource) Snapshot() [][]tableCell {
 			tableCell{frac: r.cpu / percentMax},
 			tableCell{text: formatBytesShort(r.mem)},
 		)
+		s.rowPIDs = append(s.rowPIDs, r.pid)
 	}
 	return cells
+}
+
+// pidAt returns the PID of the row at index in the last snapshot, false when
+// index is out of range (the row vanished between the snapshot and the tap).
+func (s *processTableSource) pidAt(index int) (PID, bool) {
+	return pidAtRow(s.rowPIDs, index)
 }
 
 // processIdentityCells are the leading PID / Process / User cells every
@@ -201,10 +223,13 @@ func formatPercent1(v float64) string {
 
 // newProcessTable builds a *dataTable configured for the process view: the six
 // wireframe columns fed by src. The name column renders in primary text; the
-// rest keep the table-data default (text-2).
-func newProcessTable(src processSource) *dataTable {
-	return newDataTable(
-		&processTableSource{src: src},
+// rest keep the table-data default (text-2). onRowTap fires with the tapped
+// data-row index (the CPU tab resolves it to a PID and jumps to the Processes
+// tab); the returned source backs that resolution via pidAt.
+func newProcessTable(src processSource, onRowTap func(row int)) (*dataTable, *processTableSource) {
+	adapter := &processTableSource{src: src}
+	table := newDataTable(
+		adapter,
 		tableColumns(append(
 			processIdentityColumns(),
 			tableColumn{header: colHeaderCPU, width: procColCPUW, align: fyne.TextAlignTrailing},
@@ -212,7 +237,9 @@ func newProcessTable(src processSource) *dataTable {
 			tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing},
 		)...),
 		rowHeight(processTableRowHeight),
+		onRowTapped(onRowTap),
 	)
+	return table, adapter
 }
 
 // memProcessSource is the Memory tab's data seam to the monitor layer: the
@@ -236,17 +263,20 @@ const memBarFullScalePct = 10
 // formats each processRow into the wireframe's columns; total (physical memory
 // bytes) scales the Mem% column and the bars.
 type memProcessTableSource struct {
-	src   memProcessSource
-	total uint64
+	src     memProcessSource
+	total   uint64
+	rowPIDs []PID // PID per row of the last snapshot (tap → PID mapping)
 }
 
 // Snapshot calls topByMemory on every Refresh to return a live snapshot. The
 // bars fill linearly with each row's share of physical memory, reaching a full
 // track at memBarFullScalePct (the wireframe's scale — against the raw 0..100%
-// domain every bar would sit near-empty).
+// domain every bar would sit near-empty). Each row's PID is recorded so a
+// tapped row resolves to its process for cross-tab navigation.
 func (s *memProcessTableSource) Snapshot() [][]tableCell {
 	rows := s.src.topByMemory(topMemProcessLimit)
 	cells := make([][]tableCell, len(rows))
+	s.rowPIDs = s.rowPIDs[:0]
 	for i, r := range rows {
 		pct := byteFraction(r.mem, s.total) * percentMax
 		cells[i] = append(
@@ -255,8 +285,15 @@ func (s *memProcessTableSource) Snapshot() [][]tableCell {
 			tableCell{frac: min(pct/memBarFullScalePct, 1)},
 			tableCell{text: formatPercent1(pct)},
 		)
+		s.rowPIDs = append(s.rowPIDs, r.pid)
 	}
 	return cells
+}
+
+// pidAt returns the PID of the row at index in the last snapshot, false when
+// index is out of range.
+func (s *memProcessTableSource) pidAt(index int) (PID, bool) {
+	return pidAtRow(s.rowPIDs, index)
 }
 
 // byteFraction returns part/whole as a 0..1 fraction, 0 when whole is zero
@@ -272,9 +309,10 @@ func byteFraction(part, whole uint64) float64 {
 // top-processes pane: the wireframe's columns fed by src, with total physical
 // memory scaling the %Mem column. minVisibleRows keeps every top-N row
 // reachable when the table sits in a scroll container.
-func newMemProcessTable(src memProcessSource, total uint64) *dataTable {
-	return newDataTable(
-		&memProcessTableSource{src: src, total: total},
+func newMemProcessTable(src memProcessSource, total uint64, onRowTap func(row int)) (*dataTable, *memProcessTableSource) {
+	adapter := &memProcessTableSource{src: src, total: total}
+	table := newDataTable(
+		adapter,
 		tableColumns(append(
 			processIdentityColumns(),
 			tableColumn{header: colHeaderRSS + sortDescMarker, width: procColMemW, align: fyne.TextAlignTrailing},
@@ -283,7 +321,9 @@ func newMemProcessTable(src memProcessSource, total uint64) *dataTable {
 		)...),
 		rowHeight(processTableRowHeight),
 		minVisibleRows(topMemProcessLimit),
+		onRowTapped(onRowTap),
 	)
+	return table, adapter
 }
 
 // allProcessSource is the Processes tab's data seam to the monitor layer: the
@@ -683,10 +723,7 @@ func (s *processTreemapSource) treemapBlocks() []treemapItem {
 // adapter records pids in the same pass, so a tapped block's index resolves to
 // the process it represents.
 func (s *processTreemapSource) pidAt(index int) (PID, bool) {
-	if index < 0 || index >= len(s.pids) {
-		return 0, false
-	}
-	return s.pids[index], true
+	return pidAtRow(s.pids, index)
 }
 
 // sortColumn maps the active metric onto the table's matching sort column, so
