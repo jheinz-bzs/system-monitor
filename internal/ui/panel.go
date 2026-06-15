@@ -12,8 +12,10 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 )
 
 // Panel geometry (design-system-03/-04).
@@ -108,9 +110,48 @@ func newLegend(entries ...legendEntry) fyne.CanvasObject {
 	return container.New(layout.NewCustomPaddedHBoxLayout(legendItemGap), items...)
 }
 
-// newJumpLink renders the cross-nav link chrome (design-system-05) as static
-// accent text. Navigation wiring lands with the target tabs; the chrome exists
-// now so panel headers match the wireframes.
-func newJumpLink(text string) fyne.CanvasObject {
-	return styledText(text, font.MonoRegular, theme.SizeNameCaptionText, palette.Accent)
+// jumpLink is the tappable cross-nav link in a panel header (design-system-05):
+// accent mono caption text that invokes onTap when clicked, with a pointer
+// cursor over it. Its rendering is identical to the static chrome this link was
+// before navigation was wired. A nil onTap leaves the link inert (default
+// cursor, no-op tap), so a panel can still show the chrome where its target tab
+// isn't available.
+type jumpLink struct {
+	widget.BaseWidget
+
+	text  string
+	onTap func()
+}
+
+var (
+	_ fyne.Tappable      = (*jumpLink)(nil)
+	_ desktop.Cursorable = (*jumpLink)(nil)
+)
+
+// newJumpLink builds a cross-nav link labeled text that invokes onTap when
+// clicked (nil for an inert link).
+func newJumpLink(text string, onTap func()) *jumpLink {
+	l := &jumpLink{text: text, onTap: onTap}
+	l.ExtendBaseWidget(l)
+	return l
+}
+
+// Tapped implements fyne.Tappable.
+func (l *jumpLink) Tapped(_ *fyne.PointEvent) {
+	if l.onTap != nil {
+		l.onTap()
+	}
+}
+
+// Cursor implements desktop.Cursorable — a pointer when the link navigates.
+func (l *jumpLink) Cursor() desktop.Cursor {
+	if l.onTap == nil {
+		return desktop.DefaultCursor
+	}
+	return desktop.PointerCursor
+}
+
+func (l *jumpLink) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(
+		styledText(l.text, font.MonoRegular, theme.SizeNameCaptionText, palette.Accent))
 }
