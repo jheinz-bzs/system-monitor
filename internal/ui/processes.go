@@ -229,9 +229,10 @@ func (v *processesView) tapBlock(index int) {
 	}
 }
 
-// tapRow selects the tapped row and repaints its highlight.
+// tapRow selects the tapped row, or deselects it when it was already selected
+// (a second tap clears the selection), then repaints the highlight.
 func (v *processesView) tapRow(row int) {
-	v.adapter.selectRow(row)
+	v.adapter.toggleRow(row)
 	v.syncKillState()
 	v.table.Refresh()
 }
@@ -327,9 +328,9 @@ func (v *processesView) syncKillState() {
 }
 
 // selectPID selects and highlights the process with the given PID, scrolling
-// it into view. Cross-tab navigation (CPU/Ports → Processes) reaches this
-// through the tab registry's tabContent.selectPID; wiring those callers is a
-// later card.
+// it into view. Cross-tab navigation (a tapped CPU/Memory process row, or the
+// CPU tab's "→ all processes" link) reaches this through the tab registry's
+// tabContent.selectPID, wired to the crossNav in buildContent.
 func (v *processesView) selectPID(pid PID) {
 	v.adapter.selectPID(pid)
 	v.table.Refresh() // re-snapshot so the row index below is current

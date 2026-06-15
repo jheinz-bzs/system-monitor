@@ -98,6 +98,32 @@ func TestSelectionFollowsPIDAcrossResort(t *testing.T) {
 	}
 }
 
+// Tapping a row selects it; tapping the same row again clears the selection
+// (toggle-to-deselect), while tapping a different row moves the selection.
+func TestToggleRowDeselects(t *testing.T) {
+	s := newAllProcessTableSource(fixedProcs(testRows()))
+	s.Snapshot() // CPU desc: 20, 30, 10
+
+	s.toggleRow(0) // select PID 20
+	if pid, ok := s.selectedPID(); !ok || pid != 20 {
+		t.Fatalf("after first tap: selectedPID = %d,%v, want 20,true", pid, ok)
+	}
+
+	s.toggleRow(0) // same row → deselect
+	if _, ok := s.selectedPID(); ok {
+		t.Error("second tap on the selected row left it selected; want cleared")
+	}
+	if s.highlightedRow() != noTableRow {
+		t.Errorf("highlightedRow = %d, want noTableRow after deselect", s.highlightedRow())
+	}
+
+	s.toggleRow(0) // re-select 20
+	s.toggleRow(1) // different row → move selection to PID 30
+	if pid, ok := s.selectedPID(); !ok || pid != 30 {
+		t.Errorf("after tapping a different row: selectedPID = %d,%v, want 30,true", pid, ok)
+	}
+}
+
 func TestSelectionClearsWhenProcessDisappears(t *testing.T) {
 	rows := testRows()
 	s := newAllProcessTableSource(fixedProcs(rows[:2]))
