@@ -80,9 +80,11 @@ type cpuMeta struct {
 type cpuView struct {
 	meta       cpuMeta
 	chart      *lineChart
-	coreSeries []*chartSeries // chart handles for the per-core lines, core order
-	grid       *coreGrid      // nil when per-core sources are not available
-	table      *dataTable     // nil when ProcessCollector is not available
+	coreSeries []*chartSeries      // chart handles for the per-core lines, core order
+	grid       *coreGrid           // nil when per-core sources are not available
+	table      *dataTable          // nil when ProcessCollector is not available
+	tableSrc   *processTableSource // backs row tap → PID; nil with no table
+	nav        processNavigator    // cross-tab navigation; nil when not wired
 }
 
 // newCPUView builds the CPU tab content. overall feeds the chart's emphasized
@@ -90,7 +92,7 @@ type cpuView struct {
 // and may be empty (the per-core panel body stays blank); procs feeds the
 // process table and may be nil (the tab gracefully omits the table pane);
 // meta fills the page-head subtitle.
-func newCPUView(overall series.Source, cores []series.Source, procs processSource, meta cpuMeta) *cpuView {
+func newCPUView(overall series.Source, cores []series.Source, procs processSource, meta cpuMeta, nav processNavigator) *cpuView {
 	chart := newLineChart(
 		fixedRange(0, percentMax),
 		valueFormat(formatPercent),
@@ -99,7 +101,7 @@ func newCPUView(overall series.Source, cores []series.Source, procs processSourc
 	)
 	chart.addSeries(overall, emphasized())
 
-	v := &cpuView{meta: meta, chart: chart}
+	v := &cpuView{meta: meta, chart: chart, nav: nav}
 	v.coreSeries = make([]*chartSeries, len(cores))
 	for i, core := range cores {
 		v.coreSeries[i] = chart.addSeries(core)
@@ -108,7 +110,7 @@ func newCPUView(overall series.Source, cores []series.Source, procs processSourc
 		v.grid = newCoreGrid(cores)
 	}
 	if procs != nil {
-		v.table = newProcessTable(procs)
+		v.table, v.tableSrc = newProcessTable(procs, v.tapRow)
 	}
 	return v
 }
@@ -180,12 +182,32 @@ func (v *cpuView) bottomRow() fyne.CanvasObject {
 	if v.table == nil {
 		return perCore
 	}
-	procs := newFlushPanel(labelTopCPUProcesses, newJumpLink(labelAllProcessesLink), v.table)
+	procs := newFlushPanel(labelTopCPUProcesses, newJumpLink(labelAllProcessesLink, v.showAllProcesses), v.table)
 	return newWeightedHBox(
 		tabPad,
 		weightedPane{object: perCore, weight: perCorePaneWeight},
 		weightedPane{object: procs, weight: processPaneWeight},
 	)
+}
+
+// showAllProcesses follows the "→ all processes" header link to the Processes
+// tab. Inert when navigation isn't wired (the link still renders as chrome).
+func (v *cpuView) showAllProcesses() {
+	if v.nav != nil {
+		v.nav.showProcesses()
+	}
+}
+
+// tapRow follows a tapped top-process row to the Processes tab, highlighting the
+// process it represents. A row whose process vanished between snapshot and tap
+// (index out of range) is ignored.
+func (v *cpuView) tapRow(row int) {
+	if v.nav == nil {
+		return
+	}
+	if pid, ok := v.tableSrc.pidAt(row); ok {
+		v.nav.showProcess(pid)
+	}
 }
 
 // perCoreBody returns the per-core panel's content: the bar grid, or a spacer
