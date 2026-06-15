@@ -14,10 +14,10 @@ func fixedProcs(rows []processRow) allProcessSource {
 }
 
 // snapshotPIDs runs a Snapshot and returns the resulting row order as PIDs.
-func snapshotPIDs(s *allProcessTableSource) []PID {
-	s.Snapshot()
-	out := make([]PID, len(s.rowPIDs))
-	copy(out, s.rowPIDs)
+func snapshotPIDs(m *processTableModel) []PID {
+	m.Snapshot()
+	out := make([]PID, len(m.rowPIDs))
+	copy(out, m.rowPIDs)
 	return out
 }
 
@@ -215,7 +215,7 @@ func TestTopProcessTablesResolveRowPID(t *testing.T) {
 		{pid: 540, name: "postgres", cpu: 3, mem: 1 << 28},
 	}
 
-	cpu := &processTableSource{src: processSourceFunc(func(int) []processRow { return rows })}
+	cpu := newCPUTableSource(fixedProcs(rows))
 	cpu.Snapshot()
 	assertPIDAt(t, "cpu", cpu.pidAt, 0, 3412)
 	assertPIDAt(t, "cpu", cpu.pidAt, 1, 540)
@@ -223,15 +223,74 @@ func TestTopProcessTablesResolveRowPID(t *testing.T) {
 		t.Error("cpu pidAt(2) resolved past the last row")
 	}
 
-	mem := &memProcessTableSource{
-		src:   memProcessSourceFunc(func(int) []processRow { return rows }),
-		total: testTotalMem,
-	}
+	mem := newMemTableSource(fixedProcs(rows), testTotalMem)
 	mem.Snapshot()
 	assertPIDAt(t, "mem", mem.pidAt, 0, 3412)
 	assertPIDAt(t, "mem", mem.pidAt, 1, 540)
 	if _, ok := mem.pidAt(-1); ok {
 		t.Error("mem pidAt(-1) resolved a negative index")
+	}
+}
+
+// The top-N tables (CPU/Memory) keep their top-N selection but re-order that set
+// by the active sort column — a header tap re-sorts the displayed rows.
+func TestTopProcessTableHeaderResort(t *testing.T) {
+	rows := []processRow{
+		{pid: 10, name: "zeta", cpu: 90, mem: 100},
+		{pid: 20, name: "alpha", cpu: 10, mem: 300},
+	}
+	cpu := newCPUTableSource(fixedProcs(rows))
+
+	// Default order is CPU% descending.
+	cpu.Snapshot()
+	if got := rowPIDsCopy(cpu.rowPIDs); !pidsEqual(got, []PID{10, 20}) {
+		t.Errorf("default order = %v, want [10 20] (CPU%% desc)", got)
+	}
+
+	// Re-sorting by name reorders the same top-N set, ascending.
+	cpu.toggleSort(sortByName)
+	cpu.Snapshot()
+	if got := rowPIDsCopy(cpu.rowPIDs); !pidsEqual(got, []PID{20, 10}) {
+		t.Errorf("by-name order = %v, want [20 10] (alpha, zeta)", got)
+	}
+}
+
+// rowPIDsCopy returns an independent copy of a recorded row-PID slice.
+func rowPIDsCopy(pids []PID) []PID {
+	out := make([]PID, len(pids))
+	copy(out, pids)
+	return out
+}
+
+// syncSortHeaders must mark only the active, sortable column. The Memory table's
+// Mem% column shares RSS's ordering and is non-sortable, so RSS owns the marker.
+func TestSyncSortHeadersMarksActiveSortableColumn(t *testing.T) {
+	src := newMemTableSource(fixedProcs(nil), testTotalMem)
+	table := newDataTable(src, tableColumns(columnDefs(src.cols)...))
+
+	syncSortHeaders(table, src) // default: sortByMem desc
+
+	const rssCol, barCol, pctCol = 3, 4, 5
+	if got := table.cols[rssCol].header; got != colHeaderRSS+sortDescMarker {
+		t.Errorf("RSS header = %q, want %q", got, colHeaderRSS+sortDescMarker)
+	}
+	if got := table.cols[pctCol].header; got != colHeaderPctMem {
+		t.Errorf("Mem%% header = %q, want unmarked %q", got, colHeaderPctMem)
+	}
+
+	// Tapping the non-sortable bar column must not change the sort.
+	tapSortHeader(table, src, barCol)
+	if src.sortCol != sortByMem || src.sortDir != sortDescending {
+		t.Errorf("sort after bar-column tap = %v/%v, want sortByMem/desc (unchanged)", src.sortCol, src.sortDir)
+	}
+
+	// Tapping RSS flips it to ascending and re-marks.
+	tapSortHeader(table, src, rssCol)
+	if src.sortDir != sortAscending {
+		t.Errorf("RSS re-tap dir = %v, want ascending", src.sortDir)
+	}
+	if got := table.cols[rssCol].header; got != colHeaderRSS+sortAscMarker {
+		t.Errorf("RSS header after flip = %q, want %q", got, colHeaderRSS+sortAscMarker)
 	}
 }
 
