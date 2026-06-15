@@ -9,7 +9,6 @@ package ui
 import (
 	"context"
 	"log"
-	"sort"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -79,12 +78,8 @@ func Run() {
 		collectors = append(collectors, memory)
 	}
 	if procs != nil {
-		src.procs = processSourceFunc(func(n int) []processRow {
-			return topProcessRows(procs.Processes(), n, byCPUDesc)
-		})
-		src.memProcs = memProcessSourceFunc(func(n int) []processRow {
-			return topProcessRows(procs.Processes(), n, byMemoryDesc)
-		})
+		// One feed for all three process tables: the full list, unordered. Each
+		// table's model applies its own top-N selection, sort, and filtering.
 		src.allProcs = allProcessSourceFunc(func() []processRow {
 			return toProcessRows(procs.Processes())
 		})
@@ -133,25 +128,9 @@ func coreSources(cpu *monitor.CPUCollector) []series.Source {
 	return out
 }
 
-// topProcessRows adapts monitor.ProcessInfo to the UI's processRow type,
-// returning the top n processes under the given hottest-first ordering.
-// Lives in app.go — the composition root — because that is the only place
-// that knows both the monitor and ui concrete types.
-func topProcessRows(procs []monitor.ProcessInfo, n int, hotter func(a, b monitor.ProcessInfo) bool) []processRow {
-	sorted := make([]monitor.ProcessInfo, len(procs))
-	copy(sorted, procs)
-	sort.Slice(sorted, func(i, j int) bool {
-		return hotter(sorted[i], sorted[j])
-	})
-	if n < len(sorted) {
-		sorted = sorted[:n]
-	}
-	return toProcessRows(sorted)
-}
-
 // toProcessRows adapts monitor.ProcessInfo records to the UI's processRow
 // type, order preserved. The returned slice is freshly allocated per call, as
-// allProcessSource requires.
+// allProcessSource requires (the table models sort and slice it in place).
 func toProcessRows(procs []monitor.ProcessInfo) []processRow {
 	rows := make([]processRow, len(procs))
 	for i, p := range procs {
@@ -166,8 +145,3 @@ func toProcessRows(procs []monitor.ProcessInfo) []processRow {
 	}
 	return rows
 }
-
-// byCPUDesc and byMemoryDesc are the hottest-first orderings for the CPU and
-// Memory tabs' top-process tables.
-func byCPUDesc(a, b monitor.ProcessInfo) bool    { return a.CPUPercent > b.CPUPercent }
-func byMemoryDesc(a, b monitor.ProcessInfo) bool { return a.MemoryBytes > b.MemoryBytes }
