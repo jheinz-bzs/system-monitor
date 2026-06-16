@@ -796,9 +796,10 @@ func (s *processTreemapSource) treemapBlocks() []treemapItem {
 			break
 		}
 		items = append(items, treemapItem{
-			label:  r.name,
-			weight: weight,
-			fill:   palette.Series[i%len(palette.Series)],
+			label:   r.name,
+			weight:  weight,
+			fill:    palette.Series[i%len(palette.Series)],
+			tooltip: r.name, // hover shows the full name when the tile truncated it
 		})
 		s.pids = append(s.pids, r.pid)
 	}
