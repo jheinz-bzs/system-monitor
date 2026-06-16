@@ -4,19 +4,22 @@ package ui
 // docs/pitch/4 _ Disk _ treemap _ volumes _ I_O.png:
 //
 //	page head   — "Disk" title, "N volumes · X total" subtitle
-//	top row     — storage-by-directory panel (left, reserved for the directory
-//	              treemap) + volumes panel (right): one semantically colored
-//	              usage bar per mounted partition
-//	bottom pane — I/O panel (reserved for the read/write/total line chart)
+//	top row     — storage-by-directory treemap (left, fed by a background
+//	              filesystem walk) + volumes panel (right): one semantically
+//	              colored usage bar per mounted partition
+//	bottom pane — I/O panel: the read/write/total line chart
 //
-// Only the volumes bars are live today; the directory treemap (a filesystem
-// walk) and the I/O chart (its own card) are reserved empty panels so the
-// layout already holds their space. The view reads partition usage through the
-// diskUsageSource seam only — app.go adapts DiskCollector.Usage().
+// The view reads partition usage through the diskUsageSource seam and the
+// directory snapshot through diskDirSource; app.go adapts the monitor
+// collectors/scanner behind both.
 
 import (
 	"fmt"
 	"image/color"
+	"log"
+	"os/exec"
+	"runtime"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -24,6 +27,9 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/josephheinz/system-monitor/internal/metrics"
+	"github.com/josephheinz/system-monitor/internal/series"
 )
 
 // Pane / panel text. The em-dash panel titles come verbatim from the wireframe.
@@ -33,9 +39,22 @@ const (
 	labelVolumesPanel  = "Volumes"
 	labelIOPanel       = "I/O"
 	labelVolumesEmpty  = "no volume data"
-	labelVolumeSizeSep = " / "      // "420G / 512G"
+	labelDirsEmpty     = "scanning…" // directory treemap, before the first walk lands
+	labelVolumeSizeSep = " / "       // "420G / 512G"
 	fmtVolumeSubtitle  = "%d volumes · %s total"
 	fmtVolumePercent   = "%d%% used" // "82% used"
+)
+
+// I/O chart legend labels and the categorical-palette indices for the read /
+// write series (total is the emphasized accent line). c2 (cyan) reads as flow,
+// c3 (violet) as its counterpart — the wireframe's two secondary I/O hues.
+const (
+	labelLegendTotal = "total"
+	labelLegendRead  = "read"
+	labelLegendWrite = "write"
+
+	ioReadSeriesIndex  = 1 // c2
+	ioWriteSeriesIndex = 2 // c3
 )
 
 // Disk-usage warning thresholds: a partition at or above diskWarnFraction shows
@@ -88,6 +107,95 @@ type diskUsageSourceFunc func() []diskPartition
 
 func (f diskUsageSourceFunc) partitions() []diskPartition { return f() }
 
+// diskDir is one scanned directory's size: a display label (its name under the
+// scan root), its full path (shown as the treemap tile's hover tooltip), and
+// byte total. app.go adapts monitor.DirSize into this.
+type diskDir struct {
+	label string
+	path  string
+	bytes uint64
+}
+
+// diskDirSource feeds the directory treemap a fresh snapshot of the currently
+// selected volume's largest directories. Defined at the consumer per idiomatic
+// Go; app.go's scan controller implements it over the background scanner.
+type diskDirSource interface {
+	dirs() []diskDir
+}
+
+// diskIOSources bundles the I/O chart's three series: total (emphasized) plus
+// the read and write rates. The zero value means the disk I/O isn't wired and
+// the I/O pane keeps its placeholder.
+type diskIOSources struct {
+	total series.Source
+	read  series.Source
+	write series.Source
+}
+
+// wired reports whether all three I/O series were adapted.
+func (s diskIOSources) wired() bool {
+	return s.total != nil && s.read != nil && s.write != nil
+}
+
+// diskDirTreemapSource adapts the selected volume's directory snapshot into
+// treemap blocks: one block per directory sized by bytes, assigned categorical
+// hues by position so neighbors read apart. The snapshot arrives already sorted
+// largest-first (the treemap squarifier wants descending weights). It is the
+// disk analogue of processTreemapSource.
+type diskDirTreemapSource struct {
+	src diskDirSource
+}
+
+func (s diskDirTreemapSource) treemapBlocks() []treemapItem {
+	dirs := s.src.dirs()
+	items := make([]treemapItem, len(dirs))
+	for i, d := range dirs {
+		items[i] = treemapItem{
+			label:   d.label,
+			weight:  float64(d.bytes),
+			fill:    palette.Series[i%len(palette.Series)],
+			tooltip: d.path,
+		}
+	}
+	return items
+}
+
+// openDirAt returns the treemap's tapped-block callback: it resolves the block
+// index against a fresh directory snapshot and reveals that directory in the OS
+// file manager. The bounds guard covers the rare case where the snapshot shrank
+// (a volume switch or crawl landing) between the arrange that placed the block
+// and the tap.
+func openDirAt(src diskDirSource) func(index int) {
+	return func(index int) {
+		dirs := src.dirs()
+		if index < 0 || index >= len(dirs) {
+			return
+		}
+		openDir(dirs[index].path)
+	}
+}
+
+// openDir reveals path in the OS default file manager (Explorer on Windows,
+// Finder on macOS, xdg-open elsewhere). It takes a native path directly rather
+// than a file:// URL because Windows' URL handler won't reliably open folders
+// with spaces (e.g. "C:\Program Files"). Fire-and-forget via Start: explorer
+// exits non-zero even on success, so the exit code is meaningless here; only a
+// failure to launch the command is logged.
+func openDir(path string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", path)
+	case "darwin":
+		cmd = exec.Command("open", path)
+	default:
+		cmd = exec.Command("xdg-open", path)
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("open %q: %v", path, err)
+	}
+}
+
 // diskUsageColor maps a used fraction onto the bar hue: critical at or above
 // diskCritFraction, warning at or above diskWarnFraction, the neutral accent
 // below.
@@ -122,20 +230,29 @@ func diskPercentText(frac float64) string {
 	return fmt.Sprintf(fmtVolumePercent, int(frac*100))
 }
 
-// diskSubtitle composes the page-head subtitle from the partitions with real
-// capacity: their count and summed total. Pseudo-filesystems (no total) are
-// excluded, matching the volumes the list shows.
-func diskSubtitle(parts []diskPartition) string {
-	var count int
-	var total uint64
+// withCapacity returns the partitions backed by real storage (a non-zero
+// total), dropping pseudo-filesystems. It is the single definition of "a
+// volume the Disk tab shows" — shared by the subtitle, the volumes list, and
+// the scan selector.
+func withCapacity(parts []diskPartition) []diskPartition {
+	out := make([]diskPartition, 0, len(parts))
 	for _, p := range parts {
-		if p.total == 0 {
-			continue
+		if p.total > 0 {
+			out = append(out, p)
 		}
-		count++
+	}
+	return out
+}
+
+// diskSubtitle composes the page-head subtitle from the partitions with real
+// capacity: their count and summed total.
+func diskSubtitle(parts []diskPartition) string {
+	real := withCapacity(parts)
+	var total uint64
+	for _, p := range real {
 		total += p.total
 	}
-	return fmt.Sprintf(fmtVolumeSubtitle, count, formatBytesShort(total))
+	return fmt.Sprintf(fmtVolumeSubtitle, len(real), formatBytesShort(total))
 }
 
 // volumesList is the Volumes panel body: one usage bar per mounted partition,
@@ -246,18 +363,11 @@ func (r *volumesListRenderer) arrange() {
 // visiblePartitions returns the snapshot's partitions with real capacity, capped
 // at the pool size.
 func (r *volumesListRenderer) visiblePartitions() []diskPartition {
-	parts := r.list.src.partitions()
-	out := make([]diskPartition, 0, len(parts))
-	for _, p := range parts {
-		if p.total == 0 {
-			continue
-		}
-		out = append(out, p)
-		if len(out) == volumeRowLimit {
-			break
-		}
+	parts := withCapacity(r.list.src.partitions())
+	if len(parts) > volumeRowLimit {
+		parts = parts[:volumeRowLimit]
 	}
-	return out
+	return parts
 }
 
 // arrangeRow lays one partition out at vertical offset y across the full width,
@@ -327,20 +437,56 @@ func (r *volumesListRenderer) Objects() []fyne.CanvasObject {
 
 func (r *volumesListRenderer) Destroy() {}
 
-// diskView is the Disk tab: page head, the storage/volumes top row, and the
-// reserved I/O pane. Build with newDiskView and drive live updates through
-// refresh.
+// diskView is the Disk tab: page head, the storage (directory treemap) /
+// volumes top row, and the I/O chart pane. Build with newDiskView and drive
+// live updates through refresh.
 type diskView struct {
-	volumes *volumesList
-	sub     string // page-head subtitle, snapshotted from the initial partitions
+	volumes      *volumesList
+	dirmap       *treemap   // directory treemap; nil when no scanner is wired
+	io           *lineChart // I/O read/write/total chart; nil when disk I/O isn't wired
+	sub          string     // page-head subtitle, snapshotted from the initial partitions
+	mounts       []string   // selectable volume mounts, snapshotted for the scan selector
+	selectVolume func(mount string)
 }
 
-// newDiskView builds the Disk tab content from the adapted partition source.
-func newDiskView(src diskUsageSource) *diskView {
-	return &diskView{
-		volumes: newVolumesList(src),
-		sub:     diskSubtitle(src.partitions()),
+// newDiskView builds the Disk tab content. src feeds the volumes list and the
+// page head. dirs feeds the storage directory treemap and may be nil (the
+// storage panel keeps its placeholder). io feeds the I/O chart and may be
+// unwired. selectVolume retargets the directory scan when the header's volume
+// selector changes; nil leaves the selector out.
+func newDiskView(src diskUsageSource, dirs diskDirSource, io diskIOSources, selectVolume func(mount string)) *diskView {
+	v := &diskView{
+		volumes:      newVolumesList(src),
+		sub:          diskSubtitle(src.partitions()),
+		selectVolume: selectVolume,
 	}
+	if dirs != nil {
+		v.dirmap = newTreemap(diskDirTreemapSource{src: dirs}, openDirAt(dirs))
+		v.dirmap.emptyText = labelDirsEmpty
+	}
+	if io.wired() {
+		v.io = newDiskIOChart(io)
+	}
+	for _, p := range withCapacity(src.partitions()) {
+		v.mounts = append(v.mounts, p.mount)
+	}
+	return v
+}
+
+// newDiskIOChart builds the I/O line chart: an auto-scaled byte/sec Y axis over
+// the history window, the emphasized total line plus the read and write series
+// in their categorical hues.
+func newDiskIOChart(io diskIOSources) *lineChart {
+	chart := newLineChart(
+		autoRange(),
+		valueFormat(formatBytesAxis),
+		window(metrics.HistoryCapacity),
+		timeAxis(historySpan()),
+	)
+	chart.addSeries(io.total, emphasized())
+	chart.addSeries(io.read, seriesColor(palette.Series[ioReadSeriesIndex]))
+	chart.addSeries(io.write, seriesColor(palette.Series[ioWriteSeriesIndex]))
+	return chart
 }
 
 // object assembles the tab: page head pinned on top, then the top row and the
@@ -364,11 +510,11 @@ func (v *diskView) pageHead() fyne.CanvasObject {
 		vCenter(newPageSubtitle(v.sub)))
 }
 
-// topRow pairs the storage-by-directory panel (reserved for the directory
-// treemap) with the volumes panel. The directory panel keeps the larger share,
-// per the wireframe.
+// topRow pairs the storage-by-directory panel (the directory treemap, with the
+// volume selector in its header) with the volumes panel. The directory panel
+// keeps the larger share, per the wireframe.
 func (v *diskView) topRow() fyne.CanvasObject {
-	storage := newPanel(labelStorageByDir, nil, layout.NewSpacer())
+	storage := newPanel(labelStorageByDir, v.volumeSelector(), v.storageBody())
 	volumes := newPanel(labelVolumesPanel, nil, v.volumes)
 	return newWeightedHBox(tabPad,
 		weightedPane{object: storage, weight: storageDirWeight},
@@ -376,12 +522,62 @@ func (v *diskView) topRow() fyne.CanvasObject {
 	)
 }
 
-// ioPane is the reserved I/O panel — empty until the read/write/total line chart
-// lands. Titled with the live history window so the header is already truthful.
-func (v *diskView) ioPane() fyne.CanvasObject {
-	return newPanel(historyTitle(labelIOPanel), nil, layout.NewSpacer())
+// storageBody is the directory treemap, or a spacer while no scanner is wired.
+func (v *diskView) storageBody() fyne.CanvasObject {
+	if v.dirmap == nil {
+		return layout.NewSpacer()
+	}
+	return v.dirmap
 }
 
-// refresh redraws the volumes list. It touches the canvas, so a background
-// poller must marshal it onto the UI goroutine (fyne.Do).
-func (v *diskView) refresh() { v.volumes.Refresh() }
+// volumeSelector is the header control choosing which volume the directory
+// treemap scans (the wireframe's "Macintosh HD" / "Data" segmented control).
+// It's omitted when there's nothing to retarget — no selectVolume hook or only
+// one volume.
+func (v *diskView) volumeSelector() fyne.CanvasObject {
+	if v.selectVolume == nil || len(v.mounts) < 2 {
+		return nil
+	}
+	labels := make([]string, len(v.mounts))
+	for i, m := range v.mounts {
+		labels[i] = volumeLabel(m)
+	}
+	return newSegmentedSelect(0, func(i int) { v.selectVolume(v.mounts[i]) }, labels...)
+}
+
+// volumeLabel renders a mount path as a compact selector label, dropping a
+// trailing path separator so "C:\" reads as "C:".
+func volumeLabel(mount string) string {
+	if trimmed := strings.TrimRight(mount, `/\`); trimmed != "" {
+		return trimmed
+	}
+	return mount
+}
+
+// ioPane is the I/O panel: the read/write/total line chart with its legend, or
+// a placeholder while disk I/O isn't wired. Titled with the live history window.
+func (v *diskView) ioPane() fyne.CanvasObject {
+	if v.io == nil {
+		return newPanel(historyTitle(labelIOPanel), nil, layout.NewSpacer())
+	}
+	legend := newLegend(
+		legendEntry{label: labelLegendTotal, col: palette.Accent},
+		legendEntry{label: labelLegendRead, col: palette.Series[ioReadSeriesIndex]},
+		legendEntry{label: labelLegendWrite, col: palette.Series[ioWriteSeriesIndex]},
+	)
+	return newPanel(historyTitle(labelIOPanel), legend, v.io)
+}
+
+// refresh redraws the live panes — the volumes list, the directory treemap
+// (which re-reads the latest scan snapshot), and the I/O chart. It touches the
+// canvas, so a background poller must marshal it onto the UI goroutine
+// (fyne.Do).
+func (v *diskView) refresh() {
+	v.volumes.Refresh()
+	if v.dirmap != nil {
+		v.dirmap.Refresh()
+	}
+	if v.io != nil {
+		v.io.Refresh()
+	}
+}

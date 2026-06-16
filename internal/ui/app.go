@@ -9,6 +9,7 @@ package ui
 import (
 	"context"
 	"log"
+	"path/filepath"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -82,6 +83,21 @@ func Run() {
 		src.disk = diskUsageSourceFunc(func() []diskPartition {
 			return toDiskPartitions(diskCol.Usage())
 		})
+		src.diskIO = diskIOSources{
+			total: series.SourceFunc(sumRates(diskCol.ReadRate, diskCol.WriteRate)),
+			read:  series.SourceOf(diskCol.ReadRate),
+			write: series.SourceOf(diskCol.WriteRate),
+		}
+		// The directory treemap is fed by background filesystem walks (the disk
+		// poll tick is far too fast for them). The scanner crawls every volume
+		// once at launch and caches each result per volume; switching volumes
+		// then just shows that volume's cache. The controller bridges the scanner
+		// to the UI's directory seam; ctx cancellation stops the walk goroutine.
+		ctrl := &diskScanController{
+			scanner: monitor.NewDiskUsageScanner(ctx, scanRoots(diskCol.Usage())),
+		}
+		src.diskDirs = ctrl
+		src.selectVolume = ctrl.selectVolume
 		collectors = append(collectors, diskCol)
 	}
 	if procs != nil {
@@ -144,6 +160,63 @@ func toDiskPartitions(usage []monitor.PartitionUsage) []diskPartition {
 		parts[i] = diskPartition{mount: u.Mountpoint, total: u.Total, used: u.Used}
 	}
 	return parts
+}
+
+// diskScanController bridges the background directory scanner to the UI's
+// diskDirSource seam. It lives in the composition root because it's the only
+// place that knows both the monitor.DiskUsageScanner concrete and the UI seam;
+// the scanner guards its own snapshot.
+type diskScanController struct {
+	scanner *monitor.DiskUsageScanner
+}
+
+// dirs adapts the scanner's latest snapshot into the UI's directory shape,
+// labeling each bucket by its name under the scan root.
+func (c *diskScanController) dirs() []diskDir {
+	snap := c.scanner.Dirs()
+	out := make([]diskDir, len(snap))
+	for i, d := range snap {
+		out[i] = diskDir{label: filepath.Base(d.Path), path: d.Path, bytes: d.Bytes}
+	}
+	return out
+}
+
+// selectVolume retargets the scan at mount.
+func (c *diskScanController) selectVolume(mount string) {
+	c.scanner.SetRoot(mount)
+}
+
+// scanRoots lists every volume with real capacity, in usage order — the set the
+// directory scanner crawls at launch and the user switches between. The first
+// entry is the initially displayed volume, matching the volume selector's
+// default (first) segment, so the highlighted segment and the shown volume
+// agree at startup.
+func scanRoots(usage []monitor.PartitionUsage) []string {
+	var roots []string
+	for _, u := range usage {
+		if u.Total > 0 {
+			roots = append(roots, u.Mountpoint)
+		}
+	}
+	return roots
+}
+
+// sumRates returns a snapshot func adding two rate histories element-wise — the
+// I/O chart's "total" series from the read and write rate buffers. The buffers
+// share a length (one append per tick), but the shorter one is honored
+// defensively so a transient mismatch can't panic.
+func sumRates(read, write func() []uint64) func() []float64 {
+	return func() []float64 {
+		r, w := read(), write()
+		out := make([]float64, len(r))
+		for i := range r {
+			out[i] = float64(r[i])
+			if i < len(w) {
+				out[i] += float64(w[i])
+			}
+		}
+		return out
+	}
 }
 
 // toProcessRows adapts monitor.ProcessInfo records to the UI's processRow
