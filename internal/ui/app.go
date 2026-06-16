@@ -51,6 +51,7 @@ func Run() {
 	cpu := monitor.NewCPUCollector(ctx)
 	memory := monitor.NewMemoryCollector(ctx)
 	diskCol := monitor.NewDiskCollector(ctx)
+	network := monitor.NewNetworkCollector(ctx)
 	procs, err := monitor.NewProcessCollector(ctx)
 	if err != nil {
 		log.Printf("process collector: %v", err)
@@ -99,6 +100,14 @@ func Run() {
 		src.diskDirs = ctrl
 		src.selectVolume = ctrl.selectVolume
 		collectors = append(collectors, diskCol)
+	}
+	if network != nil {
+		src.net = netSources{
+			total:    series.SourceOf(network.TotalRate),
+			upload:   series.SourceOf(network.UploadRate),
+			download: series.SourceOf(network.DownloadRate),
+		}
+		collectors = append(collectors, network)
 	}
 	if procs != nil {
 		// One feed for all three process tables: the full list, unordered. Each

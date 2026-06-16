@@ -81,6 +81,7 @@ type buildSources struct {
 	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
 	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
 	diskIO       diskIOSources      // disk read/write/total rate series; zero when not wired
+	net          netSources         // network upload/download/total rate series; zero when not wired
 	selectVolume func(mount string) // retargets the directory scan; nil when not wired
 	cpuInfo      cpuMeta            // static processor description; zero when unknown
 	mem          memSources         // memory band sources + total; zero when not wired
