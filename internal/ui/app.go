@@ -49,6 +49,7 @@ func Run() {
 	// placeholder rather than crashing.
 	cpu := monitor.NewCPUCollector(ctx)
 	memory := monitor.NewMemoryCollector(ctx)
+	diskCol := monitor.NewDiskCollector(ctx)
 	procs, err := monitor.NewProcessCollector(ctx)
 	if err != nil {
 		log.Printf("process collector: %v", err)
@@ -76,6 +77,12 @@ func Run() {
 			total:  memory.Total(),
 		}
 		collectors = append(collectors, memory)
+	}
+	if diskCol != nil {
+		src.disk = diskUsageSourceFunc(func() []diskPartition {
+			return toDiskPartitions(diskCol.Usage())
+		})
+		collectors = append(collectors, diskCol)
 	}
 	if procs != nil {
 		// One feed for all three process tables: the full list, unordered. Each
