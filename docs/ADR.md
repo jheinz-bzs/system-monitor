@@ -156,6 +156,32 @@ Three pressure points identified in CODE-FLOWMAP.md §6 were addressed together 
 
 ---
 
+## ADR-008: fastwalk + background DiskUsageScanner seam for the directory treemap
+
+**Date:** 2026-06-16
+**Status:** Active
+**Area:** Architecture
+
+### Context
+
+The Disk tab's "Storage — by directory" treemap (BZS253-52, Phase 2) needs the largest directories within a volume, sized by total bytes. Computing a directory's size requires walking its whole subtree (a dir's size is the sum of its descendants — display depth limits what's *shown*, not what's *walked*). A full-volume walk takes seconds, so it cannot run on the 1s poll tick that drives every other collector. We also had to choose a traversal library: `github.com/charlievieth/fastwalk` (a fast parallel walk primitive) vs `gdu`'s analyzer (which builds the size tree for us).
+
+### Decision
+
+**Add `fastwalk` and run the walks in a new `monitor.DiskUsageScanner` on its own background goroutine — crawling every volume once at launch (not per poll tick, which is far too fast for a multi-second walk), caching each result under its own volume root. The scanner exposes a mutex-guarded `[]DirSize` snapshot of the *selected* volume's cache (mirroring `DiskCollector.Usage()`); the size aggregation and tile selection are pure, unit-tested functions (`selectDirs` → `buildTree` + `dirNode.selectCells`). The UI consumes the snapshot through the `diskDirSource` seam and never walks the filesystem itself.**
+
+### Rationale
+
+fastwalk over gdu: accurate dir sizing needs the full subtree walk regardless, so gdu's tree-building buys little while adding a heavier dependency and a hard-link dedup pass that is invisible in a treemap. fastwalk gives us just the fast walk; we own the aggregation and selection, which is exactly the pure, testable core we wanted (tested against both synthetic trees and a real temp tree). Selection is not a flat top-N: `selectCells` runs a hallway-collapse (`representative` looks through single-child passthrough dirs) + greedy-budget expansion, breaking the largest still-meaningful directory into its child directories until a budget fills. Every tile is a real directory shown at its true subtree size; bytes that aren't a directory of their own are deliberately *not* drawn — files sitting directly in an expanded directory (a file isn't a directory) and subdirectories below the noise floor (lumping them into one box would hide what the treemap is for). Tiles therefore don't sum to the volume size, and that's intended: the Volumes bars beside the treemap carry the used/free total.
+
+Per-volume cache, crawl-once cadence: each volume's snapshot is stored under its own root and `Dirs()` returns only `cache[selected]`, so selecting a volume (`SetRoot`) just changes which cache is read — it never starts a walk. This fixes a real bug in the earlier shared-`dirs` design, where a slow walk (e.g. a 1-minute `G:` crawl) finishing *after* the user had switched back to `C:` clobbered the displayed `C:` tiles with `G:` data. With per-volume caches a completing walk updates only its own entry, never the view. There is also no periodic re-crawl: volumes are walked once at launch (the displayed one first), and data refreshes only per launch — a deliberate choice to keep the walks predictable and switching instant.
+
+Warm-start cache: the scanner persists the per-volume snapshot map to `diskcache.json` next to the executable and seeds from it on launch, so the tab shows the last run's tiles during the multi-second cold crawl instead of a blank "scanning…". This is a deliberate, narrow exception to the app's "no persistence" principle (which is about *metric history* — the ring buffers): it caches only the small per-volume tile lists, is strictly best-effort (a missing/corrupt/unwritable file is logged and ignored, never fatal), and is superseded by each launch's crawl. No free-space tile is drawn in the directory treemap — it shows directories only; free space already lives in the Volumes bars beside it.
+
+The background-goroutine cadence keeps the expensive walk off the poll tick — the scanner is *not* a `Collector` and isn't registered with the `Poller`; its goroutine is owned by the app `ctx` and stops on window close. The `diskDirSource` seam keeps the dependency-inverted layering intact (UI → seam, never UI → gopsutil/fastwalk); the `diskScanController` that bridges the concrete scanner and the partition snapshot to the seam lives in the composition root (`app.go`), the only place that legitimately knows both. Deliberate simplification (ponytail): no hard-link dedup, and the walk materializes one `fileEntry` per file so the aggregation can stay a pure slice function — and `cellBudget` guards the expansion loop rather than hard-capping the final tile count — all carry `// ponytail:` comments naming the upgrade path (track `(dev,inode)`; build the tree in the walkFn; hard top-N truncate) should accuracy, memory, or a pathologically flat volume ever demand it.
+
+---
+
 ## ADR-006: Typed tab IDs with self-describing tab definitions
 
 **Date:** 2026-06-03
