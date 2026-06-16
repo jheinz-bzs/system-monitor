@@ -51,6 +51,44 @@ func TestDiskTexts(t *testing.T) {
 	}
 }
 
+// fakeDirSource is a static diskDirSource for treemap-adapter tests.
+type fakeDirSource struct {
+	dirList []diskDir
+}
+
+func (f fakeDirSource) dirs() []diskDir { return f.dirList }
+
+func TestDiskDirTreemapBlocks(t *testing.T) {
+	src := diskDirTreemapSource{src: fakeDirSource{
+		dirList: []diskDir{
+			{label: "Users", path: "C:\\Users", bytes: 300},
+			{label: "Apps", path: "C:\\Apps", bytes: 50},
+		},
+	}}
+	blocks := src.treemapBlocks()
+
+	// One block per directory, order preserved (the snapshot arrives sorted),
+	// each with a distinct categorical hue by position and the full path as its
+	// hover tooltip. No free tile.
+	wantLabels := []string{"Users", "Apps"}
+	wantWeights := []float64{300, 50}
+	wantTips := []string{"C:\\Users", "C:\\Apps"}
+	for i := range wantLabels {
+		if blocks[i].label != wantLabels[i] {
+			t.Errorf("block[%d].label = %q, want %q", i, blocks[i].label, wantLabels[i])
+		}
+		if blocks[i].weight != wantWeights[i] {
+			t.Errorf("block[%d].weight = %v, want %v", i, blocks[i].weight, wantWeights[i])
+		}
+		if blocks[i].tooltip != wantTips[i] {
+			t.Errorf("block[%d].tooltip = %q, want %q", i, blocks[i].tooltip, wantTips[i])
+		}
+		if want := palette.Series[i%len(palette.Series)]; blocks[i].fill != want {
+			t.Errorf("block[%d].fill = %v, want categorical %v", i, blocks[i].fill, want)
+		}
+	}
+}
+
 func TestDiskSubtitle(t *testing.T) {
 	parts := []diskPartition{
 		{mount: "C:\\", total: 512, used: 420},
