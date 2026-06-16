@@ -85,6 +85,12 @@ func Run() {
 		src.memProcs = memProcessSourceFunc(func(n int) []processRow {
 			return topProcessRows(procs.Processes(), n, byMemoryDesc)
 		})
+		src.allProcs = allProcessSourceFunc(func() []processRow {
+			return toProcessRows(procs.Processes())
+		})
+		src.killProc = processKillerFunc(func(pid PID) error {
+			return procs.Terminate(ctx, int32(pid))
+		})
 		collectors = append(collectors, procs)
 	}
 
@@ -140,17 +146,41 @@ func topProcessRows(procs []monitor.ProcessInfo, n int, hotter func(a, b monitor
 	if n < len(sorted) {
 		sorted = sorted[:n]
 	}
-	rows := make([]processRow, len(sorted))
-	for i, p := range sorted {
+	return toProcessRows(sorted)
+}
+
+// toProcessRows adapts monitor.ProcessInfo records to the UI's processRow
+// type, order preserved. The returned slice is freshly allocated per call, as
+// allProcessSource requires.
+func toProcessRows(procs []monitor.ProcessInfo) []processRow {
+	rows := make([]processRow, len(procs))
+	for i, p := range procs {
 		rows[i] = processRow{
-			pid:  PID(p.PID),
-			name: p.Name,
-			user: p.Username,
-			cpu:  p.CPUPercent,
-			mem:  p.MemoryBytes,
+			pid:    PID(p.PID),
+			name:   p.Name,
+			user:   p.Username,
+			cpu:    p.CPUPercent,
+			mem:    p.MemoryBytes,
+			status: procStatusOf(p.State),
 		}
 	}
 	return rows
+}
+
+// procStatusOf maps a monitor process state onto its UI display vocabulary.
+// The monitor layer carries state as an opaque enum; the display name is a UI
+// concern, so the switch lives here. StateUnknown maps to the empty status.
+func procStatusOf(s monitor.ProcessState) procStatus {
+	switch s {
+	case monitor.StateRunning:
+		return statusRunning
+	case monitor.StateSleeping:
+		return statusSleeping
+	case monitor.StateStopped:
+		return statusStopped
+	default:
+		return ""
+	}
 }
 
 // byCPUDesc and byMemoryDesc are the hottest-first orderings for the CPU and
