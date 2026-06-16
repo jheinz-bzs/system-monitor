@@ -63,7 +63,7 @@ const (
 )
 
 // procStatus is the display vocabulary for a process's coarse state — the
-// ui-side mirror of monitor.ProcState (app.go converts), kept separate so the
+// ui-side mirror of monitor.ProcessState (app.go converts), kept separate so the
 // adapters stay free of cross-layer imports. Empty means unknown.
 type procStatus string
 

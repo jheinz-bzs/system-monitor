@@ -14,16 +14,18 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-// ProcState is the coarse process-state vocabulary the Processes tab shows
+// ProcessState is the coarse process-state vocabulary the Processes tab shows
 // (the wireframe's status pills and "status:" filter share it). The richer
-// OS-level states (idle, wait, zombie, …) fold into these three; empty means
-// the state could not be determined.
-type ProcState string
+// OS-level states (idle, wait, zombie, …) fold into these three; the zero value
+// StateUnknown means the state could not be determined. Display names live in
+// the UI layer (a switch on this enum), not here.
+type ProcessState int
 
 const (
-	StateRunning  ProcState = "running"
-	StateSleeping ProcState = "sleeping"
-	StateStopped  ProcState = "stopped"
+	StateUnknown ProcessState = iota
+	StateRunning
+	StateSleeping
+	StateStopped
 )
 
 // ProcessInfo is a snapshot of one running process. PID is always populated;
@@ -35,7 +37,7 @@ type ProcessInfo struct {
 	CPUPercent  float64 // 0..100
 	MemoryBytes uint64  // resident set size
 	Username    string
-	State       ProcState
+	State       ProcessState
 }
 
 // Protocol identifies the transport-layer protocol for a connection or port.
