@@ -4,6 +4,7 @@ go 1.26.3
 
 require (
 	fyne.io/fyne/v2 v2.7.4
+	github.com/charlievieth/fastwalk v1.0.14
 	github.com/shirou/gopsutil/v4 v4.26.5
 	golang.org/x/image v0.24.0
 )
