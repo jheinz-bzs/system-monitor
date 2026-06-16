@@ -209,9 +209,9 @@ func readProcess(ctx context.Context, p *process.Process, cores float64) Process
 // state derives from observed CPU activity instead: a process that used CPU
 // during the last sample is running, otherwise sleeping. Coarse, but truthful
 // to what was actually observed.
-func readState(ctx context.Context, p *process.Process, cpuPercent float64) ProcState {
+func readState(ctx context.Context, p *process.Process, cpuPercent float64) ProcessState {
 	if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
-		if s := coarseState(statuses[0]); s != "" {
+		if s := coarseState(statuses[0]); s != StateUnknown {
 			return s
 		}
 	}
@@ -224,8 +224,8 @@ func readState(ctx context.Context, p *process.Process, cpuPercent float64) Proc
 // coarseState folds gopsutil's OS status vocabulary into the three states the
 // Processes tab shows. Zombie lands in stopped — terminated-but-unreaped is
 // closest to "not running" of the visible buckets. Unknown strings report
-// empty so the caller can fall back to the activity heuristic.
-func coarseState(s string) ProcState {
+// StateUnknown so the caller can fall back to the activity heuristic.
+func coarseState(s string) ProcessState {
 	switch s {
 	case process.Running:
 		return StateRunning
@@ -234,7 +234,7 @@ func coarseState(s string) ProcState {
 	case process.Stop, process.Zombie:
 		return StateStopped
 	default:
-		return ""
+		return StateUnknown
 	}
 }
 
