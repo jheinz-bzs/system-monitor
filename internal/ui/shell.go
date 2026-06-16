@@ -163,6 +163,13 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newDiskView(src.disk, src.diskDirs, src.diskIO, src.selectVolume)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabNetwork: func(src buildSources) tabContent {
+		if !src.net.wired() {
+			return tabContent{object: newPlaceholder(labelNetworkPageTitle)}
+		}
+		v := newNetworkView(src.net)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
 	tabProcesses: func(src buildSources) tabContent {
 		if src.allProcs == nil {
 			return tabContent{object: newPlaceholder(labelProcessesPageTitle)}
@@ -184,7 +191,7 @@ func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
 		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
 		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
 		{id: tabDisk, name: labelDiskPageTitle, icon: icon.Disk},
-		{id: tabNetwork, name: "Network", icon: icon.Network},
+		{id: tabNetwork, name: labelNetworkPageTitle, icon: icon.Network},
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: "Ports", icon: icon.Ports},
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
