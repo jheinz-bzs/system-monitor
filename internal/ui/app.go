@@ -128,6 +128,17 @@ func coreSources(cpu *monitor.CPUCollector) []series.Source {
 	return out
 }
 
+// toDiskPartitions adapts monitor.PartitionUsage records to the UI's
+// diskPartition type, order preserved, so the Disk view never imports monitor.
+// The returned slice is freshly allocated per call.
+func toDiskPartitions(usage []monitor.PartitionUsage) []diskPartition {
+	parts := make([]diskPartition, len(usage))
+	for i, u := range usage {
+		parts[i] = diskPartition{mount: u.Mountpoint, total: u.Total, used: u.Used}
+	}
+	return parts
+}
+
 // toProcessRows adapts monitor.ProcessInfo records to the UI's processRow
 // type, order preserved. The returned slice is freshly allocated per call, as
 // allProcessSource requires (the table models sort and slice it in place).
