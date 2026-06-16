@@ -4,7 +4,8 @@ package ui
 // tab-06-processes-treemap-sortable-table.html:
 //
 //	page head   — "Processes" title
-//	top pane    — dominance treemap (placeholder until the treemap card lands)
+//	top pane    — dominance treemap, blocks sized by CPU% or memory; the panel
+//	              header's CPU/Mem toggle picks the metric live
 //	bottom pane — the full sortable/filterable process table behind a toolbar
 //	              with the live name filter and the Kill action
 //
@@ -37,7 +38,7 @@ import (
 const (
 	labelProcessesPageTitle = "Processes"
 	labelAllProcesses       = "All processes"
-	labelDominanceMap       = "Dominance map — sized by CPU"
+	labelDominanceMap       = "Dominance map"
 	labelKill               = "Kill"
 	labelFilterPlaceholder  = "filter by name, user, pid…"
 	labelUserFilterPrefix   = "user:"
@@ -61,19 +62,27 @@ const (
 	allProcsPaneWeight = 1.25
 )
 
+// treemapMetricOrder lists the sizing metrics in the header toggle's segment
+// order, so a tapped segment index maps to a metric without a magic-number
+// switch. The labels at newSegmentedSelect must stay in this same order.
+var treemapMetricOrder = []treemapMetric{treemapMetricCPU, treemapMetricMem}
+
 // processesView is the Processes tab: page head, the dominance-map placeholder
 // pane, and the all-processes table with its filter/kill toolbar. Build with
 // newProcessesView and drive live updates through refresh.
 type processesView struct {
-	adapter   *allProcessTableSource
-	table     *dataTable
-	scroll    *container.Scroll
-	filter    *widget.Entry
-	userSel   *widget.Select
-	statusSel *widget.Select
-	counts    *canvas.Text   // page-head "N TOTAL · M HIGH USAGE" readout
-	kill      processKiller  // nil when termination isn't wired
-	killBtn   *widget.Button // nil when kill is nil
+	adapter    *allProcessTableSource
+	table      *dataTable
+	scroll     *container.Scroll
+	treemap    *treemap
+	treemapSrc *processTreemapSource
+	metricSel  fyne.CanvasObject // CPU/Mem dominance-metric toggle (panel header)
+	filter     *widget.Entry
+	userSel    *widget.Select
+	statusSel  *widget.Select
+	counts     *canvas.Text   // page-head "N TOTAL · M HIGH USAGE" readout
+	kill       processKiller  // nil when termination isn't wired
+	killBtn    *widget.Button // nil when kill is nil
 }
 
 // newProcessesView builds the Processes tab content. procs feeds the table;
@@ -84,6 +93,9 @@ func newProcessesView(procs allProcessSource, killer processKiller) *processesVi
 	v.table, v.adapter = newAllProcessTable(procs, v.tapRow, v.tapHeader)
 	v.scroll = container.NewVScroll(v.table)
 	v.scroll.OnScrolled = func(fyne.Position) { v.syncViewport() }
+	v.treemapSrc = newProcessTreemapSource(procs)
+	v.treemap = newTreemap(v.treemapSrc, v.tapBlock)
+	v.metricSel = newSegmentedSelect(0, v.pickMetric, colHeaderCPU, colHeaderMem)
 	v.filter = newFilterEntry(v.changeTextFilter)
 	v.userSel = newFilterSelect([]string{filterOptionAll}, filterOptionAll, v.pickUser)
 	v.statusSel = newFilterSelect(statusFilterOptions(), filterOptionAny, v.pickStatus)
@@ -136,7 +148,7 @@ func newKillButton(onTapped func()) *widget.Button {
 func (v *processesView) object() fyne.CanvasObject {
 	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), v.pageHead())
 	column := newWeightedVBox(tabPad,
-		weightedPane{object: newPanel(labelDominanceMap, nil, layout.NewSpacer()), weight: treemapPaneWeight},
+		weightedPane{object: newPanel(labelDominanceMap, vCenter(v.metricSel), v.treemap), weight: treemapPaneWeight},
 		weightedPane{object: v.tablePane(), weight: allProcsPaneWeight},
 	)
 	body := newTightBorder(head, nil, nil, nil, column)
@@ -208,6 +220,15 @@ func (v *processesView) syncSortMarkers() {
 	}
 }
 
+// tapBlock selects the process behind the tapped dominance-map block,
+// highlighting its row in the table below and scrolling it into view. A block
+// whose process has since vanished (index out of range) is ignored.
+func (v *processesView) tapBlock(index int) {
+	if pid, ok := v.treemapSrc.pidAt(index); ok {
+		v.selectPID(pid)
+	}
+}
+
 // tapRow selects the tapped row and repaints its highlight.
 func (v *processesView) tapRow(row int) {
 	v.adapter.selectRow(row)
@@ -237,6 +258,16 @@ func (v *processesView) pickStatus(opt string) {
 	}
 	v.adapter.setStatusFilter(procStatus(opt))
 	v.applyFilters()
+}
+
+// pickMetric switches the dominance treemap's sizing metric from the header
+// toggle and repaints it. The toggle's segment order is treemapMetricOrder.
+func (v *processesView) pickMetric(index int) {
+	if index < 0 || index >= len(treemapMetricOrder) {
+		return
+	}
+	v.treemapSrc.setMetric(treemapMetricOrder[index])
+	v.treemap.Refresh()
 }
 
 // applyFilters redraws after any filter change. Filtering the selected row
@@ -332,6 +363,7 @@ func (v *processesView) syncViewport() {
 // untouched; the scroll refresh keeps the content height tracking the row
 // count; a selection that vanished with its process disables Kill.
 func (v *processesView) refresh() {
+	v.treemap.Refresh()
 	v.syncViewport()
 	v.scroll.Refresh()
 	v.syncReadout()

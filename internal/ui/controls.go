@@ -58,6 +58,151 @@ func newSegment(label string, isActive bool) fyne.CanvasObject {
 	return container.NewStack(chip, padded)
 }
 
+// segmentedSelect is the interactive sibling of newSegmented (which is static
+// chrome): a row of labeled segments with the active one chipped, reporting the
+// chosen index through onChange whenever a *different* segment is tapped. The
+// Processes treemap uses it to toggle its sizing metric between CPU and memory.
+// Hit-testing maps the tap's X onto a segment via the per-segment right edges
+// the renderer records each Layout.
+type segmentedSelect struct {
+	widget.BaseWidget
+
+	labels   []string
+	active   int
+	onChange func(index int)
+	edges    []float32 // right-edge X of each segment, in widget coords
+}
+
+var (
+	_ fyne.Tappable      = (*segmentedSelect)(nil)
+	_ desktop.Cursorable = (*segmentedSelect)(nil)
+)
+
+// newSegmentedSelect builds an interactive segmented control over labels with
+// the given segment active. onChange fires with the new index after a tap that
+// changes the selection.
+func newSegmentedSelect(active int, onChange func(index int), labels ...string) *segmentedSelect {
+	s := &segmentedSelect{labels: labels, active: active, onChange: onChange}
+	s.ExtendBaseWidget(s)
+	return s
+}
+
+// Tapped implements fyne.Tappable: select the segment the tap fell in (the last
+// one if the tap lands past every recorded edge, e.g. on the right border).
+func (s *segmentedSelect) Tapped(ev *fyne.PointEvent) {
+	n := len(s.labels)
+	if n == 0 {
+		return
+	}
+	for i, edge := range s.edges {
+		if ev.Position.X >= edge {
+			continue
+		}
+		s.choose(i)
+		return
+	}
+	s.choose(n - 1)
+}
+
+// choose activates segment i, repainting and notifying only on a real change.
+func (s *segmentedSelect) choose(i int) {
+	if i == s.active {
+		return
+	}
+	s.active = i
+	s.Refresh()
+	if s.onChange != nil {
+		s.onChange(i)
+	}
+}
+
+// Cursor implements desktop.Cursorable — a pointer, as over the toggle chip.
+func (s *segmentedSelect) Cursor() desktop.Cursor { return desktop.PointerCursor }
+
+func (s *segmentedSelect) CreateRenderer() fyne.WidgetRenderer {
+	frame := canvas.NewRectangle(palette.Surface2)
+	frame.StrokeColor = palette.Border
+	frame.StrokeWidth = theme.Size(theme.SizeNameInputBorder)
+	frame.CornerRadius = theme.Size(sizeName.PanelRadius)
+
+	chip := canvas.NewRectangle(palette.Surface3)
+	chip.CornerRadius = theme.Size(theme.SizeNameInputRadius)
+
+	texts := make([]*canvas.Text, len(s.labels))
+	for i, l := range s.labels {
+		texts[i] = styledText(l, font.MonoRegular, theme.SizeNameCaptionText, palette.Text3)
+	}
+	return &segmentedSelectRenderer{ctrl: s, frame: frame, chip: chip, texts: texts}
+}
+
+type segmentedSelectRenderer struct {
+	ctrl  *segmentedSelect
+	frame *canvas.Rectangle
+	chip  *canvas.Rectangle
+	texts []*canvas.Text
+}
+
+// Layout sizes the frame, lays the segments left→right (each as wide as its
+// label plus the segment pad), parks the chip behind the active one, and
+// records each segment's right edge for hit-testing.
+func (r *segmentedSelectRenderer) Layout(size fyne.Size) {
+	r.frame.Resize(size)
+	r.frame.Move(fyne.NewPos(0, 0))
+
+	r.ctrl.edges = r.ctrl.edges[:0]
+	x := float32(0)
+	for i, t := range r.texts {
+		ts := t.MinSize()
+		segW := ts.Width + 2*segItemHPad
+		if i == r.ctrl.active {
+			r.chip.Resize(fyne.NewSize(segW, size.Height))
+			r.chip.Move(fyne.NewPos(x, 0))
+		}
+		t.Resize(ts)
+		t.Move(fyne.NewPos(x+segItemHPad, (size.Height-ts.Height)/2))
+		x += segW
+		r.ctrl.edges = append(r.ctrl.edges, x)
+	}
+	r.apply()
+}
+
+// apply colors the active label primary, the rest muted.
+func (r *segmentedSelectRenderer) apply() {
+	for i, t := range r.texts {
+		col := palette.Text3
+		if i == r.ctrl.active {
+			col = palette.Text
+		}
+		t.Color = col
+		t.Refresh()
+	}
+}
+
+func (r *segmentedSelectRenderer) MinSize() fyne.Size {
+	var w, h float32
+	for _, t := range r.texts {
+		ts := t.MinSize()
+		w += ts.Width + 2*segItemHPad
+		h = max(h, ts.Height)
+	}
+	return fyne.NewSize(w, h+2*segItemVPad)
+}
+
+func (r *segmentedSelectRenderer) Refresh() {
+	r.Layout(r.ctrl.Size())
+	canvas.Refresh(r.ctrl)
+}
+
+func (r *segmentedSelectRenderer) Objects() []fyne.CanvasObject {
+	objs := []fyne.CanvasObject{r.frame, r.chip}
+	for _, t := range r.texts {
+		objs = append(objs, t)
+	}
+	return objs
+}
+
+func (r *segmentedSelectRenderer) Destroy() {}
+
 // toggleSwatchOffAlpha dims a toggleChip's series swatch while the chip is off
 // (~35% opacity): the hue stays identifiable but clearly reads as inactive.
 const toggleSwatchOffAlpha = 0x59
