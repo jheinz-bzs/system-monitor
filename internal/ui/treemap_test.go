@@ -3,6 +3,8 @@ package ui
 import (
 	"slices"
 	"testing"
+
+	"fyne.io/fyne/v2"
 )
 
 // blockLabels returns a treemap source's block labels in order — the laid-out
@@ -80,6 +82,56 @@ func TestTreemapPidAtMapsBlockIndexToProcess(t *testing.T) {
 	}
 	if _, ok := s.pidAt(-1); ok {
 		t.Errorf("pidAt(-1) reported ok; want false")
+	}
+}
+
+func TestTreemapHitAt(t *testing.T) {
+	tm := &treemap{hits: []treemapHit{
+		{x: 0, y: 0, w: 10, h: 10, index: 0, tooltip: "a"},
+		{x: 20, y: 0, w: 10, h: 10, index: 1, tooltip: "b"}, // 10px gutter at x∈[10,20)
+	}}
+
+	if h := tm.hitAt(fyne.NewPos(5, 5)); h == nil || h.index != 0 {
+		t.Errorf("hitAt inside block 0 = %v, want index 0", h)
+	}
+	if h := tm.hitAt(fyne.NewPos(15, 5)); h != nil {
+		t.Errorf("hitAt on the gutter = %v, want nil", h)
+	}
+	if h := tm.hitAt(fyne.NewPos(25, 5)); h == nil || h.index != 1 {
+		t.Errorf("hitAt inside block 1 = %v, want index 1", h)
+	}
+}
+
+func TestTreemapHoverTooltip(t *testing.T) {
+	tm := &treemap{hoverIndex: noTreemapHover, hits: []treemapHit{{index: 0, tooltip: "C:\\Users"}}}
+	r := &treemapRenderer{tm: tm}
+
+	if got := r.hoverTooltip(); got != "" {
+		t.Errorf("no hover → tooltip %q, want empty", got)
+	}
+	tm.hoverIndex = 0
+	if got := r.hoverTooltip(); got != "C:\\Users" {
+		t.Errorf("hovering block 0 → tooltip %q, want %q", got, "C:\\Users")
+	}
+	tm.hoverIndex = 5 // an index not currently drawn (data changed under the cursor)
+	if got := r.hoverTooltip(); got != "" {
+		t.Errorf("hovering an undrawn index → tooltip %q, want empty", got)
+	}
+}
+
+func TestClampTip(t *testing.T) {
+	cases := []struct {
+		name               string
+		v, size, max, want float32
+	}{
+		{"fits", 10, 30, 100, 10},
+		{"overflow pushes left to fit", 90, 30, 100, 70},
+		{"too wide clamps to zero", 90, 200, 100, 0},
+	}
+	for _, c := range cases {
+		if got := clampTip(c.v, c.size, c.max); got != c.want {
+			t.Errorf("%s: clampTip(%v,%v,%v) = %v, want %v", c.name, c.v, c.size, c.max, got, c.want)
+		}
 	}
 }
 
