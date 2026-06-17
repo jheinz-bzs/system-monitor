@@ -78,6 +78,7 @@ type buildSources struct {
 	cpuCores     []series.Source    // per-core CPU sources, core order; empty when not wired
 	allProcs     allProcessSource   // full process list, feeding all process tables; nil when not wired
 	ports        allPortsSource     // listening-port list feeding the Ports table; nil when not wired
+	conns        allConnsSource     // active-connection list feeding the Connections table; nil when not wired
 	killProc     processKiller      // process termination; nil when not wired
 	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
 	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
