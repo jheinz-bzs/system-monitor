@@ -95,7 +95,7 @@ func newProcessesView(procs allProcessSource, killer processKiller) *processesVi
 	v.treemapSrc = newProcessTreemapSource(procs)
 	v.treemap = newTreemap(v.treemapSrc, v.tapBlock)
 	v.metricSel = newSegmentedSelect(0, v.pickMetric, colHeaderCPU, colHeaderMem)
-	v.filter = newFilterEntry(v.changeTextFilter)
+	v.filter = newFilterEntry(labelFilterPlaceholder, v.changeTextFilter)
 	v.userSel = newFilterSelect([]string{filterOptionAll}, filterOptionAll, v.pickUser)
 	v.statusSel = newFilterSelect(statusFilterOptions(), filterOptionAny, v.pickStatus)
 	if killer != nil {
@@ -123,11 +123,12 @@ func statusFilterOptions() []string {
 	return opts
 }
 
-// newFilterEntry builds the toolbar's live filter input: mono text with the
-// wireframe placeholder, change events forwarded as they're typed.
-func newFilterEntry(onChanged func(string)) *widget.Entry {
+// newFilterEntry builds a toolbar's live filter input: mono text with the given
+// placeholder, change events forwarded as they're typed. Shared by every
+// filterable tab's toolbar; each passes its own wireframe placeholder.
+func newFilterEntry(placeholder string, onChanged func(string)) *widget.Entry {
 	e := widget.NewEntry()
-	e.PlaceHolder = labelFilterPlaceholder
+	e.PlaceHolder = placeholder
 	e.TextStyle = fyne.TextStyle{Monospace: true}
 	e.OnChanged = onChanged
 	return e
