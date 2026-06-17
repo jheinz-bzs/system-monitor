@@ -77,6 +77,7 @@ type buildSources struct {
 	charts       liveSources        // time-series chart sources, keyed by tabID
 	cpuCores     []series.Source    // per-core CPU sources, core order; empty when not wired
 	allProcs     allProcessSource   // full process list, feeding all process tables; nil when not wired
+	ports        allPortsSource     // listening-port list feeding the Ports table; nil when not wired
 	killProc     processKiller      // process termination; nil when not wired
 	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
 	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
@@ -177,6 +178,13 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newProcessesView(src.allProcs, src.killProc)
 		return tabContent{object: v.object(), refresh: v.refresh, selectPID: v.selectPID}
 	},
+	tabPorts: func(src buildSources) tabContent {
+		if src.ports == nil {
+			return tabContent{object: newPlaceholder(labelPortsPageTitle)}
+		}
+		v := newPortsView(src.ports, src.nav)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
 }
 
 // newTabs returns the eight tab definitions with their content built fresh, and
@@ -193,7 +201,7 @@ func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
 		{id: tabDisk, name: labelDiskPageTitle, icon: icon.Disk},
 		{id: tabNetwork, name: labelNetworkPageTitle, icon: icon.Network},
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
-		{id: tabPorts, name: "Ports", icon: icon.Ports},
+		{id: tabPorts, name: labelPortsPageTitle, icon: icon.Ports},
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
 	}
 	var refreshers []func()
