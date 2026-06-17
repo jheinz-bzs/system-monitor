@@ -121,6 +121,11 @@ func Run() {
 		src.ports = allPortsSourceFunc(func() []portRow {
 			return toPortRows(procs.Ports(), procs.Processes())
 		})
+		// Connections resolve their owning-process name from the same process
+		// snapshot, exactly like ports, so the adapter joins both reads per tick.
+		src.conns = allConnsSourceFunc(func() []connRow {
+			return toConnRows(procs.Connections(), procs.Processes())
+		})
 		src.killProc = processKillerFunc(func(pid PID) error {
 			return procs.Terminate(ctx, int32(pid))
 		})
@@ -269,6 +274,31 @@ func toPortProto(p monitor.Protocol) portProto {
 	default:
 		return portProto(strings.ToUpper(string(p)))
 	}
+}
+
+// toConnRows adapts monitor.ConnectionInfo records to the UI's connRow type,
+// resolving each connection's owning-process name from the process snapshot by
+// PID — the same snapshot the process and ports tables read, so no extra gopsutil
+// call is made. A connection whose PID is absent from the snapshot gets an empty
+// name, which the table renders as the unresolved-owner dash. The returned slice
+// is freshly allocated per call, as allConnsSource requires.
+func toConnRows(conns []monitor.ConnectionInfo, procs []monitor.ProcessInfo) []connRow {
+	names := make(map[int32]string, len(procs))
+	for _, p := range procs {
+		names[p.PID] = p.Name
+	}
+	rows := make([]connRow, len(conns))
+	for i, c := range conns {
+		rows[i] = connRow{
+			proto:      toPortProto(c.Protocol),
+			localAddr:  c.LocalAddr,
+			remoteAddr: c.RemoteAddr,
+			state:      connState(c.State),
+			process:    names[c.PID],
+			pid:        PID(c.PID),
+		}
+	}
+	return rows
 }
 
 // toProcessRows adapts monitor.ProcessInfo records to the UI's processRow
