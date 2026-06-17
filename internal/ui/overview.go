@@ -1,21 +1,14 @@
 package ui
 
-// Overview tab content.
-//
-// Until the live 2×4 metric-panel grid (see CLAUDE.md / tab-01-overview) is
-// wired up, the Overview tab doubles as an on-screen design-system reference:
-// one instance of every typographic role and a swatch for every palette color.
-// This lets the rendered IBM Plex faces and the exact palette be eyeballed
-// against the wireframes without spinning up live data.
-//
-// Every swatch is stroked with a 1px outline so the darkest fills — including
-// the swatch that is literally the window background — stay visible against the
-// canvas instead of disappearing into it.
+// Overview tab content: a 3×2 grid of self-contained metric panels (adapted
+// from the wireframe's tab-01-overview-panel-grid — dropping the metrics this
+// app doesn't track), giving an at-a-glance health view of the machine. This
+// card (BZS253-62) builds the grid and the reusable metric-
+// panel shell; the values shown are static placeholders mirroring the
+// wireframe, and the sparkline area is reserved (empty plot region) — live
+// numbers and the actual sparklines arrive in subsequent cards.
 
 import (
-	"fmt"
-	"image/color"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -23,122 +16,133 @@ import (
 	"fyne.io/fyne/v2/theme"
 )
 
-// newOverview builds the Overview tab: a scrollable column with a typography
-// catalog and a color-swatch grid.
-func newOverview() fyne.CanvasObject {
-	body := container.New(
-		layout.NewCustomPaddedVBoxLayout(space2XL),
-		newHeading("Overview"),
-		typographyShowcase(),
-		colorShowcase(),
-	)
-	padded := container.New(layout.NewCustomPaddedLayout(space2XL, space2XL, space2XL, space2XL), body)
-	return container.NewVScroll(padded)
-}
-
-// typographyShowcase renders one labeled instance of each design-system
-// typographic role exposed by typography.go.
-func typographyShowcase() fyne.CanvasObject {
-	samples := []struct {
-		role   string
-		sample fyne.CanvasObject
-	}{
-		{"Page title — Sans SemiBold 17", newHeading("System Monitor")},
-		{"Section title — Sans SemiBold 14", newSubHeading("Per-Core Utilization")},
-		{"Metric value — Mono Medium 26", newMetricValue("42.7%")},
-		{"Table data — Mono Regular 12", newTableText("chrome.exe    1284    3.2%")},
-		{"Column label — Mono Medium 11 UPPER", newColumnLabel("Process")},
-		{"Meta / axis — Mono Regular 9", newMeta("-60s    -30s    now")},
-		{"Status pill — healthy", container.NewHBox(newStatusPill("RUNNING", status.Healthy))},
-		{"Status pill — warning", container.NewHBox(newStatusPill("ELEVATED", status.Warning))},
-		{"Status pill — critical", container.NewHBox(newStatusPill("STOPPED", status.Critical))},
-		{"Status pill — neutral", container.NewHBox(newStatusPill("IDLE", status.Neutral))},
-	}
-
-	rows := make([]fyne.CanvasObject, 0, len(samples)+1)
-	rows = append(rows, newColumnLabel("Typography"))
-	for _, s := range samples {
-		rows = append(
-			rows,
-			container.New(layout.NewCustomPaddedVBoxLayout(spaceXS),
-				newMeta(s.role),
-				s.sample,
-			))
-	}
-	return container.New(layout.NewCustomPaddedVBoxLayout(spaceLG), rows...)
-}
-
-// Swatch-grid geometry for colorShowcase, expressed as multiples of the
-// spacing scale (grid-rounded: 78 -> 80).
+// Overview page heading and panel titles.
 const (
-	swatchCellW    = 30 * spaceSM // 120; grid cell width
-	swatchCellH    = 20 * spaceSM // 80; grid cell height (78 rounded to grid)
-	swatchChipMinH = 10 * spaceSM // 40; color chip min height
+	labelOverviewPageTitle = "Overview"
+	labelOverviewSubtitle  = "Live · all systems"
+	labelOverallStatus     = "HEALTHY"
+
+	labelCPUPanel       = "CPU"
+	labelMemoryPanel    = "Memory"
+	labelDiskIOPanel    = "Disk I/O"
+	labelNetworkPanel   = "Network"
+	labelSwapPanel      = "Swap"
+	labelProcessesPanel = "Processes"
 )
 
-// colorShowcase renders a swatch for every palette token defined in theme.go.
-func colorShowcase() fyne.CanvasObject {
-	swatches := []struct {
-		name string
-		col  color.Color
-	}{
-		{"bg", palette.BG},
-		{"surface", palette.Surface},
-		{"surface-2", palette.Surface2},
-		{"surface-3", palette.Surface3},
-		{"border", palette.Border},
-		{"border-strong", palette.BorderStrong},
-		{"text", palette.Text},
-		{"text-2", palette.Text2},
-		{"text-3", palette.Text3},
-		{"accent", palette.Accent},
-		{"accent-2", palette.Accent2},
-		{"green", palette.Green},
-		{"yellow", palette.Yellow},
-		{"red", palette.Red},
-		{"accent-line", palette.AccentLine},
-		{"accent-dim", palette.AccentDim},
-		{"green-dim", palette.GreenDim},
-		{"yellow-dim", palette.YellowDim},
-		{"red-dim", palette.RedDim},
-		{"disabled-btn", palette.DisabledButton},
-		{"shadow", palette.Shadow},
+// Overview panel geometry.
+const (
+	overviewSparkMinHeight = 64 // px; reserved height for the future sparkline
+	overviewDotSize        = 8  // px; status indicator dot
+	overviewColumns        = 3  // panels per row (3×2 grid)
+)
+
+// overviewMetric is one panel's static content.
+// ponytail: these values mirror the wireframe's sample readouts and are
+// replaced by live ring-buffer data in later cards — this card is layout only.
+type overviewMetric struct {
+	title     string
+	value     string
+	unit      string
+	state     statusKind
+	footLeft  string
+	footRight string
+}
+
+var overviewMetrics = []overviewMetric{
+	{labelCPUPanel, "34", "%", status.Healthy, "12 cores", "peak 71%"},
+	{labelMemoryPanel, "11.2", "/32 GB", status.Healthy, "35% used", "cache 6.1G"},
+	{labelDiskIOPanel, "18.4", "MB/s", status.Warning, "r 12.1", "w 6.3"},
+	{labelNetworkPanel, "4.9", "MB/s", status.Healthy, "↓ 4.1", "↑ 0.8"},
+	{labelSwapPanel, "0.4", "/8 GB", status.Healthy, "5% used", "no pressure"},
+	{labelProcessesPanel, "187", "procs", status.Healthy, "6 running", "2.1k threads"},
+}
+
+// newOverview builds the Overview tab: a page header above a 3-column grid of
+// metric panels (two equal-height rows). Equal-weight rows and columns make the
+// grid resize gracefully with the window.
+func newOverview() fyne.CanvasObject {
+	rows := make([]weightedPane, 0, 2)
+	for start := 0; start < len(overviewMetrics); start += overviewColumns {
+		end := start + overviewColumns
+		if end > len(overviewMetrics) {
+			end = len(overviewMetrics)
+		}
+		rows = append(rows, weightedPane{object: overviewRow(overviewMetrics[start:end]), weight: 1})
 	}
 
-	cells := make([]fyne.CanvasObject, 0, len(swatches))
-	for _, s := range swatches {
-		cells = append(cells, swatchCell(s.name, s.col))
-	}
-	grid := container.NewGridWrap(fyne.NewSize(swatchCellW, swatchCellH), cells...)
+	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), overviewHead())
+	body := newTightBorder(head, nil, nil, nil, newWeightedVBox(tabPad, rows...))
+	return container.New(layout.NewCustomPaddedLayout(tabPad, tabPad, tabPad, tabPad), body)
+}
 
-	return container.New(layout.NewCustomPaddedVBoxLayout(spaceLG),
-		newColumnLabel("Color Palette"),
-		grid,
+// overviewHead is the page header: title and subtitle on the left, the overall
+// machine-health pill on the right.
+func overviewHead() fyne.CanvasObject {
+	return container.New(layout.NewCustomPaddedHBoxLayout(spaceMD),
+		vCenter(newHeading(labelOverviewPageTitle)),
+		vCenter(newPageSubtitle(labelOverviewSubtitle)),
+		layout.NewSpacer(),
+		vCenter(newStatusPill(labelOverallStatus, status.Healthy)),
 	)
 }
 
-// swatchCell is a single color sample: a stroked, rounded chip above its token
-// name and hex value. The outline keeps near-background fills visible.
-func swatchCell(name string, col color.Color) fyne.CanvasObject {
-	chip := canvas.NewRectangle(col)
-	chip.StrokeColor = palette.Text3
-	chip.StrokeWidth = 1
-	chip.CornerRadius = theme.Size(sizeName.PanelRadius)
-	chip.SetMinSize(fyne.NewSize(0, swatchChipMinH))
-
-	return container.New(layout.NewCustomPaddedVBoxLayout(spaceXS),
-		chip,
-		newMeta(name),
-		newMeta(swatchHex(col)),
-	)
+// overviewRow lays a slice of metrics out as equal-width panels in one row.
+func overviewRow(ms []overviewMetric) fyne.CanvasObject {
+	panes := make([]weightedPane, 0, overviewColumns)
+	for _, m := range ms {
+		panes = append(panes, weightedPane{object: overviewPanel(m), weight: 1})
+	}
+	// Pad a short final row with empty cells so its panels keep the same column
+	// width as the full rows above (otherwise 3 panels would stretch wider).
+	for len(panes) < overviewColumns {
+		panes = append(panes, weightedPane{object: layout.NewSpacer(), weight: 1})
+	}
+	return newWeightedHBox(tabPad, panes...)
 }
 
-// swatchHex formats a swatch color as #rrggbb, appending an opacity percentage
-// for translucent tokens so the alpha isn't silently dropped from the label.
-func swatchHex(c color.Color) string {
-	n := color.NRGBAModel.Convert(c).(color.NRGBA)
-	if n.A == 0xff {
-		return fmt.Sprintf("#%02x%02x%02x", n.R, n.G, n.B)
-	}
-	return fmt.Sprintf("#%02x%02x%02x %d%%", n.R, n.G, n.B, (int(n.A)*100+127)/255)
+// newMetricPanel is the reusable Overview metric-card shell: a rounded surface
+// card (theme surface fill + border token, no hardcoded colors) with a header
+// row — uppercase title on the left, health dot on the right — above a content
+// area. Callers build their own content (a value readout, a sparkline, …) and
+// slot it in here, so every Overview card reads identically and future metric
+// widgets drop straight into the content slot.
+func newMetricPanel(title string, state statusKind, content fyne.CanvasObject) fyne.CanvasObject {
+	card := canvas.NewRectangle(palette.Surface)
+	card.StrokeColor = palette.Border
+	card.StrokeWidth = panelBorderWidth
+	card.CornerRadius = theme.Size(sizeName.PanelRadius)
+
+	header := container.NewHBox(
+		vCenter(newColumnLabel(title)), layout.NewSpacer(), vCenter(statusDot(state)))
+	body := container.New(layout.NewCustomPaddedLayout(spaceMD, 0, 0, 0), content)
+
+	inner := newTightBorder(header, nil, nil, nil, body)
+	padded := container.New(
+		layout.NewCustomPaddedLayout(panelBodyPad, panelBodyPad, panelBodyPad, panelBodyPad), inner)
+	return container.NewStack(card, padded)
+}
+
+// overviewPanel composes one metric's content — the big value with its unit, a
+// reserved sparkline area that fills the slack, and a footer meta row pinned to
+// the bottom — and slots it into the shared metric-panel shell.
+func overviewPanel(m overviewMetric) fyne.CanvasObject {
+	value := container.New(layout.NewCustomPaddedHBoxLayout(spaceMD),
+		newMetricValue(m.value), vCenter(newTableText(m.unit)))
+	footer := container.NewHBox(
+		newMeta(m.footLeft), layout.NewSpacer(), newMeta(m.footRight))
+
+	spark := canvas.NewRectangle(palette.PlotBG)
+	spark.CornerRadius = theme.Size(sizeName.PanelRadius)
+	spark.SetMinSize(fyne.NewSize(0, overviewSparkMinHeight))
+	sparkArea := container.New(layout.NewCustomPaddedLayout(spaceMD, spaceMD, 0, 0), spark)
+
+	content := newTightBorder(value, footer, nil, nil, sparkArea)
+	return newMetricPanel(m.title, m.state, content)
+}
+
+// statusDot is the small filled circle in a panel header, colored by health.
+func statusDot(kind statusKind) fyne.CanvasObject {
+	dot := canvas.NewCircle(statusColor(kind))
+	return container.NewGridWrap(fyne.NewSize(overviewDotSize, overviewDotSize), dot)
 }
