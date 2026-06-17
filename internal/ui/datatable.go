@@ -629,9 +629,13 @@ func (r *dataTableRenderer) cellAt(i, j int) tableCell {
 	return tableCell{}
 }
 
-// showText positions one text cell within its column at row top y.
+// showText positions one text cell within its column at row top y, clipping
+// over-long content to the column width with an ellipsis so a wide value (a long
+// process or connection name) can't bleed into the neighboring column. The
+// available width is the column minus both cell insets; the flex column's width
+// grows with the widget, so its clip budget tracks the window.
 func (r *dataTableRenderer) showText(text *canvas.Text, cell tableCell, x, y float32, align fyne.TextAlign, colW float32) {
-	text.Text = cell.text
+	text.Text = truncateToWidth(text, cell.text, colW-2*tableCellHPad)
 	text.Alignment = align
 	sz := text.MinSize()
 	text.Resize(sz)
