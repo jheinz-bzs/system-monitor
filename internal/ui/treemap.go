@@ -452,11 +452,28 @@ func (r *treemapRenderer) arrangeLabel(label *canvas.Text, text string, x, y, w,
 func (r *treemapRenderer) syncEmpty(tileCount int) {
 	if tileCount > 0 {
 		r.empty.Hide()
+		if r.spinner != nil {
+			r.spinner.Stop()
+			r.spinner.Hide()
+		}
 		return
 	}
 	sz := r.empty.MinSize()
+	if r.spinner == nil {
+		r.empty.Resize(sz)
+		r.empty.Move(fyne.NewPos((r.size.Width-sz.Width)/2, (r.size.Height-sz.Height)/2))
+		r.empty.Show()
+		return
+	}
+	// Center the spinner + label as a unit, spinner stacked above the text.
+	stackH := treemapBusyDots + treemapBusyGap + sz.Height
+	top := (r.size.Height - stackH) / 2
+	r.spinner.Resize(fyne.NewSquareSize(treemapBusyDots))
+	r.spinner.Move(fyne.NewPos((r.size.Width-treemapBusyDots)/2, top))
+	r.spinner.Show()
+	r.spinner.Start()
 	r.empty.Resize(sz)
-	r.empty.Move(fyne.NewPos((r.size.Width-sz.Width)/2, (r.size.Height-sz.Height)/2))
+	r.empty.Move(fyne.NewPos((r.size.Width-sz.Width)/2, top+treemapBusyDots+treemapBusyGap))
 	r.empty.Show()
 }
 
