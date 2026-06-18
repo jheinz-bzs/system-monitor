@@ -214,7 +214,15 @@ func (t *treemap) CreateRenderer() fyne.WidgetRenderer {
 	border.StrokeColor = palette.Border
 	border.StrokeWidth = 1
 
-	empty := newMeta(t.emptyText)
+	var empty *canvas.Text
+	var spinner *widget.Activity
+	if t.emptyBusy {
+		empty = styledText(t.emptyText, font.MonoMedium, theme.SizeNameSubHeadingText, palette.Text2)
+		spinner = widget.NewActivity()
+		spinner.Hide()
+	} else {
+		empty = newMeta(t.emptyText)
+	}
 	empty.Hide()
 
 	tipBG := canvas.NewRectangle(palette.Surface2)
@@ -225,7 +233,7 @@ func (t *treemap) CreateRenderer() fyne.WidgetRenderer {
 	tip := styledText("", font.MonoRegular, theme.SizeNameCaptionText, palette.Text)
 	tip.Hide()
 
-	r := &treemapRenderer{tm: t, bg: bg, border: border, empty: empty, tipBG: tipBG, tip: tip}
+	r := &treemapRenderer{tm: t, bg: bg, border: border, empty: empty, spinner: spinner, tipBG: tipBG, tip: tip}
 	r.blocks = make([]*treemapBlock, treemapBlockLimit)
 	for i := range r.blocks {
 		r.blocks[i] = newTreemapBlock()
