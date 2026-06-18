@@ -77,6 +77,7 @@ type buildSources struct {
 	charts       liveSources        // time-series chart sources, keyed by tabID
 	cpuCores     []series.Source    // per-core CPU sources, core order; empty when not wired
 	allProcs     allProcessSource   // full process list, feeding all process tables; nil when not wired
+	procCount    series.Source      // process-count history for the Overview sparkline; nil when not wired
 	ports        allPortsSource     // listening-port list feeding the Ports table; nil when not wired
 	conns        allConnsSource     // active-connection list feeding the Connections table; nil when not wired
 	killProc     processKiller      // process termination; nil when not wired
@@ -87,6 +88,7 @@ type buildSources struct {
 	selectVolume func(mount string) // retargets the directory scan; nil when not wired
 	cpuInfo      cpuMeta            // static processor description; zero when unknown
 	mem          memSources         // memory band sources + total; zero when not wired
+	swap         swapSources        // Overview swap usage source + total; zero when not wired
 	nav          *crossNav          // cross-tab navigation target; populated by buildContent
 }
 
@@ -106,6 +108,22 @@ type processNavigator interface {
 // no-op, so the navigator degrades like the tabs' other nil fallbacks.
 type crossNav struct {
 	selectProcess func(pid PID, highlight bool)
+	selectTab     func(id tabID)
+}
+
+// tabNavigator is the seam the Overview panels depend on to jump to a metric's
+// own tab when clicked. Defined at the consumer; crossNav implements it once the
+// shell is assembled.
+type tabNavigator interface {
+	showTab(id tabID)
+}
+
+// showTab switches to the tab with the given id once navigation is wired;
+// otherwise it no-ops (like the process-nav fallbacks).
+func (n *crossNav) showTab(id tabID) {
+	if n.selectTab != nil {
+		n.selectTab(id)
+	}
 }
 
 // showProcesses jumps to the Processes tab without changing its selection — the
@@ -140,8 +158,17 @@ type tabBuilder func(src buildSources) tabContent
 // tabRegistry maps tab IDs to their builder functions. To add a new live tab,
 // register its builder here — newTabs is never edited for new metric areas.
 var tabRegistry = map[tabID]tabBuilder{
-	tabOverview: func(_ buildSources) tabContent {
-		return tabContent{object: newOverview()}
+	tabOverview: func(src buildSources) tabContent {
+		v := newOverviewView(overviewSources{
+			cpu:      src.charts[tabCPU],
+			cpuCores: src.cpuInfo.cores,
+			mem:      src.mem,
+			diskIO:   src.diskIO,
+			net:      src.net,
+			swap:     src.swap,
+			procs:    src.procCount,
+		}, src.nav)
+		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabCPU: func(src buildSources) tabContent {
 		s := src.charts[tabCPU]
@@ -284,6 +311,11 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 		list.Add(items[i])
 	}
 	wireProcessNav(nav, tabs, selectIndex, selectors)
+	nav.selectTab = func(id tabID) {
+		if i, ok := indexOfTab(tabs, id); ok {
+			selectIndex(i)
+		}
+	}
 	selectIndex(0)
 
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
