@@ -237,10 +237,11 @@ func (t *treemap) CreateRenderer() fyne.WidgetRenderer {
 type treemapRenderer struct {
 	tm *treemap
 
-	bg     *canvas.Rectangle
-	border *canvas.Rectangle
-	empty  *canvas.Text
-	tipBG  *canvas.Rectangle // hover tooltip background
+	bg      *canvas.Rectangle
+	border  *canvas.Rectangle
+	empty   *canvas.Text
+	spinner *widget.Activity  // animated scan indicator; nil unless emptyBusy
+	tipBG   *canvas.Rectangle // hover tooltip background
 	tip    *canvas.Text      // hover tooltip text (the block's full path)
 	blocks []*treemapBlock
 
