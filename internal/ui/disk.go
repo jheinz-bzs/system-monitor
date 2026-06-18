@@ -463,6 +463,7 @@ func newDiskView(src diskUsageSource, dirs diskDirSource, io diskIOSources, sele
 	if dirs != nil {
 		v.dirmap = newTreemap(diskDirTreemapSource{src: dirs}, openDirAt(dirs))
 		v.dirmap.emptyText = labelDirsEmpty
+		v.dirmap.emptyBusy = true // no cached snapshot yet → show the scanning spinner
 	}
 	if io.wired() {
 		v.io = newDiskIOChart(io)
