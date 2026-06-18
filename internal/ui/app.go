@@ -79,6 +79,7 @@ func Run() {
 			free:   series.SourceOf(memory.Free),
 			total:  memory.Total(),
 		}
+		src.swap = swapSources{used: series.SourceOf(memory.SwapUsed), total: memory.SwapTotal()}
 		collectors = append(collectors, memory)
 	}
 	if diskCol != nil {
@@ -129,6 +130,7 @@ func Run() {
 		src.killProc = processKillerFunc(func(pid PID) error {
 			return procs.Terminate(ctx, int32(pid))
 		})
+		src.procCount = series.SourceOf(procs.Count)
 		collectors = append(collectors, procs)
 	}
 
