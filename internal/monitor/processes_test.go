@@ -165,7 +165,7 @@ func TestDeriveListeningPorts(t *testing.T) {
 func TestCoarseStateFoldsOSVocabulary(t *testing.T) {
 	cases := []struct {
 		os   string
-		want ProcState
+		want ProcessState
 	}{
 		{"running", StateRunning},
 		{"sleep", StateSleeping},
@@ -175,12 +175,12 @@ func TestCoarseStateFoldsOSVocabulary(t *testing.T) {
 		{"blocked", StateSleeping},
 		{"stop", StateStopped},
 		{"zombie", StateStopped},
-		{"", ""},
-		{"something-new", ""},
+		{"", StateUnknown},
+		{"something-new", StateUnknown},
 	}
 	for _, c := range cases {
 		if got := coarseState(c.os); got != c.want {
-			t.Errorf("coarseState(%q) = %q, want %q", c.os, got, c.want)
+			t.Errorf("coarseState(%q) = %v, want %v", c.os, got, c.want)
 		}
 	}
 }
