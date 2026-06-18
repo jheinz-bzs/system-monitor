@@ -74,13 +74,17 @@ type liveSources map[tabID]series.Source
 // buildSources bundles all live data sources the tab builders need. Extend
 // this struct (not the tabBuilder signature) when new source types are added.
 type buildSources struct {
-	charts   liveSources      // time-series chart sources, keyed by tabID
-	cpuCores []series.Source  // per-core CPU sources, core order; empty when not wired
-	allProcs allProcessSource // full process list, feeding all process tables; nil when not wired
-	killProc processKiller    // process termination; nil when not wired
-	cpuInfo  cpuMeta          // static processor description; zero when unknown
-	mem      memSources       // memory band sources + total; zero when not wired
-	nav      *crossNav        // cross-tab navigation target; populated by buildContent
+	charts       liveSources        // time-series chart sources, keyed by tabID
+	cpuCores     []series.Source    // per-core CPU sources, core order; empty when not wired
+	allProcs     allProcessSource   // full process list, feeding all process tables; nil when not wired
+	killProc     processKiller      // process termination; nil when not wired
+	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
+	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
+	diskIO       diskIOSources      // disk read/write/total rate series; zero when not wired
+	selectVolume func(mount string) // retargets the directory scan; nil when not wired
+	cpuInfo      cpuMeta            // static processor description; zero when unknown
+	mem          memSources         // memory band sources + total; zero when not wired
+	nav          *crossNav          // cross-tab navigation target; populated by buildContent
 }
 
 // processNavigator is the cross-tab navigation seam the CPU and Memory tabs
@@ -151,6 +155,13 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newMemoryView(src.mem, src.allProcs, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabDisk: func(src buildSources) tabContent {
+		if src.disk == nil {
+			return tabContent{object: newPlaceholder(labelDiskPageTitle)}
+		}
+		v := newDiskView(src.disk, src.diskDirs, src.diskIO, src.selectVolume)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
 	tabProcesses: func(src buildSources) tabContent {
 		if src.allProcs == nil {
 			return tabContent{object: newPlaceholder(labelProcessesPageTitle)}
@@ -171,7 +182,7 @@ func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
 		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
-		{id: tabDisk, name: "Disk", icon: icon.Disk},
+		{id: tabDisk, name: labelDiskPageTitle, icon: icon.Disk},
 		{id: tabNetwork, name: "Network", icon: icon.Network},
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: "Ports", icon: icon.Ports},

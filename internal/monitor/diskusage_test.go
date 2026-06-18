@@ -1,0 +1,233 @@
+package monitor
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
+
+// testParams mirrors the production tuning but with a caller-set byte floor, so
+// the selection logic can be exercised against small synthetic trees.
+func testParams(floor uint64, budget int) selectParams {
+	return selectParams{
+		dominance:         dominanceThreshold,
+		localSignificance: localSignificance,
+		floorFraction:     0, // floor comes from minBytes alone in tests
+		minBytes:          floor,
+		cellBudget:        budget,
+	}
+}
+
+// entry builds a fileEntry under root from path components, for synthetic trees.
+func entry(root string, size int64, parts ...string) fileEntry {
+	return fileEntry{path: filepath.Join(append([]string{root}, parts...)...), size: size}
+}
+
+// TestBuildTreeRollup checks the Phase −1 reconstruction: localSize lands in the
+// immediate parent, subtreeSize rolls up, and depth counts from the root.
+func TestBuildTreeRollup(t *testing.T) {
+	root := filepath.FromSlash("/data")
+	tree := buildTree([]fileEntry{
+		entry(root, 100, "a", "f1"),
+		entry(root, 50, "a", "sub", "f2"),
+		entry(root, 25, "loose.bin"), // file directly under root
+	}, root)
+
+	if tree.subtreeSize != 175 {
+		t.Errorf("root subtree = %d, want 175", tree.subtreeSize)
+	}
+	if tree.localSize != 25 {
+		t.Errorf("root localSize = %d, want 25 (loose.bin)", tree.localSize)
+	}
+	a := tree.children["a"]
+	if a == nil || a.subtreeSize != 150 || a.localSize != 100 || a.depth != 1 {
+		t.Errorf("a = %+v, want subtree 150 / local 100 / depth 1", a)
+	}
+	if sub := a.children["sub"]; sub == nil || sub.subtreeSize != 50 || sub.depth != 2 {
+		t.Errorf("a/sub = %+v, want subtree 50 / depth 2", sub)
+	}
+}
+
+// TestRepresentativeCollapsesHallway confirms a dominated single-child chain
+// collapses to the node where size actually concentrates.
+func TestRepresentativeCollapsesHallway(t *testing.T) {
+	root := filepath.FromSlash("/data")
+	// root → home → joe → cache → (big file); every link is a hallway.
+	tree := buildTree([]fileEntry{
+		entry(root, 1000, "home", "joe", "cache", "big.bin"),
+	}, root)
+
+	rep := tree.representative(testParams(1, cellBudget))
+	want := filepath.Join(root, "home", "joe", "cache")
+	if rep.path != want {
+		t.Errorf("representative = %q, want %q", rep.path, want)
+	}
+}
+
+// TestRepresentativeStopsAtBranch confirms a node holding significant direct
+// files is not looked through even when one child dominates.
+func TestRepresentativeStopsAtBranch(t *testing.T) {
+	root := filepath.FromSlash("/data")
+	// home: one child dominates by bytes (900/1020 = 88% ≥ 85%), but home also
+	// holds 120 of its own direct files (12% ≥ 10% local significance), so the
+	// hallway rule must NOT look through it — it stays a branch point.
+	tree := buildTree([]fileEntry{
+		entry(root, 900, "home", "big", "f"),
+		entry(root, 120, "home", "own.bin"),
+	}, root)
+
+	rep := tree.children["home"].representative(testParams(1, cellBudget))
+	if rep.path != filepath.Join(root, "home") {
+		t.Errorf("representative = %q, want the locally-heavy home dir", rep.path)
+	}
+}
+
+// TestSelectCellsDropsLooseFilesAndSubFloor covers the full selection: the
+// branch point gets expanded into its above-floor child directories, while a
+// sub-floor subdirectory and files sitting directly in the root are dropped
+// entirely (not lumped into an "(other)"/"(files)" tile) — every tile is a real
+// directory.
+func TestSelectCellsDropsLooseFilesAndSubFloor(t *testing.T) {
+	root := filepath.FromSlash("/data")
+	tree := buildTree([]fileEntry{
+		entry(root, 1000, "big1", "x"),
+		entry(root, 1000, "big2", "y"),
+		entry(root, 10, "tiny", "z"),   // below floor 100 → dropped
+		entry(root, 500, "direct.bin"), // a loose file at root → dropped (not a dir)
+	}, root)
+
+	got := tree.selectCells(testParams(100, cellBudget))
+	want := []DirSize{
+		{Path: filepath.Join(root, "big1"), Bytes: 1000},
+		{Path: filepath.Join(root, "big2"), Bytes: 1000},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("selectCells =\n  %v\nwant\n  %v", got, want)
+	}
+}
+
+// TestSelectCellsBudgetStopsExpansion confirms the cell budget halts further
+// expansion: a node that could be broken down stays whole once the budget fills.
+func TestSelectCellsBudgetStopsExpansion(t *testing.T) {
+	root := filepath.FromSlash("/data")
+	// root branches into a (which itself branches), b, c. With budget 3, the
+	// first expansion of root yields exactly 3 tiles and a is never expanded.
+	tree := buildTree([]fileEntry{
+		entry(root, 1000, "a", "sub1", "f"),
+		entry(root, 1000, "a", "sub2", "f"),
+		entry(root, 1500, "b", "f"),
+		entry(root, 1200, "c", "f"),
+	}, root)
+
+	got := tree.selectCells(testParams(100, 3))
+	want := []DirSize{
+		{Path: filepath.Join(root, "a"), Bytes: 2000},
+		{Path: filepath.Join(root, "b"), Bytes: 1500},
+		{Path: filepath.Join(root, "c"), Bytes: 1200},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("selectCells budget=3 =\n  %v\nwant\n  %v", got, want)
+	}
+}
+
+// TestCacheRoundTrip covers the warm-start cache: persist a snapshot map, then
+// load it back into a fresh scanner. cachePath is injected so the test never
+// touches the real executable directory.
+func TestCacheRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), cacheFileName)
+	want := map[string][]DirSize{
+		"C:\\": {{Path: "C:\\Users", Bytes: 100}, {Path: "C:\\Windows", Bytes: 50}},
+	}
+
+	(&DiskUsageScanner{cachePath: path}).persist(want)
+
+	reader := &DiskUsageScanner{cachePath: path, cache: map[string][]DirSize{}}
+	reader.loadCache()
+	if !reflect.DeepEqual(reader.cache, want) {
+		t.Errorf("loaded cache =\n  %v\nwant\n  %v", reader.cache, want)
+	}
+}
+
+// TestLoadCacheMissingFileIsNoop confirms a cold start (no cache file yet)
+// leaves the cache empty instead of failing.
+func TestLoadCacheMissingFileIsNoop(t *testing.T) {
+	s := &DiskUsageScanner{
+		cachePath: filepath.Join(t.TempDir(), "absent.json"),
+		cache:     map[string][]DirSize{},
+	}
+	s.loadCache()
+	if len(s.cache) != 0 {
+		t.Errorf("cache = %v, want empty after a missing file", s.cache)
+	}
+}
+
+// TestDirsReadsSelectedVolume guards the per-volume isolation: Dirs returns the
+// selected volume's own cache, and SetRoot switches volumes without ever showing
+// another volume's tiles (the stale-volume clobber bug).
+func TestDirsReadsSelectedVolume(t *testing.T) {
+	s := &DiskUsageScanner{
+		cache: map[string][]DirSize{
+			"C:\\": {{Path: "C:\\Users", Bytes: 100}},
+			"G:\\": {{Path: "G:\\Games", Bytes: 200}},
+		},
+		selected: "C:\\",
+	}
+
+	if got := s.Dirs(); len(got) != 1 || got[0].Path != "C:\\Users" {
+		t.Errorf("Dirs on C: = %v, want [C:\\Users]", got)
+	}
+	s.SetRoot("G:\\")
+	if got := s.Dirs(); len(got) != 1 || got[0].Path != "G:\\Games" {
+		t.Errorf("Dirs after SetRoot(G:) = %v, want [G:\\Games]", got)
+	}
+}
+
+// TestWalkRoot covers the mountpoint → walkable-root normalization: a bare
+// Windows volume name gains the separator that makes it the drive root, while
+// directory paths pass through unchanged.
+func TestWalkRoot(t *testing.T) {
+	sep := string(filepath.Separator)
+	cases := map[string]string{
+		"C:":       "C:" + sep, // bare volume → drive root, not the current dir on C:
+		"C:" + sep: "C:" + sep, // already a root
+		"":         "",         // no volume selected
+	}
+	for in, want := range cases {
+		if got := walkRoot(in); got != want {
+			t.Errorf("walkRoot(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestWalkAndSelect exercises the real walk over a temp tree with known byte
+// totals, then selects — covering walkFiles + selectDirs end to end. A minimal
+// floor keeps every directory in play so the assertion is about aggregation,
+// not the noise filter; the loose root file is dropped because it's not a dir.
+func TestWalkAndSelect(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string, n int) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, bytes.Repeat([]byte{'x'}, n), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("big/file1", 1000)
+	write("big/sub/file2", 500) // big → 1500
+	write("small/file3", 100)   // small → 100
+	write("loose.bin", 300)     // a loose file at root → dropped (not a directory)
+
+	got := selectDirs(walkFiles(context.Background(), root), root, testParams(1, cellBudget))
+	want := []DirSize{
+		{Path: filepath.Join(root, "big"), Bytes: 1500},
+		{Path: filepath.Join(root, "small"), Bytes: 100},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("walk+select =\n  %v\nwant\n  %v", got, want)
+	}
+}
