@@ -81,6 +81,7 @@ type buildSources struct {
 	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
 	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
 	diskIO       diskIOSources      // disk read/write/total rate series; zero when not wired
+	net          netSources         // network upload/download/total rate series; zero when not wired
 	selectVolume func(mount string) // retargets the directory scan; nil when not wired
 	cpuInfo      cpuMeta            // static processor description; zero when unknown
 	mem          memSources         // memory band sources + total; zero when not wired
@@ -162,6 +163,13 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newDiskView(src.disk, src.diskDirs, src.diskIO, src.selectVolume)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabNetwork: func(src buildSources) tabContent {
+		if !src.net.wired() {
+			return tabContent{object: newPlaceholder(labelNetworkPageTitle)}
+		}
+		v := newNetworkView(src.net)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
 	tabProcesses: func(src buildSources) tabContent {
 		if src.allProcs == nil {
 			return tabContent{object: newPlaceholder(labelProcessesPageTitle)}
@@ -183,7 +191,7 @@ func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
 		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
 		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
 		{id: tabDisk, name: labelDiskPageTitle, icon: icon.Disk},
-		{id: tabNetwork, name: "Network", icon: icon.Network},
+		{id: tabNetwork, name: labelNetworkPageTitle, icon: icon.Network},
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: "Ports", icon: icon.Ports},
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
