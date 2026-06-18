@@ -76,19 +76,51 @@ type liveSources map[tabID]series.Source
 type buildSources struct {
 	charts   liveSources      // time-series chart sources, keyed by tabID
 	cpuCores []series.Source  // per-core CPU sources, core order; empty when not wired
-	procs    processSource    // top-by-CPU process source; nil when not wired
-	memProcs memProcessSource // top-by-memory process source; nil when not wired
-	allProcs allProcessSource // full process list; nil when not wired
+	allProcs allProcessSource // full process list, feeding all process tables; nil when not wired
 	killProc processKiller    // process termination; nil when not wired
 	cpuInfo  cpuMeta          // static processor description; zero when unknown
 	mem      memSources       // memory band sources + total; zero when not wired
+	nav      *crossNav        // cross-tab navigation target; populated by buildContent
+}
+
+// processNavigator is the cross-tab navigation seam the CPU and Memory tabs
+// depend on to jump to — and optionally highlight a process row in — the
+// Processes tab. Defined at the consumer per idiomatic Go; crossNav is the
+// implementation buildContent supplies once the shell is assembled.
+type processNavigator interface {
+	showProcesses()
+	showProcess(pid PID)
+}
+
+// crossNav is the late-bound cross-tab navigation target shared by the tab
+// builders. Its action stays nil until buildContent has assembled the nav and
+// located the Processes tab, so a builder can capture it before the shell
+// exists. Calls made before wiring — or in a build with no Processes tab —
+// no-op, so the navigator degrades like the tabs' other nil fallbacks.
+type crossNav struct {
+	selectProcess func(pid PID, highlight bool)
+}
+
+// showProcesses jumps to the Processes tab without changing its selection — the
+// CPU tab's "→ all processes" link.
+func (n *crossNav) showProcesses() { n.jump(0, false) }
+
+// showProcess jumps to the Processes tab and highlights pid — a tapped CPU- or
+// Memory-tab process row landing on its owning process.
+func (n *crossNav) showProcess(pid PID) { n.jump(pid, true) }
+
+// jump performs the navigation when it has been wired; otherwise it no-ops.
+func (n *crossNav) jump(pid PID, highlight bool) {
+	if n.selectProcess != nil {
+		n.selectProcess(pid, highlight)
+	}
 }
 
 // tabContent is the built content for one tab: the object to display, an
 // optional refresh callback (nil for static tabs that never update), and an
 // optional cross-tab entry point selecting a process by PID (only the
-// Processes tab populates it; a future cross-nav card collects these so
-// jump links can land on a highlighted row).
+// Processes tab populates it; buildContent collects these so the crossNav can
+// land a jump link or a tapped row on a highlighted process).
 type tabContent struct {
 	object    fyne.CanvasObject
 	refresh   func()
@@ -109,14 +141,14 @@ var tabRegistry = map[tabID]tabBuilder{
 		if s == nil {
 			return tabContent{object: newPlaceholder(labelCPUPageTitle)}
 		}
-		v := newCPUView(s, src.cpuCores, src.procs, src.cpuInfo)
+		v := newCPUView(s, src.cpuCores, src.allProcs, src.cpuInfo, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabMemory: func(src buildSources) tabContent {
 		if !src.mem.wired() {
 			return tabContent{object: newPlaceholder(labelMemoryPageTitle)}
 		}
-		v := newMemoryView(src.mem, src.memProcs)
+		v := newMemoryView(src.mem, src.allProcs, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabProcesses: func(src buildSources) tabContent {
@@ -134,7 +166,7 @@ var tabRegistry = map[tabID]tabBuilder{
 // metric areas are additive — only a registry entry is required, not an edit
 // here. Returning fresh defs keeps repeated buildContent calls from
 // double-appending to a shared slice.
-func newTabs(src buildSources) ([]tabDef, func()) {
+func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
@@ -146,6 +178,7 @@ func newTabs(src buildSources) ([]tabDef, func()) {
 		{id: tabConnections, name: "Connections", icon: icon.Connections},
 	}
 	var refreshers []func()
+	selectors := make(map[tabID]func(PID)) // cross-nav entry points, by tab
 	for i := range tabs {
 		t := &tabs[i]
 		var content tabContent
@@ -158,13 +191,27 @@ func newTabs(src buildSources) ([]tabDef, func()) {
 		if content.refresh != nil {
 			refreshers = append(refreshers, content.refresh)
 		}
+		if content.selectPID != nil {
+			selectors[t.id] = content.selectPID
+		}
 	}
 	refresh := func() {
 		for _, r := range refreshers {
 			r()
 		}
 	}
-	return tabs, refresh
+	return tabs, refresh, selectors
+}
+
+// indexOfTab returns the position of the tab with the given id, and whether it
+// was found, so cross-nav can resolve a target tab to its content pane.
+func indexOfTab(tabs []tabDef, id tabID) (int, bool) {
+	for i, t := range tabs {
+		if t.id == id {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // buildContent assembles the full window content from the available live sources
@@ -172,7 +219,13 @@ func newTabs(src buildSources) ([]tabDef, func()) {
 // refresh closure that redraws every live pane; the caller drives it on the UI
 // goroutine each poll tick (see startUIRefresh).
 func buildContent(src buildSources) (fyne.CanvasObject, func()) {
-	tabs, refresh := newTabs(src)
+	// Create the cross-nav target before building tabs so the CPU/Memory
+	// builders capture it; its action is wired below, once the panes and nav
+	// selection exist.
+	nav := &crossNav{}
+	src.nav = nav
+
+	tabs, refresh, selectors := newTabs(src)
 	n := len(tabs)
 	panes := make([]fyne.CanvasObject, n)
 	items := make([]*navItem, n)
@@ -195,12 +248,32 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 		items[i] = newNavItem(d.name, d.icon, i+1, func() { selectIndex(i) })
 		list.Add(items[i])
 	}
+	wireProcessNav(nav, tabs, selectIndex, selectors)
 	selectIndex(0)
 
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
 	statusRegion := vStackTight(hLine(), newStatusBar())
 	return newTightBorder(title, statusRegion, nil, nil, body), refresh
+}
+
+// wireProcessNav points the cross-nav at the Processes tab: navigating selects
+// that tab, then (when a process is targeted) highlights it through the tab's
+// registered selectPID. Left unwired when no Processes tab exists, so its
+// callers no-op rather than jumping nowhere.
+func wireProcessNav(nav *crossNav, tabs []tabDef, selectIndex func(int), selectors map[tabID]func(PID)) {
+	idx, ok := indexOfTab(tabs, tabProcesses)
+	if !ok {
+		return
+	}
+	nav.selectProcess = func(pid PID, highlight bool) {
+		selectIndex(idx)
+		if highlight {
+			if selectPID := selectors[tabProcesses]; selectPID != nil {
+				selectPID(pid)
+			}
+		}
+	}
 }
 
 // newSidebar wraps the top-aligned nav list in a surface-colored, fixed-width

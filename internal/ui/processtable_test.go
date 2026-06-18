@@ -14,10 +14,10 @@ func fixedProcs(rows []processRow) allProcessSource {
 }
 
 // snapshotPIDs runs a Snapshot and returns the resulting row order as PIDs.
-func snapshotPIDs(s *allProcessTableSource) []PID {
-	s.Snapshot()
-	out := make([]PID, len(s.rowPIDs))
-	copy(out, s.rowPIDs)
+func snapshotPIDs(m *processTableModel) []PID {
+	m.Snapshot()
+	out := make([]PID, len(m.rowPIDs))
+	copy(out, m.rowPIDs)
 	return out
 }
 
@@ -95,6 +95,32 @@ func TestSelectionFollowsPIDAcrossResort(t *testing.T) {
 	}
 	if pid, ok := s.selectedPID(); !ok || pid != 10 {
 		t.Errorf("selectedPID = %d,%v, want 10,true", pid, ok)
+	}
+}
+
+// Tapping a row selects it; tapping the same row again clears the selection
+// (toggle-to-deselect), while tapping a different row moves the selection.
+func TestToggleRowDeselects(t *testing.T) {
+	s := newAllProcessTableSource(fixedProcs(testRows()))
+	s.Snapshot() // CPU desc: 20, 30, 10
+
+	s.toggleRow(0) // select PID 20
+	if pid, ok := s.selectedPID(); !ok || pid != 20 {
+		t.Fatalf("after first tap: selectedPID = %d,%v, want 20,true", pid, ok)
+	}
+
+	s.toggleRow(0) // same row → deselect
+	if _, ok := s.selectedPID(); ok {
+		t.Error("second tap on the selected row left it selected; want cleared")
+	}
+	if s.highlightedRow() != noTableRow {
+		t.Errorf("highlightedRow = %d, want noTableRow after deselect", s.highlightedRow())
+	}
+
+	s.toggleRow(0) // re-select 20
+	s.toggleRow(1) // different row → move selection to PID 30
+	if pid, ok := s.selectedPID(); !ok || pid != 30 {
+		t.Errorf("after tapping a different row: selectedPID = %d,%v, want 30,true", pid, ok)
 	}
 }
 
@@ -177,6 +203,102 @@ func TestTallyCountsWholeMachineDespiteFilters(t *testing.T) {
 	}
 	if users := s.userOptions(); len(users) != 2 || users[0] != "root" || users[1] != "you" {
 		t.Errorf("userOptions = %v, want [root you]", users)
+	}
+}
+
+// The CPU and Memory top-process tables must record a PID per row each
+// Snapshot so a tapped row resolves to its process for cross-tab navigation;
+// out-of-range indices (a row that vanished before the tap) resolve to false.
+func TestTopProcessTablesResolveRowPID(t *testing.T) {
+	rows := []processRow{
+		{pid: 3412, name: "chrome", cpu: 42, mem: 5 << 30},
+		{pid: 540, name: "postgres", cpu: 3, mem: 1 << 28},
+	}
+
+	cpu := newCPUTableSource(fixedProcs(rows))
+	cpu.Snapshot()
+	assertPIDAt(t, "cpu", cpu.pidAt, 0, 3412)
+	assertPIDAt(t, "cpu", cpu.pidAt, 1, 540)
+	if _, ok := cpu.pidAt(2); ok {
+		t.Error("cpu pidAt(2) resolved past the last row")
+	}
+
+	mem := newMemTableSource(fixedProcs(rows), testTotalMem)
+	mem.Snapshot()
+	assertPIDAt(t, "mem", mem.pidAt, 0, 3412)
+	assertPIDAt(t, "mem", mem.pidAt, 1, 540)
+	if _, ok := mem.pidAt(-1); ok {
+		t.Error("mem pidAt(-1) resolved a negative index")
+	}
+}
+
+// The top-N tables (CPU/Memory) keep their top-N selection but re-order that set
+// by the active sort column — a header tap re-sorts the displayed rows.
+func TestTopProcessTableHeaderResort(t *testing.T) {
+	rows := []processRow{
+		{pid: 10, name: "zeta", cpu: 90, mem: 100},
+		{pid: 20, name: "alpha", cpu: 10, mem: 300},
+	}
+	cpu := newCPUTableSource(fixedProcs(rows))
+
+	// Default order is CPU% descending.
+	cpu.Snapshot()
+	if got := rowPIDsCopy(cpu.rowPIDs); !pidsEqual(got, []PID{10, 20}) {
+		t.Errorf("default order = %v, want [10 20] (CPU%% desc)", got)
+	}
+
+	// Re-sorting by name reorders the same top-N set, ascending.
+	cpu.toggleSort(sortByName)
+	cpu.Snapshot()
+	if got := rowPIDsCopy(cpu.rowPIDs); !pidsEqual(got, []PID{20, 10}) {
+		t.Errorf("by-name order = %v, want [20 10] (alpha, zeta)", got)
+	}
+}
+
+// rowPIDsCopy returns an independent copy of a recorded row-PID slice.
+func rowPIDsCopy(pids []PID) []PID {
+	out := make([]PID, len(pids))
+	copy(out, pids)
+	return out
+}
+
+// syncSortHeaders must mark only the active, sortable column. The Memory table's
+// Mem% column shares RSS's ordering and is non-sortable, so RSS owns the marker.
+func TestSyncSortHeadersMarksActiveSortableColumn(t *testing.T) {
+	src := newMemTableSource(fixedProcs(nil), testTotalMem)
+	table := newDataTable(src, tableColumns(columnDefs(src.cols)...))
+
+	syncSortHeaders(table, src) // default: sortByMem desc
+
+	const rssCol, barCol, pctCol = 3, 4, 5
+	if got := table.cols[rssCol].header; got != colHeaderRSS+sortDescMarker {
+		t.Errorf("RSS header = %q, want %q", got, colHeaderRSS+sortDescMarker)
+	}
+	if got := table.cols[pctCol].header; got != colHeaderPctMem {
+		t.Errorf("Mem%% header = %q, want unmarked %q", got, colHeaderPctMem)
+	}
+
+	// Tapping the non-sortable bar column must not change the sort.
+	tapSortHeader(table, src, barCol)
+	if src.sortCol != sortByMem || src.sortDir != sortDescending {
+		t.Errorf("sort after bar-column tap = %v/%v, want sortByMem/desc (unchanged)", src.sortCol, src.sortDir)
+	}
+
+	// Tapping RSS flips it to ascending and re-marks.
+	tapSortHeader(table, src, rssCol)
+	if src.sortDir != sortAscending {
+		t.Errorf("RSS re-tap dir = %v, want ascending", src.sortDir)
+	}
+	if got := table.cols[rssCol].header; got != colHeaderRSS+sortAscMarker {
+		t.Errorf("RSS header after flip = %q, want %q", got, colHeaderRSS+sortAscMarker)
+	}
+}
+
+func assertPIDAt(t *testing.T, label string, pidAt func(int) (PID, bool), row int, want PID) {
+	t.Helper()
+	got, ok := pidAt(row)
+	if !ok || got != want {
+		t.Errorf("%s pidAt(%d) = %d,%v, want %d,true", label, row, got, ok, want)
 	}
 }
 
