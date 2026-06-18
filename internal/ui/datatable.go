@@ -43,7 +43,7 @@ const (
 	tableHeaderHeight = 34 // px; design-system-03 panel/column header height
 	tableDefaultRowH  = 29 // px; design-system-03 table row height
 	tableRowPoolSize  = 20 // renderer pre-allocation; not a display cap
-	tableMinVisRows   = 3  // default data rows contributing to MinSize (minVisibleRows overrides)
+	tableMinVisRows   = 3  // default data rows contributing to MinSize (non-scroll-hosted tables)
 	tableOverdrawRows = 2  // viewport-windowing slack rows beyond the visible slice
 )
 
@@ -135,18 +135,6 @@ func rowHeight(h float32) tableOption {
 	}
 }
 
-// minVisibleRows overrides how many data rows contribute to MinSize (default:
-// tableMinVisRows). A table wrapped in a scroll container raises this to its
-// row limit so a short pane scrolls to reach every row instead of clipping the
-// list at the pane's edge.
-func minVisibleRows(n int) tableOption {
-	return func(t *dataTable) {
-		if n > 0 {
-			t.minRows = n
-		}
-	}
-}
-
 // rowPool overrides how many rows the renderer pre-allocates (default:
 // tableRowPoolSize). A viewport-windowed table raises this to cover the
 // tallest viewport it expects to fill.
@@ -159,7 +147,7 @@ func rowPool(n int) tableOption {
 }
 
 // sizeToRows makes MinSize track the snapshot's row count instead of the
-// minVisibleRows floor, so a hosting scroll container's content height — and
+// tableMinVisRows floor, so a hosting scroll container's content height — and
 // scrollbar — always spans exactly the current rows.
 func sizeToRows() tableOption {
 	return func(t *dataTable) { t.sizesToRows = true }
@@ -251,6 +239,10 @@ func (t *dataTable) setViewport(y, h float32) {
 	t.viewportY = y
 	t.viewportH = h
 }
+
+// rowPixelHeight reports the per-row height in pixels, for a scroll host
+// computing row offsets (scrollTable).
+func (t *dataTable) rowPixelHeight() float32 { return t.rowH }
 
 // setColumnHeader rewrites one column's header label (sort markers); the next
 // arrange picks it up.

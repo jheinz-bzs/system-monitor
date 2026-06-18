@@ -1,19 +1,20 @@
 package ui
 
-// Process table adapters — wire process data into the generic dataTable widget.
+// Process table model — wires process data into the generic dataTable widget.
 //
-// This file is the process-domain analog of cpu.go's relationship to lineChart:
-// it knows about processRow, formats cell values, and declares the wireframes'
-// process tables — the CPU tab's top-N (PID / Process / User / CPU% / bar /
-// Mem, newProcessTable), the Memory tab's top-N (PID / Process / User / RSS /
-// bar / %Mem, newMemProcessTable), and the Processes tab's full sortable/
-// filterable table (newAllProcessTable). The generic dataTable widget
-// (datatable.go) never sees processRow.
+// All three process tables (the CPU and Memory tabs' top-N panels and the
+// Processes tab's full sortable/filterable list) are one type, processTableModel,
+// configured differently. The model pulls the full process list from a single
+// allProcessSource and shapes it per its config: an optional filter pass, an
+// optional top-N selection by a primary metric, the active display sort, and one
+// tableCell per *declarative column* (each procColumn carries its own
+// value-extractor). Adding or re-laying-out a table means declaring columns and
+// flags, not writing a new Snapshot.
 //
-// processSource, memProcessSource, allProcessSource, and processKiller are the
-// seams between the monitor layer and these adapters; they are consumed here
-// and implemented in app.go (the composition root), which is the only place
-// that knows both monitor.ProcessInfo and processRow.
+// allProcessSource and processKiller are the seams between the monitor layer and
+// this model; they are consumed here and implemented in app.go (the composition
+// root), the only place that knows both monitor.ProcessInfo and processRow. The
+// generic dataTable widget (datatable.go) never sees processRow.
 
 import (
 	"sort"
@@ -25,8 +26,8 @@ import (
 
 // Process data constants.
 const (
-	topCPUProcessLimit    = 10 // rows returned by topByCPU
-	topMemProcessLimit    = 10 // rows returned by topByMemory
+	topCPUProcessLimit    = 10 // CPU tab's top-N row count
+	topMemProcessLimit    = 10 // Memory tab's top-N row count
 	processTableRowHeight = 29 // px; passed as rowHeight() option to dataTable
 )
 
@@ -111,25 +112,23 @@ func sortMarker(d sortDirection) string {
 	return sortDescMarker
 }
 
-// processSource is the data seam between the monitor layer and this adapter.
-// Defined here at the consumer (ui package) per idiomatic Go; app.go adapts
-// the concrete ProcessCollector to this interface without creating a cross-
-// layer import.
-type processSource interface {
-	topByCPU(n int) []processRow
-}
-
-// processSourceFunc adapts any func(int)[]processRow to processSource.
-type processSourceFunc func(n int) []processRow
-
-func (f processSourceFunc) topByCPU(n int) []processRow { return f(n) }
-
 // PID is a typed process identifier, carried as a first-class value so
 // cross-tab navigation links resolve without string parsing or type assertions.
 type PID int32
 
+// pidAtRow returns pids[index] guarded by bounds, false when index is out of
+// range. Each process visualization records a PID per drawn element (table row
+// or treemap block) in draw order, so a tapped element resolves to the process
+// it represents through this one lookup.
+func pidAtRow(pids []PID, index int) (PID, bool) {
+	if index < 0 || index >= len(pids) {
+		return 0, false
+	}
+	return pids[index], true
+}
+
 // processRow is the display-layer shape for one process. app.go selects and
-// converts from monitor.ProcessInfo when building the adapter, so this type
+// converts from monitor.ProcessInfo when building the model, so this type
 // never appears in the monitor package.
 type processRow struct {
 	pid    PID
@@ -138,39 +137,6 @@ type processRow struct {
 	cpu    float64 // 0..100, machine-wide scale
 	mem    uint64  // resident set bytes
 	status procStatus
-}
-
-// processTableSource implements TableSource for a processSource. It formats
-// each processRow into the six wireframe columns; the CPU value feeds both the
-// numeric column and the bar column's fill fraction.
-type processTableSource struct {
-	src processSource
-}
-
-// Snapshot calls topByCPU on every Refresh to return a live snapshot, exactly
-// as series.Source.Values() is called on every lineChart arrange().
-func (s *processTableSource) Snapshot() [][]tableCell {
-	rows := s.src.topByCPU(topCPUProcessLimit)
-	cells := make([][]tableCell, len(rows))
-	for i, r := range rows {
-		cells[i] = append(
-			processIdentityCells(r),
-			tableCell{text: formatPercent1(r.cpu)},
-			tableCell{frac: r.cpu / percentMax},
-			tableCell{text: formatBytesShort(r.mem)},
-		)
-	}
-	return cells
-}
-
-// processIdentityCells are the leading PID / Process / User cells every
-// process table's rows start with (shared by all three Snapshot adapters).
-func processIdentityCells(r processRow) []tableCell {
-	return []tableCell{
-		{text: strconv.Itoa(int(r.pid))},
-		{text: r.name},
-		{text: shortUsername(r.user)},
-	}
 }
 
 // processIdentityColumns are the leading PID / Process / User column
@@ -199,66 +165,6 @@ func formatPercent1(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-// newProcessTable builds a *dataTable configured for the process view: the six
-// wireframe columns fed by src. The name column renders in primary text; the
-// rest keep the table-data default (text-2).
-func newProcessTable(src processSource) *dataTable {
-	return newDataTable(
-		&processTableSource{src: src},
-		tableColumns(append(
-			processIdentityColumns(),
-			tableColumn{header: colHeaderCPU, width: procColCPUW, align: fyne.TextAlignTrailing},
-			tableColumn{header: "", width: procColBarW, kind: columnBar},
-			tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing},
-		)...),
-		rowHeight(processTableRowHeight),
-	)
-}
-
-// memProcessSource is the Memory tab's data seam to the monitor layer: the
-// top-by-memory analog of processSource. Defined here at the consumer per
-// idiomatic Go; app.go adapts the concrete ProcessCollector to it.
-type memProcessSource interface {
-	topByMemory(n int) []processRow
-}
-
-// memProcessSourceFunc adapts any func(int)[]processRow to memProcessSource.
-type memProcessSourceFunc func(n int) []processRow
-
-func (f memProcessSourceFunc) topByMemory(n int) []processRow { return f(n) }
-
-// memBarFullScalePct is the Mem% value at which a memory-table bar fills its
-// whole track, measured from the wireframe's fills (its 5.6%-of-total row
-// fills 56% of the track). Percentage points, not a fraction.
-const memBarFullScalePct = 10
-
-// memProcessTableSource implements TableSource for the Memory tab's table. It
-// formats each processRow into the wireframe's columns; total (physical memory
-// bytes) scales the Mem% column and the bars.
-type memProcessTableSource struct {
-	src   memProcessSource
-	total uint64
-}
-
-// Snapshot calls topByMemory on every Refresh to return a live snapshot. The
-// bars fill linearly with each row's share of physical memory, reaching a full
-// track at memBarFullScalePct (the wireframe's scale — against the raw 0..100%
-// domain every bar would sit near-empty).
-func (s *memProcessTableSource) Snapshot() [][]tableCell {
-	rows := s.src.topByMemory(topMemProcessLimit)
-	cells := make([][]tableCell, len(rows))
-	for i, r := range rows {
-		pct := byteFraction(r.mem, s.total) * percentMax
-		cells[i] = append(
-			processIdentityCells(r),
-			tableCell{text: formatBytesShort(r.mem)},
-			tableCell{frac: min(pct/memBarFullScalePct, 1)},
-			tableCell{text: formatPercent1(pct)},
-		)
-	}
-	return cells
-}
-
 // byteFraction returns part/whole as a 0..1 fraction, 0 when whole is zero
 // (an unknown total must not divide by zero or fill a bar).
 func byteFraction(part, whole uint64) float64 {
@@ -268,30 +174,12 @@ func byteFraction(part, whole uint64) float64 {
 	return float64(part) / float64(whole)
 }
 
-// newMemProcessTable builds a *dataTable configured for the Memory tab's
-// top-processes pane: the wireframe's columns fed by src, with total physical
-// memory scaling the %Mem column. minVisibleRows keeps every top-N row
-// reachable when the table sits in a scroll container.
-func newMemProcessTable(src memProcessSource, total uint64) *dataTable {
-	return newDataTable(
-		&memProcessTableSource{src: src, total: total},
-		tableColumns(append(
-			processIdentityColumns(),
-			tableColumn{header: colHeaderRSS + sortDescMarker, width: procColMemW, align: fyne.TextAlignTrailing},
-			tableColumn{header: "", width: procColBarW, kind: columnBar},
-			tableColumn{header: colHeaderPctMem, width: procColPctW, align: fyne.TextAlignTrailing},
-		)...),
-		rowHeight(processTableRowHeight),
-		minVisibleRows(topMemProcessLimit),
-	)
-}
-
-// allProcessSource is the Processes tab's data seam to the monitor layer: the
-// complete process list, unordered (this adapter owns ordering — sort state
-// must live UI-side to survive refreshes). Implementations must return a
-// fresh slice per call; the adapter filters and sorts it in place. Defined
-// here at the consumer per idiomatic Go; app.go adapts the concrete
-// ProcessCollector to it.
+// allProcessSource is every process table's data seam to the monitor layer: the
+// complete process list, unordered (the model owns ordering — sort state must
+// live UI-side to survive refreshes). Implementations must return a fresh slice
+// per call; the model filters, selects, and sorts it in place. Defined here at
+// the consumer per idiomatic Go; app.go adapts the concrete ProcessCollector to
+// it.
 type allProcessSource interface {
 	allProcesses() []processRow
 }
@@ -333,28 +221,6 @@ const (
 	sortDescending
 )
 
-// procColumnSpec pairs one all-processes column declaration with its sort
-// key. procTableSpec is the single authoritative home of the table's column
-// order: newAllProcessTable builds its columns from it and the view's
-// tap-to-sort and sort-marker logic read it, so the three can't drift.
-type procColumnSpec struct {
-	column tableColumn
-	sort   procSortColumn
-}
-
-// procTableSpec returns the all-processes table's columns in table order.
-func procTableSpec() []procColumnSpec {
-	identity := processIdentityColumns()
-	return []procColumnSpec{
-		{column: identity[0], sort: sortByPID},
-		{column: identity[1], sort: sortByName},
-		{column: identity[2], sort: sortByUser},
-		{column: tableColumn{header: colHeaderCPU, width: procColCPUW, align: fyne.TextAlignTrailing}, sort: sortByCPU},
-		{column: tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing}, sort: sortByMem},
-		{column: tableColumn{header: colHeaderStatus, width: procColStatusW, kind: columnPill}, sort: sortByStatus},
-	}
-}
-
 // defaultSortDirection is the direction a column sorts on first tap: usage
 // columns show hottest-first, identity columns read naturally ascending.
 func defaultSortDirection(col procSortColumn) sortDirection {
@@ -370,144 +236,6 @@ func oppositeDirection(d sortDirection) sortDirection {
 		return sortDescending
 	}
 	return sortAscending
-}
-
-// allProcessTableSource implements TableSource over the full process list,
-// applying the live name filter, the active sort, and the row selection on
-// every Snapshot — so all three survive each poll tick by construction.
-type allProcessTableSource struct {
-	src allProcessSource
-
-	sortCol procSortColumn
-	sortDir sortDirection
-
-	// The toolbar's three filters: free text over name/user/PID, an exact
-	// (short) username, and a status. Empty string means "no filter" for all
-	// three — the wireframe's "all" / "any" options.
-	filter       string
-	userFilter   string
-	statusFilter procStatus
-
-	// Page-head readout and filter options, tallied from the UNFILTERED list
-	// each Snapshot so they describe the whole machine.
-	total     int
-	highUsage int
-	users     []string
-
-	// Selection is tracked by PID (the first-class identifier), then
-	// re-resolved to a row index against each snapshot. hasSelected
-	// disambiguates "none" — PID 0 is a real pseudo-process on Windows.
-	selected    PID
-	hasSelected bool
-	rowPIDs     []PID // PID per row of the last snapshot (tap → PID mapping)
-	selRow      int   // selected PID's row in the last snapshot; noTableRow when none
-}
-
-// newAllProcessTableSource builds the adapter with the card's default order:
-// CPU% descending.
-func newAllProcessTableSource(src allProcessSource) *allProcessTableSource {
-	return &allProcessTableSource{
-		src:     src,
-		sortCol: sortByCPU,
-		sortDir: sortDescending,
-		selRow:  noTableRow,
-	}
-}
-
-// Snapshot returns the filtered, sorted process list as table cells, fresh on
-// every Refresh.
-func (s *allProcessTableSource) Snapshot() [][]tableCell {
-	all := s.src.allProcesses()
-	s.tally(all)
-	rows := filterRows(all, s.filter, s.userFilter, s.statusFilter)
-	sortRows(rows, s.sortCol, s.sortDir)
-	s.indexRows(rows)
-
-	cells := make([][]tableCell, len(rows))
-	for i, r := range rows {
-		cells[i] = append(processIdentityCells(r),
-			tableCell{text: formatPercent1(r.cpu)},
-			tableCell{text: formatBytesShort(r.mem)},
-			tableCell{text: string(r.status), pill: statusPillKind(r.status)},
-		)
-	}
-	return cells
-}
-
-// highlightedRow implements tableRowHighlighter: the selected row's index in
-// the last snapshot.
-func (s *allProcessTableSource) highlightedRow() int { return s.selRow }
-
-// tally caches the page-head readout and the user-filter options from the
-// unfiltered list, so both describe the whole machine regardless of the
-// active filters.
-func (s *allProcessTableSource) tally(rows []processRow) {
-	s.total = len(rows)
-	s.highUsage = 0
-	seen := make(map[string]struct{})
-	users := s.users[:0]
-	for _, r := range rows {
-		if r.cpu >= highUsageCPUPct {
-			s.highUsage++
-		}
-		u := shortUsername(r.user)
-		if u == "" {
-			continue // permission-restricted rows have no name to filter on
-		}
-		if _, ok := seen[u]; !ok {
-			seen[u] = struct{}{}
-			users = append(users, u)
-		}
-	}
-	sort.Strings(users)
-	s.users = users
-}
-
-// counts reports the page-head readout: total processes and how many are at
-// high CPU usage, as of the last Snapshot.
-func (s *allProcessTableSource) counts() (total, highUsage int) {
-	return s.total, s.highUsage
-}
-
-// userOptions returns the distinct (short) usernames seen in the last
-// Snapshot, sorted — the "user:" filter's choices. The slice is a copy.
-func (s *allProcessTableSource) userOptions() []string {
-	out := make([]string, len(s.users))
-	copy(out, s.users)
-	return out
-}
-
-// filterRows applies the toolbar's three filters: free text matched against
-// name, user, and PID (case-insensitive contains — the wireframe's "filter by
-// name, user, pid…"), plus the exact user and status selections. Empty values
-// pass everything through.
-func filterRows(rows []processRow, text, user string, st procStatus) []processRow {
-	if text == "" && user == "" && st == "" {
-		return rows
-	}
-	needle := strings.ToLower(text)
-	out := make([]processRow, 0, len(rows))
-	for _, r := range rows {
-		if user != "" && shortUsername(r.user) != user {
-			continue
-		}
-		if st != "" && r.status != st {
-			continue
-		}
-		if needle != "" && !matchesText(r, needle) {
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
-}
-
-// matchesText reports whether the row matches the free-text needle on any of
-// name, user, or PID.
-func matchesText(r processRow, needle string) bool {
-	return strings.Contains(strings.ToLower(r.name), needle) ||
-		strings.Contains(strings.ToLower(shortUsername(r.user)), needle) ||
-		strings.Contains(strconv.Itoa(int(r.pid)), needle)
 }
 
 // sortRows orders rows by the given column and direction, breaking ties by
@@ -550,38 +278,48 @@ func rowLess(col procSortColumn) func(a, b processRow) bool {
 	}
 }
 
-// indexRows records each row's PID and re-resolves the selection against the
-// new row set. A selected process that disappeared — exited or filtered out —
-// clears the selection, so a later kill can never hit a recycled PID.
-func (s *allProcessTableSource) indexRows(rows []processRow) {
+// sortablePIDRows is the sort-state + per-row-PID bookkeeping the table model
+// uses: the active sort column/direction (header-tap sorting) and the PID
+// recorded per displayed row (tap → process resolution, for cross-nav or
+// selection). The model embeds it; the header helpers read it.
+type sortablePIDRows struct {
+	sortCol procSortColumn
+	sortDir sortDirection
+	rowPIDs []PID // PID per row of the last snapshot, in display order
+}
+
+// applySort orders rows in place by the active column and direction.
+func (s *sortablePIDRows) applySort(rows []processRow) {
+	sortRows(rows, s.sortCol, s.sortDir)
+}
+
+// recordPIDs caches each row's PID in display order for tap → PID resolution.
+func (s *sortablePIDRows) recordPIDs(rows []processRow) {
 	s.rowPIDs = s.rowPIDs[:0]
 	for _, r := range rows {
 		s.rowPIDs = append(s.rowPIDs, r.pid)
 	}
-
-	s.selRow = noTableRow
-	if !s.hasSelected {
-		return
-	}
-	if i := s.rowIndexOf(s.selected); i != noTableRow {
-		s.selRow = i
-		return
-	}
-	s.selected, s.hasSelected = 0, false
 }
 
-// setFilter sets the live free-text filter; the next Snapshot applies it.
-func (s *allProcessTableSource) setFilter(f string) { s.filter = f }
+// pidAt returns the PID at display row index, false when out of range (the row
+// vanished between the snapshot and the tap).
+func (s *sortablePIDRows) pidAt(index int) (PID, bool) {
+	return pidAtRow(s.rowPIDs, index)
+}
 
-// setUserFilter restricts rows to one (short) username; empty shows all.
-func (s *allProcessTableSource) setUserFilter(u string) { s.userFilter = u }
+// rowIndexOf returns pid's display row, noTableRow when absent.
+func (s *sortablePIDRows) rowIndexOf(pid PID) int {
+	for i, p := range s.rowPIDs {
+		if p == pid {
+			return i
+		}
+	}
+	return noTableRow
+}
 
-// setStatusFilter restricts rows to one status; empty shows any.
-func (s *allProcessTableSource) setStatusFilter(st procStatus) { s.statusFilter = st }
-
-// toggleSort makes col the active sort column at its default direction, or
-// flips the direction when col already is active.
-func (s *allProcessTableSource) toggleSort(col procSortColumn) {
+// toggleSort makes col the active sort column at its default direction, or flips
+// the direction when col already is active.
+func (s *sortablePIDRows) toggleSort(col procSortColumn) {
 	if s.sortCol == col {
 		s.sortDir = oppositeDirection(s.sortDir)
 		return
@@ -590,34 +328,423 @@ func (s *allProcessTableSource) toggleSort(col procSortColumn) {
 	s.sortDir = defaultSortDirection(col)
 }
 
-// selectRow selects the process at row i of the last snapshot.
-func (s *allProcessTableSource) selectRow(i int) {
-	if i < 0 || i >= len(s.rowPIDs) {
-		return
-	}
-	s.selected, s.hasSelected = s.rowPIDs[i], true
-	s.selRow = i
+// procColumn is one declarative table column: its rendering definition
+// (embedded tableColumn), the sort key it taps to (when sortable), and a
+// value-extractor that turns a processRow into the column's cell. The model
+// formats every row by calling each column's cell, so the per-table differences
+// (units, bars, pills) live entirely in these extractors — one generic Snapshot
+// serves all three tables.
+type procColumn struct {
+	tableColumn
+	sort     procSortColumn
+	sortable bool
+	cell     func(r processRow) tableCell
 }
 
-// selectPID selects the given PID. Its row index resolves on the next
-// Snapshot (refresh the table before reading rowIndexOf).
-func (s *allProcessTableSource) selectPID(pid PID) {
-	s.selected, s.hasSelected = pid, true
+// columnDefs extracts the bare rendering declarations from a column set, in
+// order — what newDataTable's tableColumns option wants.
+func columnDefs(cols []procColumn) []tableColumn {
+	out := make([]tableColumn, len(cols))
+	for i, c := range cols {
+		out[i] = c.tableColumn
+	}
+	return out
+}
+
+// Shared cell extractors. The identity trio plus CPU% and resident-memory text
+// recur across tables, so they live as named functions; per-table columns that
+// need table-level context (the Memory bars/percent need total) capture it in a
+// closure built by memColumns.
+func pidCell(r processRow) tableCell      { return tableCell{text: strconv.Itoa(int(r.pid))} }
+func nameCell(r processRow) tableCell     { return tableCell{text: r.name} }
+func userCell(r processRow) tableCell     { return tableCell{text: shortUsername(r.user)} }
+func cpuPctCell(r processRow) tableCell   { return tableCell{text: formatPercent1(r.cpu)} }
+func cpuBarCell(r processRow) tableCell   { return tableCell{frac: r.cpu / percentMax} }
+func memBytesCell(r processRow) tableCell { return tableCell{text: formatBytesShort(r.mem)} }
+func statusCell(r processRow) tableCell {
+	return tableCell{text: string(r.status), pill: statusPillKind(r.status)}
+}
+
+// identityColumns returns the leading PID / Process / User columns every process
+// table starts with, each sortable by its natural key.
+func identityColumns() []procColumn {
+	cols := processIdentityColumns()
+	return []procColumn{
+		{tableColumn: cols[0], sort: sortByPID, sortable: true, cell: pidCell},
+		{tableColumn: cols[1], sort: sortByName, sortable: true, cell: nameCell},
+		{tableColumn: cols[2], sort: sortByUser, sortable: true, cell: userCell},
+	}
+}
+
+// cpuColumns is the CPU tab's column set: identity, CPU% with its inline bar
+// gauge, then resident memory.
+func cpuColumns() []procColumn {
+	return append(identityColumns(),
+		procColumn{tableColumn: tableColumn{header: colHeaderCPU, width: procColCPUW, align: fyne.TextAlignTrailing}, sort: sortByCPU, sortable: true, cell: cpuPctCell},
+		procColumn{tableColumn: tableColumn{header: "", width: procColBarW, kind: columnBar}, cell: cpuBarCell},
+		procColumn{tableColumn: tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing}, sort: sortByMem, sortable: true, cell: memBytesCell},
+	)
+}
+
+// memColumns is the Memory tab's column set: identity, RSS with its inline bar
+// gauge, then Mem%. total scales the bar (full at memBarFullScalePct of total)
+// and the percentage, captured by the closures. Mem% is not separately
+// sortable — its order is identical to RSS, so RSS owns the memory sort.
+func memColumns(total uint64) []procColumn {
+	memPct := func(r processRow) float64 { return byteFraction(r.mem, total) * percentMax }
+	return append(identityColumns(),
+		procColumn{tableColumn: tableColumn{header: colHeaderRSS, width: procColMemW, align: fyne.TextAlignTrailing}, sort: sortByMem, sortable: true, cell: memBytesCell},
+		procColumn{tableColumn: tableColumn{header: "", width: procColBarW, kind: columnBar},
+			cell: func(r processRow) tableCell { return tableCell{frac: min(memPct(r)/memBarFullScalePct, 1)} }},
+		procColumn{tableColumn: tableColumn{header: colHeaderPctMem, width: procColPctW, align: fyne.TextAlignTrailing},
+			cell: func(r processRow) tableCell { return tableCell{text: formatPercent1(memPct(r))} }},
+	)
+}
+
+// allColumns is the Processes tab's full column set: identity, CPU%, Mem, and
+// the status pill.
+func allColumns() []procColumn {
+	return append(identityColumns(),
+		procColumn{tableColumn: tableColumn{header: colHeaderCPU, width: procColCPUW, align: fyne.TextAlignTrailing}, sort: sortByCPU, sortable: true, cell: cpuPctCell},
+		procColumn{tableColumn: tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing}, sort: sortByMem, sortable: true, cell: memBytesCell},
+		procColumn{tableColumn: tableColumn{header: colHeaderStatus, width: procColStatusW, kind: columnPill}, sort: sortByStatus, sortable: true, cell: statusCell},
+	)
+}
+
+// memBarFullScalePct is the Mem% value at which a memory-table bar fills its
+// whole track, measured from the wireframe's fills (its 5.6%-of-total row
+// fills 56% of the track). Percentage points, not a fraction.
+const memBarFullScalePct = 10
+
+// tapSortHeader handles a header tap: when the tapped column is sortable it
+// becomes (or flips) the active sort, re-tags the markers, and repaints.
+// Non-sortable columns (bar, derived) ignore the tap. Shared by all three
+// process tables so header sorting behaves identically.
+func tapSortHeader(table *dataTable, m *processTableModel, col int) {
+	if col < 0 || col >= len(m.cols) || !m.cols[col].sortable {
+		return
+	}
+	m.toggleSort(m.cols[col].sort)
+	syncSortHeaders(table, m)
+	table.Refresh()
+}
+
+// syncSortHeaders rewrites the column headers so the active sort column — and
+// only it — carries its direction marker.
+func syncSortHeaders(table *dataTable, m *processTableModel) {
+	for i, c := range m.cols {
+		header := c.header
+		if c.sortable && c.sort == m.sortCol {
+			header += sortMarker(m.sortDir)
+		}
+		table.setColumnHeader(i, header)
+	}
+}
+
+// processTableModel is the single TableSource behind every process table. It
+// pulls the full process list from one allProcessSource and shapes it per its
+// configuration: an optional filter pass (Processes tab), an optional top-N
+// selection by a primary metric (CPU/Memory tabs), the active display sort, and
+// one tableCell per declarative column. Optional selection state (Processes tab)
+// is re-resolved against each snapshot by PID. Embeds sortablePIDRows for the
+// sort + PID bookkeeping shared with header taps and cross-nav.
+type processTableModel struct {
+	sortablePIDRows
+	src  allProcessSource
+	cols []procColumn
+
+	// Top-N selection: limit 0 means the full list; metric is the column the
+	// top-N is chosen by, before the display sort reorders that set.
+	limit  int
+	metric procSortColumn
+
+	// Filtering (Processes tab only; filterable false disables the pass). Empty
+	// string means "no filter" for each — the wireframe's "all" / "any" options.
+	filterable   bool
+	filter       string
+	userFilter   string
+	statusFilter procStatus
+
+	// Page-head readout and user-filter options, tallied from the UNFILTERED
+	// list each Snapshot so they describe the whole machine.
+	total     int
+	highUsage int
+	users     []string
+
+	// Selection (Processes tab only; selectable false disables it), tracked by
+	// PID — the first-class identifier — then re-resolved to a row index against
+	// each snapshot. hasSelected disambiguates "none" (PID 0 is a real
+	// pseudo-process on Windows); selRow is noTableRow when nothing is selected.
+	selectable  bool
+	selected    PID
+	hasSelected bool
+	selRow      int
+}
+
+// newCPUTableSource builds the CPU tab's model: top-N by CPU, CPU% descending,
+// no filter or selection (rows cross-navigate instead).
+func newCPUTableSource(src allProcessSource) *processTableModel {
+	return &processTableModel{
+		sortablePIDRows: sortablePIDRows{sortCol: sortByCPU, sortDir: sortDescending},
+		src:             src,
+		cols:            cpuColumns(),
+		limit:           topCPUProcessLimit,
+		metric:          sortByCPU,
+		selRow:          noTableRow,
+	}
+}
+
+// newMemTableSource builds the Memory tab's model: top-N by resident memory,
+// RSS descending, with total scaling the Mem% column.
+func newMemTableSource(src allProcessSource, total uint64) *processTableModel {
+	return &processTableModel{
+		sortablePIDRows: sortablePIDRows{sortCol: sortByMem, sortDir: sortDescending},
+		src:             src,
+		cols:            memColumns(total),
+		limit:           topMemProcessLimit,
+		metric:          sortByMem,
+		selRow:          noTableRow,
+	}
+}
+
+// newAllProcessTableSource builds the Processes tab's model: the full list,
+// filterable and selectable, CPU% descending by default.
+func newAllProcessTableSource(src allProcessSource) *processTableModel {
+	return &processTableModel{
+		sortablePIDRows: sortablePIDRows{sortCol: sortByCPU, sortDir: sortDescending},
+		src:             src,
+		cols:            allColumns(),
+		filterable:      true,
+		selectable:      true,
+		selRow:          noTableRow,
+	}
+}
+
+// Snapshot shapes the live process list into table cells, fresh on every
+// Refresh: filter (if enabled) → top-N select (if limited) → display sort →
+// record PIDs and re-resolve selection → one cell per column.
+func (m *processTableModel) Snapshot() [][]tableCell {
+	rows := m.src.allProcesses()
+	if m.filterable {
+		m.tally(rows)
+		rows = filterRows(rows, m.filter, m.userFilter, m.statusFilter)
+	}
+	if m.limit > 0 {
+		rows = topN(rows, m.metric, m.limit)
+	}
+	m.applySort(rows)
+	if m.selectable {
+		m.indexRows(rows)
+	} else {
+		m.recordPIDs(rows)
+	}
+
+	cells := make([][]tableCell, len(rows))
+	for i, r := range rows {
+		row := make([]tableCell, len(m.cols))
+		for j, c := range m.cols {
+			row[j] = c.cell(r)
+		}
+		cells[i] = row
+	}
+	return cells
+}
+
+// topN selects the n highest rows by metric (descending), then returns them for
+// the caller to reorder by the active display sort.
+func topN(rows []processRow, metric procSortColumn, n int) []processRow {
+	sortRows(rows, metric, sortDescending)
+	if n < len(rows) {
+		rows = rows[:n]
+	}
+	return rows
+}
+
+// highlightedRow implements tableRowHighlighter: the selected row's index in
+// the last snapshot (noTableRow when nothing is selected or the table doesn't
+// select).
+func (m *processTableModel) highlightedRow() int { return m.selRow }
+
+// tally caches the page-head readout and the user-filter options from the
+// unfiltered list, so both describe the whole machine regardless of the
+// active filters.
+func (m *processTableModel) tally(rows []processRow) {
+	m.total = len(rows)
+	m.highUsage = 0
+	seen := make(map[string]struct{})
+	users := m.users[:0]
+	for _, r := range rows {
+		if r.cpu >= highUsageCPUPct {
+			m.highUsage++
+		}
+		u := shortUsername(r.user)
+		if u == "" {
+			continue // permission-restricted rows have no name to filter on
+		}
+		if _, ok := seen[u]; !ok {
+			seen[u] = struct{}{}
+			users = append(users, u)
+		}
+	}
+	sort.Strings(users)
+	m.users = users
+}
+
+// counts reports the page-head readout: total processes and how many are at
+// high CPU usage, as of the last Snapshot.
+func (m *processTableModel) counts() (total, highUsage int) {
+	return m.total, m.highUsage
+}
+
+// userOptions returns the distinct (short) usernames seen in the last
+// Snapshot, sorted — the "user:" filter's choices. The slice is a copy.
+func (m *processTableModel) userOptions() []string {
+	out := make([]string, len(m.users))
+	copy(out, m.users)
+	return out
+}
+
+// filterRows applies the toolbar's three filters: free text matched against
+// name, user, and PID (case-insensitive contains — the wireframe's "filter by
+// name, user, pid…"), plus the exact user and status selections. Empty values
+// pass everything through.
+func filterRows(rows []processRow, text, user string, st procStatus) []processRow {
+	if text == "" && user == "" && st == "" {
+		return rows
+	}
+	needle := strings.ToLower(text)
+	out := make([]processRow, 0, len(rows))
+	for _, r := range rows {
+		if user != "" && shortUsername(r.user) != user {
+			continue
+		}
+		if st != "" && r.status != st {
+			continue
+		}
+		if needle != "" && !matchesText(r, needle) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// matchesText reports whether the row matches the free-text needle on any of
+// name, user, or PID.
+func matchesText(r processRow, needle string) bool {
+	return strings.Contains(strings.ToLower(r.name), needle) ||
+		strings.Contains(strings.ToLower(shortUsername(r.user)), needle) ||
+		strings.Contains(strconv.Itoa(int(r.pid)), needle)
+}
+
+// indexRows records each row's PID and re-resolves the selection against the
+// new row set. A selected process that disappeared — exited or filtered out —
+// clears the selection, so a later kill can never hit a recycled PID.
+func (m *processTableModel) indexRows(rows []processRow) {
+	m.recordPIDs(rows)
+
+	m.selRow = noTableRow
+	if !m.hasSelected {
+		return
+	}
+	if i := m.rowIndexOf(m.selected); i != noTableRow {
+		m.selRow = i
+		return
+	}
+	m.selected, m.hasSelected = 0, false
+}
+
+// setFilter sets the live free-text filter; the next Snapshot applies it.
+func (m *processTableModel) setFilter(f string) { m.filter = f }
+
+// setUserFilter restricts rows to one (short) username; empty shows all.
+func (m *processTableModel) setUserFilter(u string) { m.userFilter = u }
+
+// setStatusFilter restricts rows to one status; empty shows any.
+func (m *processTableModel) setStatusFilter(st procStatus) { m.statusFilter = st }
+
+// selectRow selects the process at row i of the last snapshot.
+func (m *processTableModel) selectRow(i int) {
+	if i < 0 || i >= len(m.rowPIDs) {
+		return
+	}
+	m.selected, m.hasSelected = m.rowPIDs[i], true
+	m.selRow = i
+}
+
+// toggleRow selects the process at row i, or clears the selection when that row
+// is already selected — so a second tap on a selected row deselects it.
+func (m *processTableModel) toggleRow(i int) {
+	if m.hasSelected && i >= 0 && i < len(m.rowPIDs) && m.rowPIDs[i] == m.selected {
+		m.clearSelection()
+		return
+	}
+	m.selectRow(i)
+}
+
+// clearSelection drops any active selection.
+func (m *processTableModel) clearSelection() {
+	m.selected, m.hasSelected = 0, false
+	m.selRow = noTableRow
+}
+
+// selectPID selects the given PID. Its row index resolves on the next Snapshot
+// (refresh the table before reading rowIndexOf).
+func (m *processTableModel) selectPID(pid PID) {
+	m.selected, m.hasSelected = pid, true
 }
 
 // selectedPID returns the selected PID, false when nothing is selected.
-func (s *allProcessTableSource) selectedPID() (PID, bool) {
-	return s.selected, s.hasSelected
+func (m *processTableModel) selectedPID() (PID, bool) {
+	return m.selected, m.hasSelected
 }
 
-// rowIndexOf returns pid's row in the last snapshot, noTableRow when absent.
-func (s *allProcessTableSource) rowIndexOf(pid PID) int {
-	for i, p := range s.rowPIDs {
-		if p == pid {
-			return i
-		}
-	}
-	return noTableRow
+// newCPUProcessTable builds the CPU tab's top-processes table, sized to its rows
+// so a short pane scrolls. onRowTap fires with the tapped data-row index (the
+// CPU view resolves it to a PID via pidAt and jumps to the Processes tab);
+// onHeaderTap drives header sorting. The returned model backs both.
+func newCPUProcessTable(src allProcessSource, onRowTap, onHeaderTap func(int)) (*dataTable, *processTableModel) {
+	m := newCPUTableSource(src)
+	table := newDataTable(m,
+		tableColumns(columnDefs(m.cols)...),
+		rowHeight(processTableRowHeight),
+		sizeToRows(),
+		onRowTapped(onRowTap),
+		onHeaderTapped(onHeaderTap),
+	)
+	return table, m
+}
+
+// newMemProcessTable builds the Memory tab's top-processes table, with total
+// physical memory scaling the %Mem column. Sized to its rows so a short pane
+// scrolls. onRowTap resolves to a PID for cross-nav; onHeaderTap drives header
+// sorting. The returned model backs both.
+func newMemProcessTable(src allProcessSource, total uint64, onRowTap, onHeaderTap func(int)) (*dataTable, *processTableModel) {
+	m := newMemTableSource(src, total)
+	table := newDataTable(m,
+		tableColumns(columnDefs(m.cols)...),
+		rowHeight(processTableRowHeight),
+		sizeToRows(),
+		onRowTapped(onRowTap),
+		onHeaderTapped(onHeaderTap),
+	)
+	return table, m
+}
+
+// newAllProcessTable builds the Processes tab's full table: scroll-hosted
+// (sizeToRows + the viewport pool) with tap-to-sort headers and tap-to-select
+// rows.
+func newAllProcessTable(src allProcessSource, onRowTap, onHeaderTap func(int)) (*dataTable, *processTableModel) {
+	m := newAllProcessTableSource(src)
+	table := newDataTable(m,
+		tableColumns(columnDefs(m.cols)...),
+		rowHeight(processTableRowHeight),
+		rowPool(procTableRowPool),
+		sizeToRows(),
+		onRowTapped(onRowTap),
+		onHeaderTapped(onHeaderTap),
+	)
+	return table, m
 }
 
 // treemapMetric selects which resource the Processes tab's dominance treemap
@@ -634,7 +761,7 @@ const (
 // resident memory), largest first, and colors them from the categorical palette
 // so neighboring blocks stay distinguishable. setMetric switches the metric
 // live; the next treemapBlocks reflects it (the toggle never resets the table's
-// own sort, which lives in allProcessTableSource). Reusing sortRows keeps the
+// own sort, which lives in the processTableModel). Reusing sortRows keeps the
 // ordering identical to the table's column sorts.
 type processTreemapSource struct {
 	src    allProcessSource
@@ -683,10 +810,7 @@ func (s *processTreemapSource) treemapBlocks() []treemapItem {
 // adapter records pids in the same pass, so a tapped block's index resolves to
 // the process it represents.
 func (s *processTreemapSource) pidAt(index int) (PID, bool) {
-	if index < 0 || index >= len(s.pids) {
-		return 0, false
-	}
-	return s.pids[index], true
+	return pidAtRow(s.pids, index)
 }
 
 // sortColumn maps the active metric onto the table's matching sort column, so
@@ -705,25 +829,4 @@ func (s *processTreemapSource) weight(r processRow) float64 {
 		return float64(r.mem)
 	}
 	return r.cpu
-}
-
-// newAllProcessTable builds the Processes tab's full table: the card's five
-// columns fed by src, scroll-hosted (sizeToRows + the viewport pool) with
-// tap-to-sort headers and tap-to-select rows.
-func newAllProcessTable(src allProcessSource, onRowTap, onHeaderTap func(int)) (*dataTable, *allProcessTableSource) {
-	adapter := newAllProcessTableSource(src)
-	spec := procTableSpec()
-	cols := make([]tableColumn, len(spec))
-	for i, s := range spec {
-		cols[i] = s.column
-	}
-	table := newDataTable(adapter,
-		tableColumns(cols...),
-		rowHeight(processTableRowHeight),
-		rowPool(procTableRowPool),
-		sizeToRows(),
-		onRowTapped(onRowTap),
-		onHeaderTapped(onHeaderTap),
-	)
-	return table, adapter
 }

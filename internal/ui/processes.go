@@ -71,10 +71,10 @@ var treemapMetricOrder = []treemapMetric{treemapMetricCPU, treemapMetricMem}
 // pane, and the all-processes table with its filter/kill toolbar. Build with
 // newProcessesView and drive live updates through refresh.
 type processesView struct {
-	adapter    *allProcessTableSource
-	table      *dataTable
-	scroll     *container.Scroll
-	treemap    *treemap
+	adapter     *processTableModel
+	table       *dataTable
+	tableScroll *scrollTable
+	treemap     *treemap
 	treemapSrc *processTreemapSource
 	metricSel  fyne.CanvasObject // CPU/Mem dominance-metric toggle (panel header)
 	filter     *widget.Entry
@@ -91,8 +91,7 @@ type processesView struct {
 func newProcessesView(procs allProcessSource, killer processKiller) *processesView {
 	v := &processesView{kill: killer}
 	v.table, v.adapter = newAllProcessTable(procs, v.tapRow, v.tapHeader)
-	v.scroll = container.NewVScroll(v.table)
-	v.scroll.OnScrolled = func(fyne.Position) { v.syncViewport() }
+	v.tableScroll = newScrollTable(v.table)
 	v.treemapSrc = newProcessTreemapSource(procs)
 	v.treemap = newTreemap(v.treemapSrc, v.tapBlock)
 	v.metricSel = newSegmentedSelect(0, v.pickMetric, colHeaderCPU, colHeaderMem)
@@ -102,7 +101,7 @@ func newProcessesView(procs allProcessSource, killer processKiller) *processesVi
 	if killer != nil {
 		v.killBtn = newKillButton(v.killSelected)
 	}
-	v.syncSortMarkers()
+	syncSortHeaders(v.table, v.adapter)
 	return v
 }
 
@@ -168,7 +167,7 @@ func (v *processesView) pageHead() fyne.CanvasObject {
 // tablePane is the all-processes panel: the filter/kill toolbar pinned above
 // the scroll-hosted table.
 func (v *processesView) tablePane() fyne.CanvasObject {
-	body := newTightBorder(v.toolbar(), nil, nil, nil, v.scroll)
+	body := newTightBorder(v.toolbar(), nil, nil, nil, v.tableScroll.object())
 	return newFlushPanel(labelAllProcesses, nil, body)
 }
 
@@ -196,28 +195,10 @@ func newFilterPrefix(text string) *canvas.Text {
 	return styledText(text, font.MonoRegular, theme.SizeNameCaptionText, palette.Text3)
 }
 
-// tapHeader sorts by the tapped column (tap again to flip direction), then
-// re-tags the headers and redraws.
+// tapHeader sorts by the tapped column (tap again to flip direction), re-tags
+// the headers, and redraws — the shared header behavior every process table uses.
 func (v *processesView) tapHeader(col int) {
-	spec := procTableSpec()
-	if col >= len(spec) {
-		return
-	}
-	v.adapter.toggleSort(spec[col].sort)
-	v.syncSortMarkers()
-	v.table.Refresh()
-}
-
-// syncSortMarkers rewrites the column headers so the active sort column —
-// and only it — carries its direction marker.
-func (v *processesView) syncSortMarkers() {
-	for i, s := range procTableSpec() {
-		header := s.column.header
-		if s.sort == v.adapter.sortCol {
-			header += sortMarker(v.adapter.sortDir)
-		}
-		v.table.setColumnHeader(i, header)
-	}
+	tapSortHeader(v.table, v.adapter, col)
 }
 
 // tapBlock selects the process behind the tapped dominance-map block,
@@ -229,9 +210,10 @@ func (v *processesView) tapBlock(index int) {
 	}
 }
 
-// tapRow selects the tapped row and repaints its highlight.
+// tapRow selects the tapped row, or deselects it when it was already selected
+// (a second tap clears the selection), then repaints the highlight.
 func (v *processesView) tapRow(row int) {
-	v.adapter.selectRow(row)
+	v.adapter.toggleRow(row)
 	v.syncKillState()
 	v.table.Refresh()
 }
@@ -274,7 +256,7 @@ func (v *processesView) pickMetric(index int) {
 // out clears the selection, so the Kill state re-syncs too.
 func (v *processesView) applyFilters() {
 	v.table.Refresh()
-	v.scroll.Refresh() // content height tracks the filtered row count
+	v.tableScroll.scroll.Refresh() // content height tracks the filtered row count
 	v.syncReadout()
 	v.syncKillState()
 }
@@ -327,34 +309,16 @@ func (v *processesView) syncKillState() {
 }
 
 // selectPID selects and highlights the process with the given PID, scrolling
-// it into view. Cross-tab navigation (CPU/Ports → Processes) reaches this
-// through the tab registry's tabContent.selectPID; wiring those callers is a
-// later card.
+// it into view. Cross-tab navigation (a tapped CPU/Memory process row, or the
+// CPU tab's "→ all processes" link) reaches this through the tab registry's
+// tabContent.selectPID, wired to the crossNav in buildContent.
 func (v *processesView) selectPID(pid PID) {
 	v.adapter.selectPID(pid)
 	v.table.Refresh() // re-snapshot so the row index below is current
 	if row := v.adapter.rowIndexOf(pid); row != noTableRow {
-		v.scrollToRow(row)
+		v.tableScroll.scrollToRow(row)
 	}
 	v.syncKillState()
-}
-
-// scrollToRow centers the given data row in the scroll viewport (clamped to
-// the scrollable range).
-func (v *processesView) scrollToRow(row int) {
-	rowY := tableHeaderHeight + float32(row)*processTableRowHeight
-	target := rowY - (v.scroll.Size().Height-processTableRowHeight)/2
-	maxOffset := max(v.table.MinSize().Height-v.scroll.Size().Height, 0)
-	v.scroll.Offset = fyne.NewPos(0, clamp32(target, 0, maxOffset))
-	v.scroll.Refresh()
-	v.syncViewport()
-}
-
-// syncViewport tells the table which vertical slice of itself the scroll
-// shows, then redraws that slice.
-func (v *processesView) syncViewport() {
-	v.table.setViewport(v.scroll.Offset.Y, v.scroll.Size().Height)
-	v.table.Refresh()
 }
 
 // refresh redraws the live pane on each poll tick. It touches the canvas, so
@@ -364,8 +328,7 @@ func (v *processesView) syncViewport() {
 // count; a selection that vanished with its process disables Kill.
 func (v *processesView) refresh() {
 	v.treemap.Refresh()
-	v.syncViewport()
-	v.scroll.Refresh()
+	v.tableScroll.refresh()
 	v.syncReadout()
 	v.syncKillState()
 }

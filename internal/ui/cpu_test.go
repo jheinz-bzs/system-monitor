@@ -31,13 +31,13 @@ func TestCPUViewRendersAndRefreshes(t *testing.T) {
 		coreBufs[i] = ringbuffer.New[float64](metrics.HistoryCapacity)
 		cores[i] = series.SourceFrom(coreBufs[i])
 	}
-	procs := processSourceFunc(func(n int) []processRow {
+	procs := allProcessSourceFunc(func() []processRow {
 		return []processRow{
 			{pid: 3412, name: "chrome", user: "you", cpu: 42, mem: 1 << 31},
 		}
 	})
 	v := newCPUView(series.SourceFrom(overall), cores, procs,
-		cpuMeta{cores: testCoreCount, model: "Test CPU"})
+		cpuMeta{cores: testCoreCount, model: "Test CPU"}, nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()
@@ -72,7 +72,7 @@ func TestCPUViewWithoutProcessSource(t *testing.T) {
 	app.Settings().SetTheme(newTheme())
 
 	overall := ringbuffer.New[float64](metrics.HistoryCapacity)
-	v := newCPUView(series.SourceFrom(overall), nil, nil, cpuMeta{})
+	v := newCPUView(series.SourceFrom(overall), nil, nil, cpuMeta{}, nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()

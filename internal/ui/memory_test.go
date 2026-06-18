@@ -33,13 +33,13 @@ func TestMemoryViewRendersAndRefreshes(t *testing.T) {
 	used := ringbuffer.New[uint64](metrics.HistoryCapacity)
 	cached := ringbuffer.New[uint64](metrics.HistoryCapacity)
 	free := ringbuffer.New[uint64](metrics.HistoryCapacity)
-	procs := memProcessSourceFunc(func(n int) []processRow {
+	procs := allProcessSourceFunc(func() []processRow {
 		return []processRow{
 			{pid: 3412, name: "chrome", user: "you", mem: 1 << 31},
 			{pid: 540, name: "postgres", user: "pg", mem: 1 << 29},
 		}
 	})
-	v := newMemoryView(testMemSources(used, cached, free), procs)
+	v := newMemoryView(testMemSources(used, cached, free), procs, nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()
@@ -69,7 +69,7 @@ func TestMemoryViewWithoutProcessSource(t *testing.T) {
 	used := ringbuffer.New[uint64](metrics.HistoryCapacity)
 	cached := ringbuffer.New[uint64](metrics.HistoryCapacity)
 	free := ringbuffer.New[uint64](metrics.HistoryCapacity)
-	v := newMemoryView(testMemSources(used, cached, free), nil)
+	v := newMemoryView(testMemSources(used, cached, free), nil, nil)
 
 	w := test.NewWindow(v.object())
 	defer w.Close()
@@ -82,13 +82,13 @@ func TestMemoryViewWithoutProcessSource(t *testing.T) {
 // physical memory (full track at memBarFullScalePct, clamped), and Mem%
 // carrying that share as percentage points.
 func TestMemProcessTableSourceSnapshot(t *testing.T) {
-	src := memProcessSourceFunc(func(n int) []processRow {
+	src := allProcessSourceFunc(func() []processRow {
 		return []processRow{
 			{pid: 3412, name: "chrome", user: `DOMAIN\you`, mem: 5 << 30}, // 15.625% of total
 			{pid: 540, name: "postgres", user: "pg", mem: 1 << 28},        // 0.78125% of total
 		}
 	})
-	cells := (&memProcessTableSource{src: src, total: testTotalMem}).Snapshot()
+	cells := newMemTableSource(src, testTotalMem).Snapshot()
 
 	if len(cells) != 2 {
 		t.Fatalf("got %d rows, want 2", len(cells))
@@ -118,10 +118,10 @@ func TestMemProcessTableSourceSnapshot(t *testing.T) {
 // bars degrade to zero. An empty snapshot must stay empty without panicking on
 // the max-RSS lookup.
 func TestMemProcessTableSourceDegenerateInputs(t *testing.T) {
-	src := memProcessSourceFunc(func(n int) []processRow {
+	src := allProcessSourceFunc(func() []processRow {
 		return []processRow{{pid: 1, name: "init", mem: 0}}
 	})
-	cells := (&memProcessTableSource{src: src, total: 0}).Snapshot()
+	cells := newMemTableSource(src, 0).Snapshot()
 	if got := cells[0][5].text; got != "0.0" {
 		t.Errorf("zero-total %%Mem = %q, want \"0.0\"", got)
 	}
@@ -129,8 +129,8 @@ func TestMemProcessTableSourceDegenerateInputs(t *testing.T) {
 		t.Errorf("zero-RSS bar frac = %v, want 0", got)
 	}
 
-	empty := memProcessSourceFunc(func(n int) []processRow { return nil })
-	if cells := (&memProcessTableSource{src: empty, total: testTotalMem}).Snapshot(); len(cells) != 0 {
+	empty := allProcessSourceFunc(func() []processRow { return nil })
+	if cells := newMemTableSource(empty, testTotalMem).Snapshot(); len(cells) != 0 {
 		t.Errorf("empty source: got %d rows, want 0", len(cells))
 	}
 }
