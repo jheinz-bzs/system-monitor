@@ -93,7 +93,8 @@ type treemap struct {
 	src       treemapSource
 	onSelect  func(index int) // tapped-block callback; nil leaves the widget presentational
 	emptyText string          // placeholder when nothing is plotted; defaults to labelTreemapEmpty
-	hits      []treemapHit    // placed blocks for hit-testing, recorded each arrange
+	emptyBusy bool             // show an animated spinner + larger emptyText (an in-progress scan, not "no data")
+	hits      []treemapHit     // placed blocks for hit-testing, recorded each arrange
 
 	hoverIndex int              // source index of the hovered block, or noTreemapHover
 	hoverPos   fyne.Position    // latest cursor position; the tooltip tracks it
