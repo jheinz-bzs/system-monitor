@@ -54,6 +54,8 @@ const (
 	treemapMinHeight   = 96      // px; widget MinSize floor
 	treemapTipPad      = spaceSM // 4; inner padding of the hover tooltip
 	treemapTipOffset   = 12      // px; tooltip offset from the cursor so it doesn't sit under it
+	treemapBusyDots    = 32      // px; spinner size in the busy empty state
+	treemapBusyGap     = spaceMD // 8; gap between spinner and its label
 )
 
 // noTreemapHover is the hoverIndex sentinel for "no block under the cursor".
