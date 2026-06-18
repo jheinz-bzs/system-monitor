@@ -523,7 +523,11 @@ func (r *treemapRenderer) Objects() []fyne.CanvasObject {
 		objs = append(objs, b.label)
 	}
 	// border and empty placeholder, then the tooltip on top of everything.
-	return append(objs, r.border, r.empty, r.tipBG, r.tip)
+	objs = append(objs, r.border, r.empty)
+	if r.spinner != nil {
+		objs = append(objs, r.spinner)
+	}
+	return append(objs, r.tipBG, r.tip)
 }
 
 func (r *treemapRenderer) Destroy() {}
