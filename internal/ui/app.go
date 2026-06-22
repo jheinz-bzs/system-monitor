@@ -109,6 +109,7 @@ func Run() {
 		}
 		src.diskDirs = ctrl
 		src.selectVolume = ctrl.selectVolume
+		src.rescanDirs = ctrl.scanner.Rescan
 		collectors = append(collectors, diskCol)
 	}
 	if network != nil {

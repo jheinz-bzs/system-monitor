@@ -86,6 +86,7 @@ type buildSources struct {
 	diskIO       diskIOSources      // disk read/write/total rate series; zero when not wired
 	net          netSources         // network upload/download/total rate series; zero when not wired
 	selectVolume func(mount string) // retargets the directory scan; nil when not wired
+	rescanDirs   func()             // triggers a fresh walk of the selected volume; nil when not wired
 	cpuInfo      cpuMeta            // static processor description; zero when unknown
 	mem          memSources         // memory band sources + total; zero when not wired
 	swap         swapSources        // Overview swap usage source + total; zero when not wired
@@ -189,7 +190,7 @@ var tabRegistry = map[tabID]tabBuilder{
 		if src.disk == nil {
 			return tabContent{object: newPlaceholder(labelDiskPageTitle)}
 		}
-		v := newDiskView(src.disk, src.diskDirs, src.diskIO, src.selectVolume)
+		v := newDiskView(src.disk, src.diskDirs, src.diskIO, src.selectVolume, src.rescanDirs)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabNetwork: func(src buildSources) tabContent {
