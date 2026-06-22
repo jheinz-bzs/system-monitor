@@ -271,8 +271,8 @@ func newTabs(src buildSources) ([]tabDef, *tabRefresher, map[tabID]func(PID)) {
 		{id: tabPorts, name: labelPortsPageTitle, icon: icon.Ports},
 		{id: tabConnections, name: labelConnectionsPageTitle, icon: icon.Connections},
 	}
-	var refreshers []func()
-	selectors := make(map[tabID]func(PID)) // cross-nav entry points, by tab
+	refreshers := make([]func(), len(tabs)) // aligned with tab positions
+	selectors := make(map[tabID]func(PID))  // cross-nav entry points, by tab
 	for i := range tabs {
 		t := &tabs[i]
 		var content tabContent
@@ -282,19 +282,12 @@ func newTabs(src buildSources) ([]tabDef, *tabRefresher, map[tabID]func(PID)) {
 			content = tabContent{object: newPlaceholder(t.name)}
 		}
 		t.addChild(content.object)
-		if content.refresh != nil {
-			refreshers = append(refreshers, content.refresh)
-		}
+		refreshers[i] = content.refresh // nil for static tabs
 		if content.selectPID != nil {
 			selectors[t.id] = content.selectPID
 		}
 	}
-	refresh := func() {
-		for _, r := range refreshers {
-			r()
-		}
-	}
-	return tabs, refresh, selectors
+	return tabs, &tabRefresher{refreshers: refreshers}, selectors
 }
 
 // indexOfTab returns the position of the tab with the given id, and whether it
@@ -319,7 +312,7 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	nav := &crossNav{}
 	src.nav = nav
 
-	tabs, refresh, selectors := newTabs(src)
+	tabs, tabsRefresh, selectors := newTabs(src)
 	n := len(tabs)
 	panes := make([]fyne.CanvasObject, n)
 	items := make([]*navItem, n)
