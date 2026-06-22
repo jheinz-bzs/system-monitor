@@ -78,6 +78,7 @@ type buildSources struct {
 	cpuCores     []series.Source    // per-core CPU sources, core order; empty when not wired
 	allProcs     allProcessSource   // full process list, feeding all process tables; nil when not wired
 	ports        allPortsSource     // listening-port list feeding the Ports table; nil when not wired
+	conns        allConnsSource     // active-connection list feeding the Connections table; nil when not wired
 	killProc     processKiller      // process termination; nil when not wired
 	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
 	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
@@ -185,6 +186,13 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newPortsView(src.ports, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabConnections: func(src buildSources) tabContent {
+		if src.conns == nil {
+			return tabContent{object: newPlaceholder(labelConnectionsPageTitle)}
+		}
+		v := newConnsView(src.conns, src.nav)
+		return tabContent{object: v.object(), refresh: v.refresh}
+	},
 }
 
 // newTabs returns the eight tab definitions with their content built fresh, and
@@ -202,7 +210,7 @@ func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
 		{id: tabNetwork, name: labelNetworkPageTitle, icon: icon.Network},
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: labelPortsPageTitle, icon: icon.Ports},
-		{id: tabConnections, name: "Connections", icon: icon.Connections},
+		{id: tabConnections, name: labelConnectionsPageTitle, icon: icon.Connections},
 	}
 	var refreshers []func()
 	selectors := make(map[tabID]func(PID)) // cross-nav entry points, by tab
