@@ -188,6 +188,24 @@ func TestFormatAge(t *testing.T) {
 	}
 }
 
+// renderSeries must reuse its image buffer across same-size frames (the memory
+// fix) and reallocate only when the size changes. Pointer identity is the
+// smallest thing that fails if the caching regresses to per-frame allocation.
+func TestRenderSeriesReusesBuffer(t *testing.T) {
+	c := newLineChart(fixedRange(0, 100))
+	c.addSeries(series.SourceOf(func() []float64 { return []float64{10, 90, 30, 70} }))
+	r := &lineChartRenderer{chart: c, plot: chartBox{width: 100, height: 50}}
+
+	const w, h = 100, 50
+	first := r.renderSeries(w, h)
+	if again := r.renderSeries(w, h); again != first {
+		t.Fatal("same-size render allocated a new image instead of reusing the buffer")
+	}
+	if resized := r.renderSeries(w*2, h); resized == first {
+		t.Fatal("resize must reallocate the image buffer")
+	}
+}
+
 func assertFloats(t *testing.T, got, want []float64) {
 	t.Helper()
 	if len(got) != len(want) {
