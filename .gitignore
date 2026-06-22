@@ -35,3 +35,5 @@ Thumbs.db
 
 /docs/pitch
 memstats.log
+
+**/*.ps1
