@@ -14,16 +14,18 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-// ProcState is the coarse process-state vocabulary the Processes tab shows
+// ProcessState is the coarse process-state vocabulary the Processes tab shows
 // (the wireframe's status pills and "status:" filter share it). The richer
-// OS-level states (idle, wait, zombie, …) fold into these three; empty means
-// the state could not be determined.
-type ProcState string
+// OS-level states (idle, wait, zombie, …) fold into these three; the zero value
+// StateUnknown means the state could not be determined. Display names live in
+// the UI layer (a switch on this enum), not here.
+type ProcessState int
 
 const (
-	StateRunning  ProcState = "running"
-	StateSleeping ProcState = "sleeping"
-	StateStopped  ProcState = "stopped"
+	StateUnknown ProcessState = iota
+	StateRunning
+	StateSleeping
+	StateStopped
 )
 
 // ProcessInfo is a snapshot of one running process. PID is always populated;
@@ -35,7 +37,7 @@ type ProcessInfo struct {
 	CPUPercent  float64 // 0..100
 	MemoryBytes uint64  // resident set size
 	Username    string
-	State       ProcState
+	State       ProcessState
 }
 
 // Protocol identifies the transport-layer protocol for a connection or port.
@@ -207,9 +209,9 @@ func readProcess(ctx context.Context, p *process.Process, cores float64) Process
 // state derives from observed CPU activity instead: a process that used CPU
 // during the last sample is running, otherwise sleeping. Coarse, but truthful
 // to what was actually observed.
-func readState(ctx context.Context, p *process.Process, cpuPercent float64) ProcState {
+func readState(ctx context.Context, p *process.Process, cpuPercent float64) ProcessState {
 	if statuses, err := p.StatusWithContext(ctx); err == nil && len(statuses) > 0 {
-		if s := coarseState(statuses[0]); s != "" {
+		if s := coarseState(statuses[0]); s != StateUnknown {
 			return s
 		}
 	}
@@ -222,8 +224,8 @@ func readState(ctx context.Context, p *process.Process, cpuPercent float64) Proc
 // coarseState folds gopsutil's OS status vocabulary into the three states the
 // Processes tab shows. Zombie lands in stopped — terminated-but-unreaped is
 // closest to "not running" of the visible buckets. Unknown strings report
-// empty so the caller can fall back to the activity heuristic.
-func coarseState(s string) ProcState {
+// StateUnknown so the caller can fall back to the activity heuristic.
+func coarseState(s string) ProcessState {
 	switch s {
 	case process.Running:
 		return StateRunning
@@ -232,7 +234,7 @@ func coarseState(s string) ProcState {
 	case process.Stop, process.Zombie:
 		return StateStopped
 	default:
-		return ""
+		return StateUnknown
 	}
 }
 
