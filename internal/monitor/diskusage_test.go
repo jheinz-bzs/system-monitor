@@ -231,3 +231,44 @@ func TestWalkAndSelect(t *testing.T) {
 		t.Errorf("walk+select =\n  %v\nwant\n  %v", got, want)
 	}
 }
+
+// TestCrawlMissingSkipsCachedVolumes is the core of "only scan if the cache
+// doesn't exist": a volume already present in the warm-start cache must not be
+// re-walked at launch, so a re-launch with a populated cache does no filesystem
+// work. The sentinel would be overwritten (to nil) if the volume were re-walked.
+func TestCrawlMissingSkipsCachedVolumes(t *testing.T) {
+	root := t.TempDir()
+	walk := walkRoot(root)
+	sentinel := []DirSize{{Path: "sentinel", Bytes: 42}}
+	s := &DiskUsageScanner{
+		ctx:      context.Background(),
+		cache:    map[string][]DirSize{walk: sentinel},
+		scanning: map[string]bool{},
+	}
+
+	s.crawlMissing([]string{root})
+
+	got := s.cache[walk]
+	if len(got) != 1 || got[0].Path != "sentinel" {
+		t.Errorf("cached volume was re-walked: cache = %v, want sentinel preserved", got)
+	}
+}
+
+// TestCrawlMissingScansUncachedVolume is the complement: a volume with no cached
+// snapshot is walked at launch, creating its cache entry (present even when the
+// walk finds nothing above the floor — an empty temp dir here).
+func TestCrawlMissingScansUncachedVolume(t *testing.T) {
+	root := t.TempDir()
+	walk := walkRoot(root)
+	s := &DiskUsageScanner{
+		ctx:      context.Background(),
+		cache:    map[string][]DirSize{},
+		scanning: map[string]bool{},
+	}
+
+	s.crawlMissing([]string{root})
+
+	if _, ok := s.cache[walk]; !ok {
+		t.Error("uncached volume was not scanned: no cache entry created")
+	}
+}

@@ -54,43 +54,58 @@ type fileEntry struct {
 	size int64
 }
 
-// DiskUsageScanner crawls every volume once on a background goroutine at launch
-// and exposes the largest directories of the currently selected volume as a
-// snapshot, mirroring the DiskCollector.Usage() pattern (mutex-guarded, copied
-// on read). Each volume's result is cached under its own root and persisted, so
-// switching volumes (SetRoot) only changes which cache is read — it never
-// triggers a walk, and a slow walk can never land on the wrong volume's view.
-// There is no periodic re-crawl: data refreshes only per launch. The zero value
-// is not usable; build one with NewDiskUsageScanner.
+// DiskUsageScanner exposes the largest directories of the currently selected
+// volume as a snapshot, mirroring the DiskCollector.Usage() pattern (mutex-
+// guarded, copied on read). Each volume's result is cached under its own root
+// and persisted, so switching volumes (SetRoot) only changes which cache is read
+// — it never triggers a walk, and a slow walk can never land on the wrong
+// volume's view.
+//
+// At launch it walks only the volumes missing from the warm-start cache: a
+// re-launch with a populated cache does no filesystem walking at all (the walk
+// is the app's heaviest startup cost). Refreshing a cached volume is then an
+// explicit, on-demand Rescan — there is no periodic or automatic re-crawl. The
+// zero value is not usable; build one with NewDiskUsageScanner.
 type DiskUsageScanner struct {
 	mu sync.RWMutex
+
+	// ctx governs every walk (launch crawl and on-demand rescans); a cancelled
+	// ctx stops an in-flight walk and prevents new ones from caching.
+	ctx context.Context
 
 	// selected is the displayed volume root; Dirs returns cache[selected].
 	selected string
 
 	// cache is the latest snapshot per volume root, persisted to cachePath so a
-	// fresh launch shows the previous run's tiles immediately while the new
-	// crawl runs. cachePath is "" when the executable can't be located, in which
-	// case caching is silently skipped.
+	// fresh launch shows the previous run's tiles immediately. A volume's
+	// presence here (any value, even nil) means "already scanned" — the launch
+	// crawl skips it. cachePath is "" when the executable can't be located, in
+	// which case caching is silently skipped.
 	cache     map[string][]DirSize
 	cachePath string
+
+	// scanning marks volume roots with an in-flight walk, so the launch crawl and
+	// a manual rescan can't redundantly walk the same volume at once.
+	scanning map[string]bool
 }
 
-// NewDiskUsageScanner builds a scanner that crawls every root once in the
-// background (stopping when ctx is cancelled), caching each result per volume.
-// roots[0] is the initially displayed volume and is crawled first so the
-// visible treemap fills before the others. The snapshot is seeded from the
-// on-disk cache, so the treemap shows the previous run's tiles immediately.
+// NewDiskUsageScanner builds a scanner seeded from the on-disk cache (so the
+// treemap shows the previous run's tiles immediately), then walks only the roots
+// not already cached, in the background. roots[0] is the initially displayed
+// volume and is crawled first so the visible treemap fills first. Walks stop
+// when ctx is cancelled.
 func NewDiskUsageScanner(ctx context.Context, roots []string) *DiskUsageScanner {
 	s := &DiskUsageScanner{
+		ctx:       ctx,
 		cache:     map[string][]DirSize{},
 		cachePath: cachePath(),
+		scanning:  map[string]bool{},
 	}
 	if len(roots) > 0 {
 		s.selected = walkRoot(roots[0])
 	}
 	s.loadCache()
-	go s.crawlAll(ctx, roots)
+	go s.crawlMissing(roots)
 	return s
 }
 
@@ -128,36 +143,84 @@ func (s *DiskUsageScanner) Dirs() []DirSize {
 	return out
 }
 
-// crawlAll walks every volume once and caches each result under its own root,
-// persisting after each completes. roots are crawled in order (roots[0], the
-// initially displayed volume, first) so the visible treemap fills first. It
-// stops when ctx is cancelled. Because each result is stored under its own root
-// — never a shared "current" slot — a slow walk finishing after the user has
-// switched volumes updates only its own cache, never the displayed view.
-func (s *DiskUsageScanner) crawlAll(ctx context.Context, roots []string) {
+// crawlMissing walks only the volumes with no cached snapshot yet, in order
+// (roots[0], the initially displayed volume, first) so the visible treemap fills
+// first. A volume already in the warm-start cache is left untouched — only an
+// explicit Rescan refreshes it — so a re-launch with a populated cache does no
+// filesystem walking. Stops when ctx is cancelled.
+func (s *DiskUsageScanner) crawlMissing(roots []string) {
 	for _, root := range roots {
-		if ctx.Err() != nil {
+		if s.ctx.Err() != nil {
 			return
 		}
 		walk := walkRoot(root)
 		if walk == "" {
 			continue
 		}
-
-		dirs := selectDirs(walkFiles(ctx, walk), walk, defaultSelectParams)
-		if ctx.Err() != nil {
-			return // shutting down mid-walk; the partial result is meaningless
+		s.mu.RLock()
+		_, cached := s.cache[walk]
+		s.mu.RUnlock()
+		if cached {
+			continue // warm-start cache already covers this volume
 		}
-
-		s.mu.Lock()
-		s.cache[walk] = dirs
-		// Clone so the marshal runs outside the lock; slice values are replaced
-		// wholesale (never mutated in place), so sharing backing arrays is safe.
-		snapshot := maps.Clone(s.cache)
-		s.mu.Unlock()
-
-		s.persist(snapshot)
+		s.scan(walk)
 	}
+}
+
+// Rescan launches a fresh background walk of the currently selected volume,
+// replacing its cached snapshot when it lands — the manual refresh the Disk
+// tab's scan button triggers. It returns immediately; a walk already in flight
+// for that volume is a no-op (the in-progress guard in scan).
+func (s *DiskUsageScanner) Rescan() {
+	s.mu.RLock()
+	walk := s.selected
+	s.mu.RUnlock()
+	go s.scan(walk)
+}
+
+// scan walks one already-resolved volume root, replacing its cached snapshot
+// under its own root — never a shared "current" slot, so a slow walk finishing
+// after a volume switch updates only its own cache, never the displayed view —
+// and persisting the result. It guards against a second concurrent walk of the
+// same root (the launch crawl racing a manual rescan) so the work isn't doubled.
+func (s *DiskUsageScanner) scan(walk string) {
+	if walk == "" || !s.beginScan(walk) {
+		return
+	}
+	defer s.endScan(walk)
+
+	dirs := selectDirs(walkFiles(s.ctx, walk), walk, defaultSelectParams)
+	if s.ctx.Err() != nil {
+		return // shutting down mid-walk; the partial result is meaningless
+	}
+
+	s.mu.Lock()
+	s.cache[walk] = dirs
+	// Clone so the marshal runs outside the lock; slice values are replaced
+	// wholesale (never mutated in place), so sharing backing arrays is safe.
+	snapshot := maps.Clone(s.cache)
+	s.mu.Unlock()
+
+	s.persist(snapshot)
+}
+
+// beginScan claims the walk slot for walk, reporting false when one is already
+// in flight so the caller backs off.
+func (s *DiskUsageScanner) beginScan(walk string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.scanning[walk] {
+		return false
+	}
+	s.scanning[walk] = true
+	return true
+}
+
+// endScan releases the walk slot for walk.
+func (s *DiskUsageScanner) endScan(walk string) {
+	s.mu.Lock()
+	delete(s.scanning, walk)
+	s.mu.Unlock()
 }
 
 // loadCache reads the persisted snapshot map into s.cache. Best-effort: a
