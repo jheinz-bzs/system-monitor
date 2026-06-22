@@ -303,8 +303,9 @@ func indexOfTab(tabs []tabDef, id tabID) (int, bool) {
 
 // buildContent assembles the full window content from the available live sources
 // and wires nav selection to content switching. It returns the content plus a
-// refresh closure that redraws every live pane; the caller drives it on the UI
-// goroutine each poll tick (see startUIRefresh).
+// refresh closure that redraws the active tab's pane; the caller drives it on the
+// UI goroutine each poll tick (see startUIRefresh). Hidden tabs do no per-tick
+// work — switching to one redraws it on the spot.
 func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	// Create the cross-nav target before building tabs so the CPU/Memory
 	// builders capture it; its action is wired below, once the panes and nav
@@ -323,6 +324,9 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 			it.setActive(j == i)
 		}
 		holder.Objects = []fyne.CanvasObject{panes[i]}
+		// Redraw the newly-shown tab before re-rendering so it shows current
+		// data immediately rather than lagging up to one poll tick.
+		tabsRefresh.setActive(i)
 		holder.Refresh()
 	}
 
@@ -346,7 +350,7 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
 	statusRegion := vStackTight(hLine(), newStatusBar())
-	return newTightBorder(title, statusRegion, nil, nil, body), refresh
+	return newTightBorder(title, statusRegion, nil, nil, body), tabsRefresh.refresh
 }
 
 // wireProcessNav points the cross-nav at the Processes tab: navigating selects
