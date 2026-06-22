@@ -9,6 +9,7 @@ package ui
 import (
 	"context"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -45,6 +46,9 @@ func Run() {
 	// One context governs collection and the UI refresh loop; cancelling it on
 	// window close stops both cleanly.
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Optional baseline instrumentation for the perf plans; no-op unless enabled.
+	startMemStatsLogger(ctx, os.Getenv)
 
 	// Build the live collectors and adapt their data into the UI sources.
 	// A collector that fails to start is nil; its tab falls back to the
