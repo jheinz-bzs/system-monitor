@@ -50,20 +50,13 @@ const (
 	tabConnections
 )
 
-// tabDef describes one nav entry: its identity, label, nav icon, and the
-// content panes shown when it's selected. content is populated by the newTabs
-// builder (via addChild) rather than at literal-declaration time, so the panes
-// are built fresh per call and never shared across invocations.
+// tabDef describes one nav entry: its identity, label, and nav icon. Content is
+// built lazily on first view (see buildContent) rather than stored here, so the
+// seven unopened tabs pay no construction or memory cost at launch.
 type tabDef struct {
-	id      tabID
-	name    string
-	icon    fyne.Resource
-	content []fyne.CanvasObject
-}
-
-// addChild appends a content pane to the tab.
-func (t *tabDef) addChild(child fyne.CanvasObject) {
-	t.content = append(t.content, child)
+	id   tabID
+	name string
+	icon fyne.Resource
 }
 
 // liveSources carries the time-series Sources for live chart tabs, keyed by
@@ -226,9 +219,11 @@ var tabRegistry = map[tabID]tabBuilder{
 // tabRefresher drives per-tab redraws: the poll tick redraws only the active
 // tab's pane, and switching tabs redraws the newly-shown one so it isn't stale
 // for up to one poll interval. refreshers is aligned with tab positions (a nil
-// entry marks a static tab with nothing to redraw). Tracking the active index
-// in the UI layer keeps the per-tick Snapshot()/arrange() work from scaling
-// with the number of live tabs — only the visible chart does work.
+// entry marks a static tab, or one not yet built — both have nothing to redraw;
+// the active tab is always built, so refresh never hits an unbuilt slot).
+// Tracking the active index in the UI layer keeps the per-tick
+// Snapshot()/arrange() work from scaling with the number of live tabs — only
+// the visible chart does work.
 type tabRefresher struct {
 	refreshers []func() // by tab position; nil for static tabs
 	active     int      // index of the tab currently on screen
@@ -255,14 +250,12 @@ func (t *tabRefresher) setActive(i int) {
 // refresh redraws only the active tab — the per-tick callback the poller drives.
 func (t *tabRefresher) refresh() { t.refreshAt(t.active) }
 
-// newTabs returns the eight tab definitions with their content built fresh, a
-// tabRefresher that redraws the active pane (see buildContent), and the
-// per-tab cross-nav selectors. Identity (id/name/icon) is declared first;
-// content is built via tabRegistry so new metric areas are additive — only a
-// registry entry is required, not an edit here. Returning fresh defs keeps
-// repeated buildContent calls from double-appending to a shared slice.
-func newTabs(src buildSources) ([]tabDef, *tabRefresher, map[tabID]func(PID)) {
-	tabs := []tabDef{
+// tabDefs returns the eight nav entries in display order — identity only
+// (id/name/icon). Content is built on demand by buildContent via tabRegistry, so
+// adding a metric area is just a registry entry; this list only fixes nav order
+// and labels.
+func tabDefs() []tabDef {
+	return []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
 		{id: tabMemory, name: labelMemoryPageTitle, icon: icon.Memory},
@@ -272,23 +265,16 @@ func newTabs(src buildSources) ([]tabDef, *tabRefresher, map[tabID]func(PID)) {
 		{id: tabPorts, name: labelPortsPageTitle, icon: icon.Ports},
 		{id: tabConnections, name: labelConnectionsPageTitle, icon: icon.Connections},
 	}
-	refreshers := make([]func(), len(tabs)) // aligned with tab positions
-	selectors := make(map[tabID]func(PID))  // cross-nav entry points, by tab
-	for i := range tabs {
-		t := &tabs[i]
-		var content tabContent
-		if builder, ok := tabRegistry[t.id]; ok {
-			content = builder(src)
-		} else {
-			content = tabContent{object: newPlaceholder(t.name)}
-		}
-		t.addChild(content.object)
-		refreshers[i] = content.refresh // nil for static tabs
-		if content.selectPID != nil {
-			selectors[t.id] = content.selectPID
-		}
+}
+
+// buildTab constructs tab id's content from src, falling back to a named
+// placeholder when no builder is registered. This is the per-tab construction
+// the lazy loader runs the first time a tab is shown.
+func buildTab(id tabID, name string, src buildSources) tabContent {
+	if builder, ok := tabRegistry[id]; ok {
+		return builder(src)
 	}
-	return tabs, &tabRefresher{refreshers: refreshers}, selectors
+	return tabContent{object: newPlaceholder(name)}
 }
 
 // indexOfTab returns the position of the tab with the given id, and whether it
@@ -314,32 +300,55 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	nav := &crossNav{}
 	src.nav = nav
 
-	tabs, tabsRefresh, selectors := newTabs(src)
+	tabs := tabDefs()
 	n := len(tabs)
-	panes := make([]fyne.CanvasObject, n)
+	panes := make([]*fyne.Container, n)       // per-tab Stack holders, filled on first view
 	items := make([]*navItem, n)
 	holder := container.NewStack()
+	refresher := &tabRefresher{refreshers: make([]func(), n)} // aligned with tab positions
+	selectors := make(map[tabID]func(PID))                    // cross-nav entry points, filled as tabs build
+	built := make([]bool, n)
+
+	// ensureBuilt constructs tab i's content the first time it is shown, wiring
+	// its refresh hook and (Processes only) cross-nav selector into the pane.
+	// Idempotent — repeat views are free. Deferring construction keeps the seven
+	// unopened tabs' widget trees and chart rasters out of memory until first use.
+	ensureBuilt := func(i int) {
+		if built[i] {
+			return
+		}
+		built[i] = true
+		content := buildTab(tabs[i].id, tabs[i].name, src)
+		panes[i].Add(content.object)
+		refresher.refreshers[i] = content.refresh // nil for static tabs
+		if content.selectPID != nil {
+			selectors[tabs[i].id] = content.selectPID
+		}
+	}
 
 	selectIndex := func(i int) {
+		ensureBuilt(i)
 		for j, it := range items {
 			it.setActive(j == i)
 		}
 		holder.Objects = []fyne.CanvasObject{panes[i]}
 		// Redraw the newly-shown tab before re-rendering so it shows current
 		// data immediately rather than lagging up to one poll tick.
-		tabsRefresh.setActive(i)
+		refresher.setActive(i)
 		holder.Refresh()
 	}
 
 	list := container.New(layout.NewCustomPaddedVBoxLayout(navItemGap))
 	for i, d := range tabs {
-		// Stack the tab's content panes. For a single pane this renders
-		// identically to placing it directly; multi-pane tab layouts are a
-		// follow-up (see refactor plan §13).
-		panes[i] = container.NewStack(d.content...)
+		// Empty Stack until first view fills it. For a single pane this renders
+		// identically to placing the content directly; multi-pane tab layouts are
+		// a follow-up (see refactor plan §13).
+		panes[i] = container.NewStack()
 		items[i] = newNavItem(d.name, d.icon, i+1, func() { selectIndex(i) })
 		list.Add(items[i])
 	}
+	// Cross-nav to Processes resolves its selectPID lazily: selectIndex builds the
+	// tab (registering the selector) before the highlight reads it (wireProcessNav).
 	wireProcessNav(nav, tabs, selectIndex, selectors)
 	nav.selectTab = func(id tabID) {
 		if i, ok := indexOfTab(tabs, id); ok {
@@ -351,7 +360,7 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
 	statusRegion := vStackTight(hLine(), newStatusBar())
-	return newTightBorder(title, statusRegion, nil, nil, body), tabsRefresh.refresh
+	return newTightBorder(title, statusRegion, nil, nil, body), refresher.refresh
 }
 
 // wireProcessNav points the cross-nav at the Processes tab: navigating selects
