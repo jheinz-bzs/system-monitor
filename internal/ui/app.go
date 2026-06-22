@@ -47,6 +47,10 @@ func Run() {
 	// window close stops both cleanly.
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Cap the Go heap so the GC holds RSS down (trading a little CPU), unless the
+	// operator already set GOMEMLIMIT. Done once at startup, before collectors run.
+	installDefaultMemoryLimit()
+
 	// Optional baseline instrumentation for the perf plans; no-op unless enabled.
 	startMemStatsLogger(ctx, os.Getenv)
 
