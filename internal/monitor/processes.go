@@ -44,8 +44,8 @@ type ProcessInfo struct {
 type Protocol string
 
 const (
-	protoTCP Protocol = "tcp"
-	protoUDP Protocol = "udp"
+	ProtocolTCP Protocol = "tcp"
+	ProtocolUDP Protocol = "udp"
 )
 
 // ConnState is the gopsutil connection state string (e.g. "ESTABLISHED", "LISTEN").
@@ -264,9 +264,9 @@ func defaultConnSampler(ctx context.Context) ([]ConnectionInfo, error) {
 func protocolName(sockType uint32) Protocol {
 	switch sockType {
 	case syscall.SOCK_STREAM:
-		return protoTCP
+		return ProtocolTCP
 	case syscall.SOCK_DGRAM:
-		return protoUDP
+		return ProtocolUDP
 	default:
 		return ""
 	}
@@ -287,8 +287,8 @@ func formatAddr(a gnet.Addr) string {
 func deriveListeningPorts(conns []ConnectionInfo) []PortInfo {
 	ports := make([]PortInfo, 0)
 	for _, c := range conns {
-		listening := (c.Protocol == protoTCP && c.State == connStateListen) ||
-			(c.Protocol == protoUDP && c.RemoteAddr == "")
+		listening := (c.Protocol == ProtocolTCP && c.State == connStateListen) ||
+			(c.Protocol == ProtocolUDP && c.RemoteAddr == "")
 		if !listening {
 			continue
 		}
