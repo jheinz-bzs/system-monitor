@@ -407,10 +407,17 @@ func newPlaceholder(name string) fyne.CanvasObject {
 // wordmark is Mono UPPERCASE in the muted text-2 color — not a bright Sans
 // heading — so it reads as quiet chrome rather than a page title. The window
 // controls on the right are left to the native OS title bar.
+// brandMark is the accent diamond logo as a solid filled mark, so it reads
+// clearly at both the title-bar logo size and the small window/taskbar icon size
+// (app.go) where a thin outline nearly vanished. colorizeStroke matches the
+// residual stroke to the fill. Single definition, so the in-app logo and the
+// window icon always match.
+func brandMark() fyne.Resource {
+	return colorizeStroke(fillShape(icon.Diamond, palette.Accent), palette.Accent)
+}
+
 func newTitleBar() fyne.CanvasObject {
-	logoImg := canvas.NewImageFromResource(
-		colorizeStroke(icon.Diamond, palette.Accent),
-	)
+	logoImg := canvas.NewImageFromResource(brandMark())
 	logoImg.FillMode = canvas.ImageFillContain
 	logo := container.NewGridWrap(fyne.NewSize(titleLogoSize, titleLogoSize), logoImg)
 
