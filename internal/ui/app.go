@@ -10,6 +10,7 @@ import (
 	"context"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -114,6 +115,11 @@ func Run() {
 		// table's model applies its own top-N selection, sort, and filtering.
 		src.allProcs = allProcessSourceFunc(func() []processRow {
 			return toProcessRows(procs.Processes())
+		})
+		// Ports resolve their owning-process name from the same process snapshot
+		// (no separate gopsutil call), so the adapter joins both reads per tick.
+		src.ports = allPortsSourceFunc(func() []portRow {
+			return toPortRows(procs.Ports(), procs.Processes())
 		})
 		src.killProc = processKillerFunc(func(pid PID) error {
 			return procs.Terminate(ctx, int32(pid))
@@ -225,6 +231,43 @@ func sumRates(read, write func() []uint64) func() []float64 {
 			}
 		}
 		return out
+	}
+}
+
+// toPortRows adapts monitor.PortInfo records to the UI's portRow type, resolving
+// each port's owning-process name from the process snapshot by PID — the same
+// snapshot the process tables read, so no extra gopsutil call is made. A port
+// whose PID is absent from the snapshot (permission-restricted or already exited)
+// gets an empty name, which the table renders as the unresolved-owner dash. The
+// returned slice is freshly allocated per call, as allPortsSource requires.
+func toPortRows(ports []monitor.PortInfo, procs []monitor.ProcessInfo) []portRow {
+	names := make(map[int32]string, len(procs))
+	for _, p := range procs {
+		names[p.PID] = p.Name
+	}
+	rows := make([]portRow, len(ports))
+	for i, p := range ports {
+		rows[i] = portRow{
+			proto:     toPortProto(p.Protocol),
+			port:      p.Port,
+			process:   names[p.PID],
+			pid:       PID(p.PID),
+			localAddr: p.LocalAddr,
+		}
+	}
+	return rows
+}
+
+// toPortProto maps the monitor protocol vocabulary to the UI's display protocol.
+// An unrecognized protocol passes through uppercased rather than being dropped.
+func toPortProto(p monitor.Protocol) portProto {
+	switch p {
+	case monitor.ProtocolTCP:
+		return portProtoTCP
+	case monitor.ProtocolUDP:
+		return portProtoUDP
+	default:
+		return portProto(strings.ToUpper(string(p)))
 	}
 }
 
