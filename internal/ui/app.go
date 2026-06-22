@@ -41,6 +41,9 @@ const appName = "System Monitor"
 func Run() {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
 	a.Settings().SetTheme(newTheme())
+	// Taskbar/window icon: the same brandMark the title-bar logo uses, so the
+	// window icon and the in-app logo match (and both get the heavier stroke).
+	a.SetIcon(brandMark())
 	w := a.NewWindow(appName)
 
 	// One context governs collection and the UI refresh loop; cancelling it on
