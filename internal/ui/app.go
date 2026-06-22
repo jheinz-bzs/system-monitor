@@ -313,8 +313,29 @@ func toProcessRows(procs []monitor.ProcessInfo) []processRow {
 			user:   p.Username,
 			cpu:    p.CPUPercent,
 			mem:    p.MemoryBytes,
-			status: procStatus(p.State),
+			status: procStatusOf(p.State),
 		}
 	}
 	return rows
 }
+
+// procStatusOf maps a monitor process state onto its UI display vocabulary.
+// The monitor layer carries state as an opaque enum; the display name is a UI
+// concern, so the switch lives here. StateUnknown maps to the empty status.
+func procStatusOf(s monitor.ProcessState) procStatus {
+	switch s {
+	case monitor.StateRunning:
+		return statusRunning
+	case monitor.StateSleeping:
+		return statusSleeping
+	case monitor.StateStopped:
+		return statusStopped
+	default:
+		return ""
+	}
+}
+
+// byCPUDesc and byMemoryDesc are the hottest-first orderings for the CPU and
+// Memory tabs' top-process tables.
+func byCPUDesc(a, b monitor.ProcessInfo) bool    { return a.CPUPercent > b.CPUPercent }
+func byMemoryDesc(a, b monitor.ProcessInfo) bool { return a.MemoryBytes > b.MemoryBytes }
