@@ -222,13 +222,45 @@ var tabRegistry = map[tabID]tabBuilder{
 	},
 }
 
-// newTabs returns the eight tab definitions with their content built fresh, and
-// a refresh closure that redraws every live pane (see buildContent). Identity
-// (id/name/icon) is declared first; content is built via tabRegistry so new
-// metric areas are additive — only a registry entry is required, not an edit
-// here. Returning fresh defs keeps repeated buildContent calls from
-// double-appending to a shared slice.
-func newTabs(src buildSources) ([]tabDef, func(), map[tabID]func(PID)) {
+// tabRefresher drives per-tab redraws: the poll tick redraws only the active
+// tab's pane, and switching tabs redraws the newly-shown one so it isn't stale
+// for up to one poll interval. refreshers is aligned with tab positions (a nil
+// entry marks a static tab with nothing to redraw). Tracking the active index
+// in the UI layer keeps the per-tick Snapshot()/arrange() work from scaling
+// with the number of live tabs — only the visible chart does work.
+type tabRefresher struct {
+	refreshers []func() // by tab position; nil for static tabs
+	active     int      // index of the tab currently on screen
+}
+
+// refreshAt redraws tab i's pane when it is live, ignoring out-of-range or
+// static tabs so callers needn't guard.
+func (t *tabRefresher) refreshAt(i int) {
+	if i < 0 || i >= len(t.refreshers) {
+		return
+	}
+	if r := t.refreshers[i]; r != nil {
+		r()
+	}
+}
+
+// setActive marks tab i as on screen and redraws it immediately, so a freshly
+// switched-to tab shows current data without waiting for the next tick.
+func (t *tabRefresher) setActive(i int) {
+	t.active = i
+	t.refreshAt(i)
+}
+
+// refresh redraws only the active tab — the per-tick callback the poller drives.
+func (t *tabRefresher) refresh() { t.refreshAt(t.active) }
+
+// newTabs returns the eight tab definitions with their content built fresh, a
+// tabRefresher that redraws the active pane (see buildContent), and the
+// per-tab cross-nav selectors. Identity (id/name/icon) is declared first;
+// content is built via tabRegistry so new metric areas are additive — only a
+// registry entry is required, not an edit here. Returning fresh defs keeps
+// repeated buildContent calls from double-appending to a shared slice.
+func newTabs(src buildSources) ([]tabDef, *tabRefresher, map[tabID]func(PID)) {
 	tabs := []tabDef{
 		{id: tabOverview, name: "Overview", icon: icon.Overview},
 		{id: tabCPU, name: labelCPUPageTitle, icon: icon.CPU},
