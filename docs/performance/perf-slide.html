@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System Monitor — Memory &amp; Startup Optimization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e1014; --surface:#161a21; --surface-2:#1b212b; --surface-3:#222a36;
+    --border:#262e3a; --border-strong:#344150;
+    --text:#e7eaf0; --text-2:#9aa6b6; --text-3:#616d7e;
+    --accent:#4679fa; --accent-2:#6e93fb; --green:#3fb877; --yellow:#d8a134; --red:#e2563f;
+    --mono:'IBM Plex Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+    --sans:'IBM Plex Sans',system-ui,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);
+    padding:32px;display:flex;justify-content:center;min-height:100vh}
+  .slide{width:100%;max-width:1180px}
+  .head{display:flex;align-items:baseline;gap:14px;margin-bottom:24px}
+  .logo{width:14px;height:14px;background:var(--accent);transform:rotate(45deg);
+    border-radius:2px;align-self:center}
+  h1{font-size:22px;font-weight:600;letter-spacing:.2px}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--text-3);
+    text-transform:uppercase;letter-spacing:.06em;margin-left:auto}
+
+  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin-bottom:16px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px 20px}
+  .card-h{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text-3);
+    text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px}
+
+  /* hero before/after */
+  .hero{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .stat .lbl{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    text-transform:uppercase;letter-spacing:.06em}
+  .stat .val{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums;
+    line-height:1;margin-top:6px}
+  .big{font-size:54px}
+  .unit{font-size:18px;color:var(--text-2);margin-left:3px}
+  .before .val{color:var(--red)}
+  .after .val{color:var(--green)}
+  .arrow{font-family:var(--mono);font-size:30px;color:var(--text-3)}
+  .badge{margin-left:auto;text-align:right}
+  .badge .pct{font-family:var(--mono);font-size:48px;font-weight:600;color:var(--green);
+    line-height:1;font-variant-numeric:tabular-nums}
+  .badge .cap{font-family:var(--mono);font-size:10.5px;color:var(--text-3);
+    text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+  .substat{margin-top:16px;padding-top:14px;border-top:1px solid var(--border);
+    display:flex;gap:28px}
+  .substat .val{font-size:22px}
+
+  /* bar chart */
+  .chart{display:flex;align-items:stretch;gap:14px;height:218px;padding-top:8px}
+  .bar-col{flex:1;display:flex;flex-direction:column}
+  /* bars live in their own flexible area; the label row below is a fixed height,
+     so every bar shares one baseline regardless of 1- vs 2-line labels */
+  .bar-area{flex:1;min-height:0;display:flex;flex-direction:column;
+    justify-content:flex-end;align-items:center}
+  .bar-val{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text-2);
+    margin-bottom:6px;font-variant-numeric:tabular-nums}
+  .bar{width:100%;border-radius:3px 3px 0 0;position:relative;
+    transition:height .4s ease;min-height:3px}
+  .bar-lbl{flex-shrink:0;height:26px;font-family:var(--mono);font-size:10px;
+    color:var(--text-3);margin-top:8px;text-align:center;line-height:1.3;
+    text-transform:uppercase;letter-spacing:.04em}
+  .b-base{background:linear-gradient(180deg,#e2563f,#a13a2b)}
+  .b-warn{background:linear-gradient(180deg,#d8a134,#9c7424)}
+  .b-acc{background:linear-gradient(180deg,#4679fa,#2f55b8)}
+  .b-good{background:linear-gradient(180deg,#3fb877,#2c8557)}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+  th{text-align:left;font-weight:500;color:var(--text-3);text-transform:uppercase;
+    letter-spacing:.06em;font-size:10.5px;padding:0 12px 10px;border-bottom:1px solid var(--border)}
+  td{padding:11px 12px;color:var(--text-2);border-bottom:1px solid var(--border);
+    vertical-align:top;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  td.step{color:var(--text);font-weight:500;white-space:nowrap}
+  .delta-good{color:var(--green)} .delta-flat{color:var(--yellow)}
+  .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;
+    border:1px solid var(--border-strong);color:var(--text-3)}
+  .note{font-family:var(--mono);font-size:10px;color:var(--text-3);margin-top:14px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="slide">
+  <div class="head">
+    <span class="logo"></span>
+    <h1>System Monitor — Memory &amp; Startup Optimization</h1>
+    <span class="sub">BZS253 · idle footprint &amp; launch cost</span>
+  </div>
+
+  <div class="grid">
+    <!-- hero -->
+    <div class="card">
+      <div class="card-h">Footprint — before vs. after</div>
+      <div class="hero">
+        <div class="stat before">
+          <div class="lbl">Baseline</div>
+          <div class="val big">536<span class="unit">MiB</span></div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="stat after">
+          <div class="lbl">Warm start now</div>
+          <div class="val big">180<span class="unit">MB</span></div>
+        </div>
+        <div class="badge">
+          <div class="pct">−66%</div>
+          <div class="cap">total footprint</div>
+        </div>
+      </div>
+      <div class="substat">
+        <div class="stat">
+          <div class="lbl">Startup CPU (first 10s)</div>
+          <div class="val" style="color:var(--green)">30% → 1.5%</div>
+        </div>
+        <div class="stat">
+          <div class="lbl">GC frequency</div>
+          <div class="val" style="color:var(--green)">0.45 → 0.15 /s</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- bar chart -->
+    <div class="card">
+      <div class="card-h">Memory footprint by stage</div>
+      <div class="chart">
+        <div class="bar-col"><div class="bar-area"><div class="bar-val">536</div><div class="bar b-base" style="height:90%"></div></div><div class="bar-lbl">Baseline</div></div>
+        <div class="bar-col"><div class="bar-area"><div class="bar-val">441</div><div class="bar b-warn" style="height:74%"></div></div><div class="bar-lbl">Fix A<br>chart cache</div></div>
+        <div class="bar-col"><div class="bar-area"><div class="bar-val">449</div><div class="bar b-warn" style="height:75%"></div></div><div class="bar-lbl">Fix B<br>active tab</div></div>
+        <div class="bar-col"><div class="bar-area"><div class="bar-val">314</div><div class="bar b-acc" style="height:53%"></div></div><div class="bar-lbl">Fix C<br>GOMEMLIMIT</div></div>
+        <div class="bar-col"><div class="bar-area"><div class="bar-val">280</div><div class="bar b-acc" style="height:47%"></div></div><div class="bar-lbl">Lazy<br>tabs</div></div>
+        <div class="bar-col"><div class="bar-area"><div class="bar-val">180</div><div class="bar b-good" style="height:30%"></div></div><div class="bar-lbl">Disk<br>cache</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- table -->
+  <div class="card">
+    <div class="card-h">Savings at each step</div>
+    <table>
+      <thead>
+        <tr><th>Step</th><th>Change</th><th>Metric</th><th>Before → After</th><th>Result</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="step">Baseline</td>
+          <td>Per-tick full redraw, all tabs eager, crawl every launch</td>
+          <td><span class="pill">Sys</span></td>
+          <td>536 MiB</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td class="step">Fix A</td>
+          <td>Cache &amp; reuse the chart image + rasterizer</td>
+          <td><span class="pill">Sys</span></td>
+          <td>536 → 441 MiB</td>
+          <td class="delta-good">−95 MiB · GC 0.45→0.11/s</td>
+        </tr>
+        <tr>
+          <td class="step">Fix B</td>
+          <td>Redraw only the active tab each tick</td>
+          <td><span class="pill">Sys</span></td>
+          <td>441 → 449 MiB</td>
+          <td class="delta-flat">per-tick work stops scaling w/ tab count</td>
+        </tr>
+        <tr>
+          <td class="step">Fix C</td>
+          <td>GOMEMLIMIT soft cap (320 MiB) — GC holds RSS down</td>
+          <td><span class="pill">Sys</span></td>
+          <td>449 → 314 MiB</td>
+          <td class="delta-good">−135 MiB (−30%)</td>
+        </tr>
+        <tr>
+          <td class="step">Lazy tabs</td>
+          <td>Build each tab on first view, not at launch</td>
+          <td><span class="pill">RSS idle</span></td>
+          <td>~300 → ~280 MB</td>
+          <td class="delta-good">7 unopened tabs cost nothing</td>
+        </tr>
+        <tr>
+          <td class="step">Disk cache</td>
+          <td>Skip the volume crawl when a cache exists; manual rescan</td>
+          <td><span class="pill">RSS warm</span></td>
+          <td>~300 → ~180 MB</td>
+          <td class="delta-good">no crawl · CPU 30%→1.5%</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note">
+      Bars 1–4: Go runtime <b>Sys</b> plateau (runtime/debug memstats, same tour). Bars 5–6: process <b>RSS</b> (warm-start plateau) — RSS ≈ Sys on the test machine, so the series is continuous. Toolkit floor (empty Fyne+OpenGL window) ≈ 140 MB; ~140 MB of any figure is the fixed cross-platform-GUI tax.
+    </div>
+  </div>
+</div>
+</body>
+</html>
