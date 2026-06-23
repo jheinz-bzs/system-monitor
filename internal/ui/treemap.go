@@ -452,10 +452,11 @@ func (r *treemapRenderer) arrangeLabel(label *canvas.Text, text string, x, y, w,
 func (r *treemapRenderer) syncEmpty(tileCount int) {
 	if tileCount > 0 {
 		r.empty.Hide()
-		if r.spinner != nil {
-			r.spinner.Stop()
-			r.spinner.Hide()
+		if r.spinner == nil {
+			return
 		}
+		r.spinner.Stop()
+		r.spinner.Hide()
 		return
 	}
 	sz := r.empty.MinSize()
