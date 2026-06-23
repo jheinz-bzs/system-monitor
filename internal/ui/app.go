@@ -92,8 +92,9 @@ func Run() {
 	}
 
 	src := buildSources{
-		charts:  make(liveSources),
-		cpuInfo: cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
+		charts:   make(liveSources),
+		cpuInfo:  cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
+		settings: prefs,
 	}
 	var collectors []monitor.Collector
 	if cpu != nil {
