@@ -5,8 +5,9 @@ package ui
 //
 // See https://docs.fyne.io/faq/theme/ for the theme contract.
 //
-// The design system is dark-only, so the theme ignores the requested
-// fyne.ThemeVariant and always returns its dark palette.
+// The theme ignores the requested fyne.ThemeVariant: the active palette (dark
+// by default, or light) is selected once at startup by applyTheme from the
+// persisted theme preference (BZS253-72), not from the OS light/dark variant.
 //
 // Fonts: the design calls for IBM Plex Mono (everything numeric/tabular) and
 // IBM Plex Sans (titles and prose). Both families are bundled and embedded in
@@ -30,44 +31,66 @@ var _ fyne.Theme = (*monitorTheme)(nil)
 // newTheme returns the application theme.
 func newTheme() fyne.Theme { return &monitorTheme{} }
 
-// themeColors maps Fyne's semantic color names onto the design-system palette.
-// A map-miss falls through to the default dark theme (see Color), mirroring the
-// old switch's default arm.
-var themeColors = map[fyne.ThemeColorName]color.Color{
-	theme.ColorNameBackground:          palette.BG,
-	theme.ColorNameButton:              palette.Surface,
-	theme.ColorNameDisabledButton:      palette.DisabledButton,
-	theme.ColorNameDisabled:            palette.Text3,
-	theme.ColorNameError:               palette.Red,
-	theme.ColorNameFocus:               palette.Accent,
-	theme.ColorNameForeground:          palette.Text,
-	colorNameTextSecondary:             palette.Text2,
-	theme.ColorNameForegroundOnError:   palette.Text,
-	theme.ColorNameForegroundOnPrimary: palette.Text,
-	theme.ColorNameForegroundOnSuccess: palette.BG,
-	theme.ColorNameForegroundOnWarning: palette.BG,
-	theme.ColorNameHeaderBackground:    palette.Surface2,
-	theme.ColorNameHover:               palette.Surface3,
-	theme.ColorNameHyperlink:           palette.Accent2,
-	theme.ColorNameInputBackground:     palette.Surface2,
-	theme.ColorNameInputBorder:         palette.Border,
-	theme.ColorNameMenuBackground:      palette.Surface,
-	theme.ColorNameOverlayBackground:   palette.Surface,
-	theme.ColorNamePlaceHolder:         palette.Text3,
-	theme.ColorNamePressed:             color.Transparent, // suppresses the button/select tap ripple — interactions stay flat
-	theme.ColorNamePrimary:             palette.Accent,
-	theme.ColorNameScrollBar:           palette.BorderStrong,
-	theme.ColorNameScrollBarBackground: palette.Surface,
-	theme.ColorNameSelection:           palette.Surface3,
-	theme.ColorNameSeparator:           palette.Border,
-	theme.ColorNameShadow:              palette.Shadow,
-	theme.ColorNameSuccess:             palette.Green,
-	theme.ColorNameWarning:             palette.Yellow,
+// applyTheme points the active palette at the chosen variant and rebuilds the
+// Fyne color map from it. Run calls it once at startup, before the theme is set
+// and any widget is built (BZS253-72) — palette is read at construction across
+// the package, so the swap must precede all UI. Not safe to call after the
+// window exists; theme changes take effect on next launch.
+func applyTheme(choice themeChoice) {
+	switch choice {
+	case themeLight:
+		palette = paletteLight
+	default:
+		palette = paletteDark
+	}
+	themeColors = buildThemeColors()
 }
 
-// Color maps Fyne's semantic color names onto the design-system palette. The
-// variant is intentionally ignored: the design system defines a single dark
-// theme.
+// themeColors maps Fyne's semantic color names onto the active design-system
+// palette. A map-miss falls through to the default dark theme (see Color),
+// mirroring the old switch's default arm. Rebuilt by applyTheme when the
+// palette changes.
+var themeColors = buildThemeColors()
+
+// buildThemeColors produces the Fyne color map from the active palette.
+func buildThemeColors() map[fyne.ThemeColorName]color.Color {
+	return map[fyne.ThemeColorName]color.Color{
+		theme.ColorNameBackground:          palette.BG,
+		theme.ColorNameButton:              palette.Surface,
+		theme.ColorNameDisabledButton:      palette.DisabledButton,
+		theme.ColorNameDisabled:            palette.Text3,
+		theme.ColorNameError:               palette.Red,
+		theme.ColorNameFocus:               palette.Accent,
+		theme.ColorNameForeground:          palette.Text,
+		colorNameTextSecondary:             palette.Text2,
+		theme.ColorNameForegroundOnError:   palette.Text,
+		theme.ColorNameForegroundOnPrimary: palette.Text,
+		theme.ColorNameForegroundOnSuccess: palette.BG,
+		theme.ColorNameForegroundOnWarning: palette.BG,
+		theme.ColorNameHeaderBackground:    palette.Surface2,
+		theme.ColorNameHover:               palette.Surface3,
+		theme.ColorNameHyperlink:           palette.Accent2,
+		theme.ColorNameInputBackground:     palette.Surface2,
+		theme.ColorNameInputBorder:         palette.Border,
+		theme.ColorNameMenuBackground:      palette.Surface,
+		theme.ColorNameOverlayBackground:   palette.Surface,
+		theme.ColorNamePlaceHolder:         palette.Text3,
+		theme.ColorNamePressed:             color.Transparent, // suppresses the button/select tap ripple — interactions stay flat
+		theme.ColorNamePrimary:             palette.Accent,
+		theme.ColorNameScrollBar:           palette.BorderStrong,
+		theme.ColorNameScrollBarBackground: palette.Surface,
+		theme.ColorNameSelection:           palette.Surface3,
+		theme.ColorNameSeparator:           palette.Border,
+		theme.ColorNameShadow:              palette.Shadow,
+		theme.ColorNameSuccess:             palette.Green,
+		theme.ColorNameWarning:             palette.Yellow,
+	}
+}
+
+// Color maps Fyne's semantic color names onto the active design-system palette.
+// The Fyne variant is intentionally ignored: the palette (dark or light) is
+// chosen once at startup by applyTheme from the persisted preference, not from
+// the OS light/dark variant.
 func (m *monitorTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
 	if c, ok := themeColors[name]; ok {
 		return c
