@@ -53,15 +53,18 @@ func newSegmentedSelect(active int, onChange func(index int), labels ...string) 
 // Tapped implements fyne.Tappable: select the segment the tap fell in (the last
 // one if the tap lands past every recorded edge, e.g. on the right border).
 func (s *segmentedSelect) Tapped(ev *fyne.PointEvent) {
+	n := len(s.labels)
+	if n == 0 {
+		return
+	}
 	for i, edge := range s.edges {
-		if ev.Position.X < edge {
-			s.choose(i)
-			return
+		if ev.Position.X >= edge {
+			continue
 		}
+		s.choose(i)
+		return
 	}
-	if n := len(s.labels); n > 0 {
-		s.choose(n - 1)
-	}
+	s.choose(n - 1)
 }
 
 // choose activates segment i, repainting and notifying only on a real change.
