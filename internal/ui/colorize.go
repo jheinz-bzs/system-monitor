@@ -20,6 +20,23 @@ import (
 	"fyne.io/fyne/v2"
 )
 
+// solidFill is the fill token in the bundled Lucide glyphs: they draw as a
+// stroke-only outline (fill="none"). Matched so the brand mark can turn the
+// shape solid — a thin outline reads as a faint line at small icon sizes, where
+// a filled mark stays bold and legible.
+const solidFill = `fill="none"`
+
+// fillShape returns a copy of the given SVG resource with its (none) fill
+// replaced by c, turning a stroke-only Lucide glyph into a solid filled shape.
+// Compose with colorizeStroke so the residual stroke matches the fill (otherwise
+// the unresolved currentColor stroke renders as a stray dark outline). Renamed so
+// the painter's name+size cache doesn't collide with the outline source.
+func fillShape(src fyne.Resource, c color.Color) fyne.Resource {
+	fill := fmt.Sprintf("fill=%q", hexString(c))
+	out := bytes.ReplaceAll(src.Content(), []byte(solidFill), []byte(fill))
+	return fyne.NewStaticResource("filled-"+src.Name(), out)
+}
+
 // colorizeStroke returns a copy of the given SVG resource with every
 // "currentColor" token replaced by c, so the line stroke renders in that color.
 func colorizeStroke(src fyne.Resource, c color.Color) fyne.Resource {

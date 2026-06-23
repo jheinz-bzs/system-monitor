@@ -40,6 +40,7 @@ const (
 	labelIOPanel       = "I/O"
 	labelVolumesEmpty  = "no volume data"
 	labelDirsEmpty     = "scanning…" // directory treemap, before the first walk lands
+	labelRescan        = "rescan"    // storage header's manual re-walk control
 	labelVolumeSizeSep = " / "       // "420G / 512G"
 	fmtVolumeSubtitle  = "%d volumes · %s total"
 	fmtVolumePercent   = "%d%% used" // "82% used"
@@ -447,18 +448,21 @@ type diskView struct {
 	sub          string     // page-head subtitle, snapshotted from the initial partitions
 	mounts       []string   // selectable volume mounts, snapshotted for the scan selector
 	selectVolume func(mount string)
+	rescan       func() // triggers a fresh walk of the selected volume; nil leaves the control out
 }
 
 // newDiskView builds the Disk tab content. src feeds the volumes list and the
 // page head. dirs feeds the storage directory treemap and may be nil (the
 // storage panel keeps its placeholder). io feeds the I/O chart and may be
 // unwired. selectVolume retargets the directory scan when the header's volume
-// selector changes; nil leaves the selector out.
-func newDiskView(src diskUsageSource, dirs diskDirSource, io diskIOSources, selectVolume func(mount string)) *diskView {
+// selector changes; nil leaves the selector out. rescan triggers a fresh walk of
+// the selected volume; nil leaves the rescan control out.
+func newDiskView(src diskUsageSource, dirs diskDirSource, io diskIOSources, selectVolume func(mount string), rescan func()) *diskView {
 	v := &diskView{
 		volumes:      newVolumesList(src),
 		sub:          diskSubtitle(src.partitions()),
 		selectVolume: selectVolume,
+		rescan:       rescan,
 	}
 	if dirs != nil {
 		v.dirmap = newTreemap(diskDirTreemapSource{src: dirs}, openDirAt(dirs))
@@ -515,7 +519,7 @@ func (v *diskView) pageHead() fyne.CanvasObject {
 // volume selector in its header) with the volumes panel. The directory panel
 // keeps the larger share, per the wireframe.
 func (v *diskView) topRow() fyne.CanvasObject {
-	storage := newPanel(labelStorageByDir, v.volumeSelector(), v.storageBody())
+	storage := newPanel(labelStorageByDir, v.storageHeader(), v.storageBody())
 	volumes := newPanel(labelVolumesPanel, nil, v.volumes)
 	return newWeightedHBox(tabPad,
 		weightedPane{object: storage, weight: storageDirWeight},
@@ -529,6 +533,34 @@ func (v *diskView) storageBody() fyne.CanvasObject {
 		return layout.NewSpacer()
 	}
 	return v.dirmap
+}
+
+// storageHeader is the storage panel's trailing controls: the volume selector
+// (when more than one volume) beside the manual rescan link. Either may be
+// absent; it returns just the present one, both in a row, or nil for a plain
+// header.
+func (v *diskView) storageHeader() fyne.CanvasObject {
+	selector := v.volumeSelector()
+	rescan := v.rescanLink()
+	switch {
+	case selector != nil && rescan != nil:
+		return container.New(layout.NewCustomPaddedHBoxLayout(spaceLG),
+			vCenter(selector), vCenter(rescan))
+	case rescan != nil:
+		return rescan
+	default:
+		return selector
+	}
+}
+
+// rescanLink is the manual "rescan" control — a tappable header link that
+// triggers a fresh walk of the selected volume. Omitted when no rescan hook is
+// wired (no scanner), so the header degrades like the volume selector does.
+func (v *diskView) rescanLink() fyne.CanvasObject {
+	if v.rescan == nil {
+		return nil
+	}
+	return newJumpLink(labelRescan, v.rescan)
 }
 
 // volumeSelector is the header control choosing which volume the directory

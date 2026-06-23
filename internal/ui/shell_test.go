@@ -37,6 +37,42 @@ func TestWireProcessNavSelectsAndHighlights(t *testing.T) {
 	}
 }
 
+// A poll tick must redraw only the active tab; switching tabs moves which
+// pane does work, so hidden tabs stop paying per-tick Snapshot()/arrange()
+// cost (Fix B, BZS253-70). Static tabs (nil refresher) are skipped without
+// touching the live ones.
+func TestTabRefresherRefreshesOnlyActiveTab(t *testing.T) {
+	const tabA, tabStatic, tabB = 0, 1, 2
+	var counts [3]int
+	tr := &tabRefresher{refreshers: []func(){
+		func() { counts[tabA]++ },
+		nil, // static tab — nothing to redraw
+		func() { counts[tabB]++ },
+	}}
+
+	// Default active tab (index 0) is the only one a tick redraws.
+	tr.refresh()
+	tr.refresh()
+	if counts != [3]int{2, 0, 0} {
+		t.Fatalf("ticks on tab A: counts %v, want [2 0 0]", counts)
+	}
+
+	// Switching redraws the new tab once (refresh-on-switch), then ticks hit
+	// only it — tab A goes quiet.
+	tr.setActive(tabB)
+	tr.refresh()
+	if counts != [3]int{2, 0, 2} {
+		t.Fatalf("after switch to tab B: counts %v, want [2 0 2]", counts)
+	}
+
+	// Switching to a static tab is safe and leaves the live tabs untouched.
+	tr.setActive(tabStatic)
+	tr.refresh()
+	if counts != [3]int{2, 0, 2} {
+		t.Fatalf("on static tab: counts %v, want [2 0 2]", counts)
+	}
+}
+
 // Without a Processes tab the navigator stays unwired, so its callers no-op
 // instead of jumping to a tab that isn't there.
 func TestWireProcessNavNoProcessesTab(t *testing.T) {

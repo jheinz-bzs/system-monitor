@@ -41,11 +41,18 @@ const appName = "System Monitor"
 func Run() {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
 	a.Settings().SetTheme(newTheme())
+	// Taskbar/window icon: the same brandMark the title-bar logo uses, so the
+	// window icon and the in-app logo match (and both get the heavier stroke).
+	a.SetIcon(brandMark())
 	w := a.NewWindow(appName)
 
 	// One context governs collection and the UI refresh loop; cancelling it on
 	// window close stops both cleanly.
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cap the Go heap so the GC holds RSS down (trading a little CPU), unless the
+	// operator already set GOMEMLIMIT. Done once at startup, before collectors run.
+	installDefaultMemoryLimit()
 
 	// Optional baseline instrumentation for the perf plans; no-op unless enabled.
 	startMemStatsLogger(ctx, os.Getenv)
@@ -105,6 +112,7 @@ func Run() {
 		}
 		src.diskDirs = ctrl
 		src.selectVolume = ctrl.selectVolume
+		src.rescanDirs = ctrl.scanner.Rescan
 		collectors = append(collectors, diskCol)
 	}
 	if network != nil {
