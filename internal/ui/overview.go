@@ -152,7 +152,8 @@ func bindCPU(s overviewSources) overviewLive {
 		health: func() statusKind {
 			return cpuHealth.classify(latestSample(s.cpu.Values()))
 		},
-	})
+	}
+}
 
 func bindMemory(s overviewSources) overviewLive {
 	if !s.mem.wired() {
@@ -169,7 +170,8 @@ func bindMemory(s overviewSources) overviewLive {
 		health: func() statusKind {
 			return memHealth.classify(usagePercent(latestSample(s.mem.used.Values()), s.mem.total))
 		},
-	})
+	}
+}
 
 func bindSwap(s overviewSources) overviewLive {
 	if !s.swap.wired() {
@@ -187,7 +189,8 @@ func bindSwap(s overviewSources) overviewLive {
 		health: func() statusKind {
 			return swapHealth.classify(usagePercent(latestSample(s.swap.used.Values()), s.swap.total))
 		},
-	})
+	}
+}
 
 func bindDiskIO(s overviewSources) overviewLive {
 	if !s.diskIO.wired() {
@@ -330,7 +333,6 @@ func newOverview() fyne.CanvasObject {
 // makes each panel clickable, jumping to that metric's tab; pass nil for inert
 // panels.
 func newOverviewView(src overviewSources, nav tabNavigator) *overviewView {
-	binds := src.bindings()
 	v := &overviewView{badge: newStatusPill(status.Healthy), nav: nav}
 	for _, m := range overviewMetrics {
 		v.newPanel(m, m.bind(src)) // newPanel appends to v.panels
