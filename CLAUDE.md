@@ -8,7 +8,7 @@ This file tells Claude how to understand and work with the design artifacts in t
 
 A native desktop system monitoring app built in **Go** using the **Fyne UI toolkit** and **gopsutil** for system data. The target audience is developers and power users. The app has no persistence — all metric history is held in an in-memory ring buffer (last ~1 minute at 1s resolution).
 
-The app has **8 tabs**: Overview, CPU, Memory, Disk, Network, Processes, Ports, Connections.
+The app has **9 tabs**: Overview, CPU, Memory, Disk, Network, Processes, Ports, Connections, Settings.
 
 ---
 
@@ -142,7 +142,7 @@ Sidebar: expanded 178px, compact 54px.
 
 - **Process IDs are first-class identifiers.** Shared state across tabs should be designed so cross-tab navigation (e.g. Port → owning process in Processes tab) can be wired up cleanly. The cross-nav link component is already defined in the design system.
 - **Ring buffer per metric.** No database, no file I/O for metrics. Charts show ~1 minute of data at 1s resolution.
-- **No settings screen** — out of scope for the current version.
+- **Settings persist via `app.Preferences()`** (BZS253-72) — typed keys + defaults live in `internal/ui/prefs.go`; no config file or DB (the no-persistence rule still governs *metric history*). Settings changes apply on next launch (documented per row); see ADR-007.
 - **Fyne renders its own widgets.** Do not reference HTML/CSS conventions when writing Fyne layout code. Translate visual intent from the wireframes into Fyne's canvas/widget model.
 
 ---
