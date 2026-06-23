@@ -199,3 +199,23 @@ The shell hosts eight tabs (Overview, CPU, …, Connections) and routes nav sele
 ### Rationale
 
 Switching on a typed `id` decouples routing from labels (rename `name` freely; routing is unaffected) and turns content assignment into a `switch` the compiler and reader can reason about. The `content []fyne.CanvasObject` slice is the deliberate seam for wiring real multi-pane tab content later — single-pane tabs render identically today via a one-child `container.NewStack`. `newTabs()` is a builder (not a package-level value literal) specifically so `content` is built fresh per call and repeated `buildContent` invocations never double-append to a shared slice. The cost is a little more declaration ceremony than a flat string-keyed list, accepted for type safety and the extension point.
+
+---
+
+## ADR-007: Persisted settings via app.Preferences(); startup-applied; reversing "no settings screen"
+
+**Date:** 2026-06-23
+**Status:** Active
+**Area:** Architecture / UI
+
+### Context
+
+BZS253-72 adds a Settings tab so users can adjust app preferences (start tab, poll cadence, GC memory cap, dark/light appearance) rather than relying on hardcoded defaults and `GOMEMLIMIT`. This reverses the MVP's explicit "No settings screen — out of scope" line (CLAUDE.md), now that the app is in its stretch phase. The app has no persistence for *metric history* by design (in-memory ring buffers), so a settings store had to be chosen, along with how/when each setting takes effect. Of the candidate settings, a theme/appearance toggle was kept but auto-update settings were deferred — their engine (BZS253-71) isn't built, and a control with nothing to drive would violate the "each setting takes effect" criterion; its typed keys can be added when that card lands.
+
+### Decision
+
+**Persist preferences through Fyne's built-in `app.Preferences()` — no config file or database. Typed keys, defaults, and accessors live in one home (`internal/ui/prefs.go`) behind a narrow consumer-defined `prefStore` interface (`fyne.Preferences` satisfies it structurally; tests use a map-backed fake). Every setting is read once at startup and applied then — documented "next launch" per row — not live. The light palette is selected by swapping the package-global `palette` var (and rebuilding `themeColors`) in `applyTheme` before any widget is constructed; the Settings tab is a normal `tabRegistry` entry.**
+
+### Rationale
+
+`app.Preferences()` adds no dependency and no file I/O of our own; it's the idiomatic Fyne store, and keys are namespaced in a `prefKey` dictionary (no loose string literals). The `prefStore` seam is one tiny interface defined at the consumer — fakeable without standing up a Fyne app — so the set→get→default round-trip is unit-tested directly. Startup-only application is the deliberate lazy choice: every widget reads the global `palette` at construction (not through theme indirection), so a *live* theme switch would require rebuilding the whole window — far more machinery than the value warrants. Reading prefs once and applying before the UI builds satisfies the acceptance criterion ("live or on next launch, documented") at a fraction of the cost; `pollInterval` likewise becomes a startup-set `var` (was a `const`) so the time axes and the status-bar poll label all describe the chosen cadence. Every accessor clamps out-of-range stored values to its default (no nonexistent start tab, no zero poll tick, no unknown palette), so a hand-edited or stale preference can't wedge the app. The light palette is a coherent first pass, not a design-reviewed artifact — the design system is dark-first and no light wireframe exists — and is marked as such in `tokens.go` for a future tuning pass.
