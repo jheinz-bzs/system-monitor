@@ -125,20 +125,15 @@ type overviewLive struct {
 	read func() readout
 }
 
-// bindings maps each wired metric's title to its live behavior. Unwired metrics
-// are absent, so their panels keep the static fallback. add inserts a binding
-// only when its metric is wired; an overviewLive is safe to build eagerly even
-// when unwired because its read closure is never invoked and nil sources are
-// only stored, never dereferenced.
-func (s overviewSources) bindings() map[string]overviewLive {
-	m := make(map[string]overviewLive)
-	add := func(ok bool, title string, live overviewLive) {
-		if ok {
-			m[title] = live
-		}
-	}
+// Each bind* function builds one panel's live behavior, returning the zero
+// overviewLive when its source isn't wired so the panel keeps its static
+// fallback. They share the overviewMetric table's bind signature.
 
-	add(s.cpu != nil, labelCPUPanel, overviewLive{
+func bindCPU(s overviewSources) overviewLive {
+	if s.cpu == nil {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.cpu,
 		opts: []lineChartOption{fixedRange(0, percentMax), valueFormat(formatPercentAxis)},
 		read: func() readout {
@@ -297,10 +292,9 @@ func newOverview() fyne.CanvasObject {
 // makes each panel clickable, jumping to that metric's tab; pass nil for inert
 // panels.
 func newOverviewView(src overviewSources, nav tabNavigator) *overviewView {
-	binds := src.bindings()
 	v := &overviewView{nav: nav}
 	for _, m := range overviewMetrics {
-		v.newPanel(m, binds[m.title]) // newPanel appends to v.panels
+		v.newPanel(m, m.bind(src)) // newPanel appends to v.panels
 	}
 	return v
 }
