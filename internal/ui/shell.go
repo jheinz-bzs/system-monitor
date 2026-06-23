@@ -357,10 +357,17 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	}
 	selectIndex(0)
 
+	// The footer redraws on the same tick as the active tab; combine both into
+	// the refresh closure the poller drives.
+	statusBar := newStatusBarView(src)
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
 	title := vStackTight(newTitleBar(), hLine())
-	statusRegion := vStackTight(hLine(), newStatusBar())
-	return newTightBorder(title, statusRegion, nil, nil, body), refresher.refresh
+	statusRegion := vStackTight(hLine(), statusBar.object())
+	refresh := func() {
+		refresher.refresh()
+		statusBar.refresh()
+	}
+	return newTightBorder(title, statusRegion, nil, nil, body), refresh
 }
 
 // wireProcessNav points the cross-nav at the Processes tab: navigating selects
@@ -427,19 +434,15 @@ func newTitleBar() fyne.CanvasObject {
 	return newBar(titleBarHeight, brand)
 }
 
-// newStatusBar is the 26px bottom bar (muted Mono meta text).
-func newStatusBar() fyne.CanvasObject {
-	return newBar(statusBarHeight, newMeta("scaffold build — no live data yet"))
-}
-
-// newBar builds a fixed-height surface-2 bar with its content inset from the
-// left and vertically centered.
+// newBar builds a fixed-height surface-2 bar with its content inset from both
+// edges and vertically centered. content is stretched to the full bar width, so
+// a row with a trailing layout.Spacer (the status bar) can push its tail group
+// to the right edge.
 func newBar(height float32, content fyne.CanvasObject) fyne.CanvasObject {
 	bg := canvas.NewRectangle(palette.Surface2)
 	bg.SetMinSize(fyne.NewSize(0, height))
 
-	row := container.NewHBox(content) // left-packed
-	inset := container.New(layout.NewCustomPaddedLayout(0, 0, barHPad, 0), row)
+	inset := container.New(layout.NewCustomPaddedLayout(0, 0, barHPad, barHPad), content)
 	centered := container.New(layout.NewCustomPaddedVBoxLayout(0),
 		layout.NewSpacer(), inset, layout.NewSpacer(),
 	)
