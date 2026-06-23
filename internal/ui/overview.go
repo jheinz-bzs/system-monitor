@@ -404,19 +404,17 @@ func (c *clickableCard) CreateRenderer() fyne.WidgetRenderer {
 // when wired, otherwise a reserved empty plot rectangle so chartless panels
 // keep the same height.
 func (v *overviewView) sparkArea(p *overviewPanel, b overviewLive) fyne.CanvasObject {
-	var plot fyne.CanvasObject
-	if b.src != nil {
-		opts := append([]lineChartOption{window(metrics.HistoryCapacity)}, b.opts...)
-		p.chart = newLineChart(opts...)
-		p.chart.addSeries(b.src, emphasized())
-		plot = p.chart
-	} else {
+	pad := layout.NewCustomPaddedLayout(spaceMD, spaceMD, 0, 0)
+	if b.src == nil {
 		rect := canvas.NewRectangle(palette.PlotBG)
 		rect.CornerRadius = theme.Size(sizeName.PanelRadius)
 		rect.SetMinSize(fyne.NewSize(0, overviewSparkMinHeight))
-		plot = rect
+		return container.New(pad, rect)
 	}
-	return container.New(layout.NewCustomPaddedLayout(spaceMD, spaceMD, 0, 0), plot)
+	opts := append([]lineChartOption{window(metrics.HistoryCapacity)}, b.opts...)
+	p.chart = newLineChart(opts...)
+	p.chart.addSeries(b.src, emphasized())
+	return container.New(pad, p.chart)
 }
 
 // statusDot is the small filled circle in a panel header, colored by health.
