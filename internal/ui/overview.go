@@ -70,11 +70,13 @@ type overviewMetric struct {
 	tab       tabID // the tab a click on this panel navigates to
 }
 
-// Swap shares the Memory tab — there is no dedicated Swap tab.
+// Swap shares the Memory tab — there is no dedicated Swap tab. The initial state
+// is the dot color shown before the first refresh; metrics with a live health
+// binding recolor it from real data, the rest stay at this color.
 var overviewMetrics = []overviewMetric{
 	{labelCPUPanel, "0", labelUnitPercent, status.Healthy, "", "", tabCPU},
 	{labelMemoryPanel, "0", "", status.Healthy, "", "", tabMemory},
-	{labelDiskIOPanel, "0", "", status.Warning, "", "", tabDisk},
+	{labelDiskIOPanel, "0", "", status.Healthy, "", "", tabDisk},
 	{labelNetworkPanel, "0", "", status.Healthy, "", "", tabNetwork},
 	{labelSwapPanel, "0", "", status.Healthy, "", "", tabMemory},
 	{labelProcessesPanel, "0", labelUnitProcs, status.Healthy, "", "", tabProcesses},
