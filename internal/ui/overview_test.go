@@ -32,7 +32,7 @@ func TestNewMetricPanelAcceptsTitleAndContent(t *testing.T) {
 	app.Settings().SetTheme(newTheme())
 
 	content := canvas.NewRectangle(palette.Accent)
-	panel := newMetricPanel(labelCPUPanel, status.Healthy, content)
+	panel := newMetricPanel(labelCPUPanel, statusDot(status.Healthy), content)
 
 	w := test.NewWindow(panel)
 	defer w.Close()
