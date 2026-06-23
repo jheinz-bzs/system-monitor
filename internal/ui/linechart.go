@@ -65,6 +65,9 @@ const (
 	chartSecondaryAlpha = 0x8c    // ~55% opacity for secondary series
 	chartYTickCount     = 5       // horizontal gridlines / Y labels (incl. ends)
 	chartXGridCount     = 6       // vertical gridline columns
+	// chartAutoRangePad is the headroom added above and below an auto-scaled
+	// series (as a fraction of its span) so the line never glues to the frame.
+	chartAutoRangePad = 0.1
 	chartLabelGap       = spaceSM // 4; gap between a tick label and the plot
 	chartMinWidth       = 60 * spaceSM
 	chartMinHeight      = 30 * spaceSM
@@ -539,5 +542,22 @@ func (c *lineChart) resolveRange(data [][]float64) (lo, hi float64) {
 	if math.IsInf(min, 1) { // no data
 		return 0, 1
 	}
-	return niceRange(min, max, chartYTickCount-1)
+	return niceRange(padRange(min, max))
+}
+
+// padRange adds headroom above and below [min, max] so an auto-scaled line
+// keeps clear of the frame, then hands the padded bounds to niceRange. A flat
+// series (min == max) is padded relative to its magnitude. The lower bound is
+// not pushed below zero for a non-negative series — rates and byte counts rest
+// on a true zero baseline rather than a fabricated negative axis.
+func padRange(min, max float64) (lo, hi float64, ticks int) {
+	pad := (max - min) * chartAutoRangePad
+	if pad == 0 {
+		pad = math.Max(math.Abs(max), 1) * chartAutoRangePad
+	}
+	lo, hi = min-pad, max+pad
+	if min >= 0 && lo < 0 {
+		lo = 0
+	}
+	return lo, hi, chartYTickCount - 1
 }

@@ -40,14 +40,6 @@ const (
 	labelLegendPerCore    = "per-core"
 )
 
-// Unit toggle labels for the page head's segmented control (static chrome —
-// only the "%" series is collected today; see controls.go).
-const (
-	segLabelPercent = "%"
-	segLabelGHz     = "GHz"
-	segLabelLoad    = "load"
-)
-
 // Pane weights, from the wireframe's flex-grow ratios: the chart pane is 1.3×
 // the bottom row's height; the processes panel is 1.25× the per-core panel's
 // width.
@@ -140,8 +132,6 @@ func (v *cpuView) pageHead() fyne.CanvasObject {
 		sub := fmt.Sprintf("%d cores · %s", v.meta.cores, v.meta.model)
 		row.Add(vCenter(newPageSubtitle(sub)))
 	}
-	row.Add(layout.NewSpacer())
-	row.Add(vCenter(newSegmented(0, segLabelPercent, segLabelGHz, segLabelLoad)))
 	return row
 }
 

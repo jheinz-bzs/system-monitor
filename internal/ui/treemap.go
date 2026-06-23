@@ -54,6 +54,8 @@ const (
 	treemapMinHeight   = 96      // px; widget MinSize floor
 	treemapTipPad      = spaceSM // 4; inner padding of the hover tooltip
 	treemapTipOffset   = 12      // px; tooltip offset from the cursor so it doesn't sit under it
+	treemapBusyDots    = 32      // px; spinner size in the busy empty state
+	treemapBusyGap     = spaceMD // 8; gap between spinner and its label
 )
 
 // noTreemapHover is the hoverIndex sentinel for "no block under the cursor".
@@ -91,7 +93,8 @@ type treemap struct {
 	src       treemapSource
 	onSelect  func(index int) // tapped-block callback; nil leaves the widget presentational
 	emptyText string          // placeholder when nothing is plotted; defaults to labelTreemapEmpty
-	hits      []treemapHit    // placed blocks for hit-testing, recorded each arrange
+	emptyBusy bool             // show an animated spinner + larger emptyText (an in-progress scan, not "no data")
+	hits      []treemapHit     // placed blocks for hit-testing, recorded each arrange
 
 	hoverIndex int              // source index of the hovered block, or noTreemapHover
 	hoverPos   fyne.Position    // latest cursor position; the tooltip tracks it
@@ -211,7 +214,15 @@ func (t *treemap) CreateRenderer() fyne.WidgetRenderer {
 	border.StrokeColor = palette.Border
 	border.StrokeWidth = 1
 
-	empty := newMeta(t.emptyText)
+	var empty *canvas.Text
+	var spinner *widget.Activity
+	if t.emptyBusy {
+		empty = styledText(t.emptyText, font.MonoMedium, theme.SizeNameSubHeadingText, palette.Text2)
+		spinner = widget.NewActivity()
+		spinner.Hide()
+	} else {
+		empty = newMeta(t.emptyText)
+	}
 	empty.Hide()
 
 	tipBG := canvas.NewRectangle(palette.Surface2)
@@ -222,7 +233,7 @@ func (t *treemap) CreateRenderer() fyne.WidgetRenderer {
 	tip := styledText("", font.MonoRegular, theme.SizeNameCaptionText, palette.Text)
 	tip.Hide()
 
-	r := &treemapRenderer{tm: t, bg: bg, border: border, empty: empty, tipBG: tipBG, tip: tip}
+	r := &treemapRenderer{tm: t, bg: bg, border: border, empty: empty, spinner: spinner, tipBG: tipBG, tip: tip}
 	r.blocks = make([]*treemapBlock, treemapBlockLimit)
 	for i := range r.blocks {
 		r.blocks[i] = newTreemapBlock()
@@ -234,10 +245,11 @@ func (t *treemap) CreateRenderer() fyne.WidgetRenderer {
 type treemapRenderer struct {
 	tm *treemap
 
-	bg     *canvas.Rectangle
-	border *canvas.Rectangle
-	empty  *canvas.Text
-	tipBG  *canvas.Rectangle // hover tooltip background
+	bg      *canvas.Rectangle
+	border  *canvas.Rectangle
+	empty   *canvas.Text
+	spinner *widget.Activity  // animated scan indicator; nil unless emptyBusy
+	tipBG   *canvas.Rectangle // hover tooltip background
 	tip    *canvas.Text      // hover tooltip text (the block's full path)
 	blocks []*treemapBlock
 
@@ -440,11 +452,29 @@ func (r *treemapRenderer) arrangeLabel(label *canvas.Text, text string, x, y, w,
 func (r *treemapRenderer) syncEmpty(tileCount int) {
 	if tileCount > 0 {
 		r.empty.Hide()
+		if r.spinner == nil {
+			return
+		}
+		r.spinner.Stop()
+		r.spinner.Hide()
 		return
 	}
 	sz := r.empty.MinSize()
+	if r.spinner == nil {
+		r.empty.Resize(sz)
+		r.empty.Move(fyne.NewPos((r.size.Width-sz.Width)/2, (r.size.Height-sz.Height)/2))
+		r.empty.Show()
+		return
+	}
+	// Center the spinner + label as a unit, spinner stacked above the text.
+	stackH := treemapBusyDots + treemapBusyGap + sz.Height
+	top := (r.size.Height - stackH) / 2
+	r.spinner.Resize(fyne.NewSquareSize(treemapBusyDots))
+	r.spinner.Move(fyne.NewPos((r.size.Width-treemapBusyDots)/2, top))
+	r.spinner.Show()
+	r.spinner.Start()
 	r.empty.Resize(sz)
-	r.empty.Move(fyne.NewPos((r.size.Width-sz.Width)/2, (r.size.Height-sz.Height)/2))
+	r.empty.Move(fyne.NewPos((r.size.Width-sz.Width)/2, top+treemapBusyDots+treemapBusyGap))
 	r.empty.Show()
 }
 

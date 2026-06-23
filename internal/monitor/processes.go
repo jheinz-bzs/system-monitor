@@ -12,6 +12,9 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	gnet "github.com/shirou/gopsutil/v4/net"
 	"github.com/shirou/gopsutil/v4/process"
+
+	"github.com/josephheinz/system-monitor/internal/metrics"
+	"github.com/josephheinz/system-monitor/internal/ringbuffer"
 )
 
 // ProcessState is the coarse process-state vocabulary the Processes tab shows
@@ -330,6 +333,12 @@ type ProcessCollector struct {
 	processes   []ProcessInfo
 	ports       []PortInfo
 	connections []ConnectionInfo
+
+	// count is the one piece of process history kept: the process-count time
+	// series the Overview sparkline plots. The snapshots above are replaced
+	// wholesale each tick, but the count is cheap to retain and useless without
+	// history. Guarded by its own mutex (RingBuffer is internally synchronized).
+	count *ringbuffer.RingBuffer[int]
 }
 
 // NewProcessCollector builds a collector backed by gopsutil. It takes one
@@ -340,6 +349,7 @@ func NewProcessCollector(ctx context.Context, opts ...processOption) (*ProcessCo
 		sampleProcs: newDefaultProcessSampler(),
 		sampleConns: defaultConnSampler,
 		terminate:   defaultProcessTerminator,
+		count:       ringbuffer.New[int](metrics.HistoryCapacity),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -369,6 +379,7 @@ func (c *ProcessCollector) Collect(ctx context.Context) error {
 	c.connections = conns
 	c.ports = ports
 	c.mu.Unlock()
+	c.count.Add(len(procs))
 	return nil
 }
 
@@ -385,6 +396,12 @@ func (c *ProcessCollector) Processes() []ProcessInfo {
 	out := make([]ProcessInfo, len(c.processes))
 	copy(out, c.processes)
 	return out
+}
+
+// Count returns the process-count history, oldest to newest — the Overview
+// sparkline's series.
+func (c *ProcessCollector) Count() []int {
+	return c.count.Items()
 }
 
 // Ports returns a copy of the latest listening-port snapshot.
