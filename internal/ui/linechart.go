@@ -247,6 +247,13 @@ type lineChartRenderer struct {
 	fills  []bandFill
 	plot   chartBox
 
+	// Buffers reused across frames so a 1 Hz refresh doesn't churn a fresh
+	// image + a rasterizer-per-series every tick (the dominant memory pressure
+	// — see docs/performance/memory-footprint-plan.md, Fix A). img reallocates
+	// only on a size/scale change; ras is reset between series.
+	img *image.RGBA
+	ras *vector.Rasterizer
+
 	size fyne.Size
 }
 
@@ -457,9 +464,12 @@ func (r *lineChartRenderer) seriesPoints(plot chartBox, lo, hi float64, vals []f
 // of uniform opacity. Band fills (stacked mode) go down first so every boundary
 // stroke stays crisp on top of its neighbor's translucent fill.
 func (r *lineChartRenderer) renderSeries(w, h int) image.Image {
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	img := r.imageFor(w, h)
 	if w <= 0 || h <= 0 || r.plot.width <= 0 || r.plot.height <= 0 {
 		return img
+	}
+	if r.ras == nil {
+		r.ras = &vector.Rasterizer{}
 	}
 	sx := float32(w) / r.plot.width
 	sy := float32(h) / r.plot.height
@@ -467,19 +477,31 @@ func (r *lineChartRenderer) renderSeries(w, h int) image.Image {
 		if len(f.pts) < 3 {
 			continue
 		}
-		ras := vector.NewRasterizer(w, h)
-		fillPolygon(ras, f.pts, sx, sy)
-		ras.Draw(img, img.Bounds(), image.NewUniform(f.col), image.Point{})
+		r.ras.Reset(w, h)
+		fillPolygon(r.ras, f.pts, sx, sy)
+		r.ras.Draw(img, img.Bounds(), image.NewUniform(f.col), image.Point{})
 	}
 	for _, ln := range r.lines {
 		if len(ln.pts) < 2 {
 			continue
 		}
-		ras := vector.NewRasterizer(w, h)
-		strokePolyline(ras, ln.pts, sx, sy, max(ln.width*sx, 1))
-		ras.Draw(img, img.Bounds(), image.NewUniform(ln.col), image.Point{})
+		r.ras.Reset(w, h)
+		strokePolyline(r.ras, ln.pts, sx, sy, max(ln.width*sx, 1))
+		r.ras.Draw(img, img.Bounds(), image.NewUniform(ln.col), image.Point{})
 	}
 	return img
+}
+
+// imageFor returns the cached plot image sized w×h, reallocating only when the
+// dimensions change (resize / HiDPI scale change) and clearing the reused
+// buffer for a fresh frame — a fresh image.NewRGBA is already zeroed.
+func (r *lineChartRenderer) imageFor(w, h int) *image.RGBA {
+	if r.img == nil || r.img.Rect.Dx() != w || r.img.Rect.Dy() != h {
+		r.img = image.NewRGBA(image.Rect(0, 0, w, h))
+		return r.img
+	}
+	clear(r.img.Pix)
+	return r.img
 }
 
 // resolveStroke returns the final stroke color for a series, assigning and
