@@ -151,6 +151,9 @@ func (s overviewSources) bindings() map[string]overviewLive {
 				footRight: labelPeakPrefix + formatWhole(peakSample(vals)) + labelUnitPercent,
 			}
 		},
+		health: func() statusKind {
+			return cpuHealth.classify(latestSample(s.cpu.Values()))
+		},
 	})
 
 	add(s.mem.wired(), labelMemoryPanel, overviewLive{
@@ -160,6 +163,9 @@ func (s overviewSources) bindings() map[string]overviewLive {
 			r := byteUsage(latestSample(s.mem.used.Values()), s.mem.total)
 			r.footRight = labelCachePrefix + formatBytesShort(uint64(latestSample(s.mem.cached.Values())))
 			return r
+		},
+		health: func() statusKind {
+			return memHealth.classify(usagePercent(latestSample(s.mem.used.Values()), s.mem.total))
 		},
 	})
 
@@ -171,6 +177,9 @@ func (s overviewSources) bindings() map[string]overviewLive {
 			r := byteUsage(latestSample(vals), s.swap.total)
 			r.footRight = labelPeakPrefix + formatBytesShort(uint64(peakSample(vals)))
 			return r
+		},
+		health: func() statusKind {
+			return swapHealth.classify(usagePercent(latestSample(s.swap.used.Values()), s.swap.total))
 		},
 	})
 
