@@ -452,10 +452,11 @@ func (r *treemapRenderer) arrangeLabel(label *canvas.Text, text string, x, y, w,
 func (r *treemapRenderer) syncEmpty(tileCount int) {
 	if tileCount > 0 {
 		r.empty.Hide()
-		if r.spinner != nil {
-			r.spinner.Stop()
-			r.spinner.Hide()
+		if r.spinner == nil {
+			return
 		}
+		r.spinner.Stop()
+		r.spinner.Hide()
 		return
 	}
 	sz := r.empty.MinSize()
@@ -514,20 +515,15 @@ func (r *treemapRenderer) MinSize() fyne.Size {
 // (above all rects so a tile can't paint over its neighbor's name), then the
 // frame and the empty-state text on top. Objects are reused across frames.
 func (r *treemapRenderer) Objects() []fyne.CanvasObject {
-	objs := make([]fyne.CanvasObject, 0, len(r.blocks)*2+5)
+	objs := make([]fyne.CanvasObject, 0, len(r.blocks)*2+3)
+	labels := make([]fyne.CanvasObject, 0, len(r.blocks))
 	objs = append(objs, r.bg)
 	for _, b := range r.blocks {
 		objs = append(objs, b.rect)
+		labels = append(labels, b.label)
 	}
-	for _, b := range r.blocks {
-		objs = append(objs, b.label)
-	}
-	// border and empty placeholder, then the tooltip on top of everything.
-	objs = append(objs, r.border, r.empty)
-	if r.spinner != nil {
-		objs = append(objs, r.spinner)
-	}
-	return append(objs, r.tipBG, r.tip)
+	objs = append(objs, labels...)
+	return append(objs, r.border, r.empty)
 }
 
 func (r *treemapRenderer) Destroy() {}
