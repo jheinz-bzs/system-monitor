@@ -102,6 +102,26 @@ var status = struct{ Healthy, Warning, Critical, Neutral statusKind }{
 	Healthy: 0, Warning: 1, Critical: 2, Neutral: 3,
 }
 
+// Status indicator labels by kind — the word shown beside a status dot or
+// inside a status pill.
+const (
+	labelStatusHealthy  = "HEALTHY"
+	labelStatusWarning  = "WARNING"
+	labelStatusCritical = "CRITICAL"
+)
+
+// statusLabel returns the uppercase word for a status kind.
+func statusLabel(kind statusKind) string {
+	switch kind {
+	case status.Warning:
+		return labelStatusWarning
+	case status.Critical:
+		return labelStatusCritical
+	default:
+		return labelStatusHealthy
+	}
+}
+
 // statusColor maps a statusKind onto the design palette.
 func statusColor(kind statusKind) color.Color {
 	switch kind {
@@ -146,18 +166,36 @@ func pillFill(kind statusKind) color.Color {
 	}
 }
 
-// newStatusPill wraps a status label in pill chrome: a kind-tinted translucent
-// fill, a 1px border-strong outline, and rounded corners. The returned object
-// hugs its text — place it in an HBox (or similar) so a stretching parent
-// layout doesn't widen it to fill the row.
-func newStatusPill(text string, kind statusKind) fyne.CanvasObject {
+// statusPill is a status pill — a kind-tinted translucent fill, a 1px
+// border-strong outline, rounded corners, and a kind-colored label. It keeps
+// references to its fill and label so a live caller can recolor it via set as
+// the underlying state changes. The object hugs its text — place it in an HBox
+// (or similar) so a stretching parent layout doesn't widen it to fill the row.
+type statusPill struct {
+	bg    *canvas.Rectangle
+	label *canvas.Text
+	obj   fyne.CanvasObject
+}
+
+// newStatusPill builds a pill showing the kind's label and color.
+func newStatusPill(kind statusKind) *statusPill {
 	bg := canvas.NewRectangle(pillFill(kind))
 	bg.StrokeColor = palette.BorderStrong
 	bg.StrokeWidth = 1
 	bg.CornerRadius = pillRadius
 
-	label := newStatusText(text, kind)
+	label := newStatusText(statusLabel(kind), kind)
 	padded := container.New(
 		layout.NewCustomPaddedLayout(pillVPad, pillVPad, pillHPad, pillHPad), label)
-	return container.NewStack(bg, padded)
+	return &statusPill{bg: bg, label: label, obj: container.NewStack(bg, padded)}
+}
+
+// set recolors the pill's fill and relabels its text to kind. It touches the
+// canvas, so a background poller must marshal it via fyne.Do.
+func (p *statusPill) set(kind statusKind) {
+	p.bg.FillColor = pillFill(kind)
+	p.bg.Refresh()
+	p.label.Text = statusLabel(kind)
+	p.label.Color = statusColor(kind)
+	p.label.Refresh()
 }
