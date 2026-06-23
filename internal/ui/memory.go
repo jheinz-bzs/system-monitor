@@ -165,11 +165,8 @@ func (v *memoryView) bottomPane() fyne.CanvasObject {
 	if v.tableScroll == nil {
 		return newPanel(labelTopMemProcesses, nil, layout.NewSpacer())
 	}
-	toggle := newSegmented(0, colHeaderRSS, segLabelPercent)
 	link := newJumpLink(labelAllProcessesLink, v.showAllProcesses)
-	trailing := container.New(layout.NewCustomPaddedHBoxLayout(legendItemGap),
-		vCenter(toggle), vCenter(link))
-	return newFlushPanel(labelTopMemProcesses, trailing, v.tableScroll.object())
+	return newFlushPanel(labelTopMemProcesses, vCenter(link), v.tableScroll.object())
 }
 
 // showAllProcesses follows the "→ all processes" header link to the Processes
