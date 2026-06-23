@@ -58,8 +58,9 @@ const (
 	overviewColumns        = 3  // panels per row
 )
 
-// overviewMetric is one panel's identity and static fallback content, used when
-// the panel's live source isn't wired.
+// overviewMetric is one panel's identity, static fallback content, and the
+// builder for its live behavior. bind returns the zero overviewLive when the
+// metric's source isn't wired, leaving the panel on its static fallback.
 type overviewMetric struct {
 	title     string
 	value     string
@@ -68,18 +69,19 @@ type overviewMetric struct {
 	footLeft  string
 	footRight string
 	tab       tabID // the tab a click on this panel navigates to
+	bind      func(overviewSources) overviewLive
 }
 
 // Swap shares the Memory tab — there is no dedicated Swap tab. The initial state
 // is the dot color shown before the first refresh; metrics with a live health
 // binding recolor it from real data, the rest stay at this color.
 var overviewMetrics = []overviewMetric{
-	{labelCPUPanel, "0", labelUnitPercent, status.Healthy, "", "", tabCPU},
-	{labelMemoryPanel, "0", "", status.Healthy, "", "", tabMemory},
-	{labelDiskIOPanel, "0", "", status.Healthy, "", "", tabDisk},
-	{labelNetworkPanel, "0", "", status.Healthy, "", "", tabNetwork},
-	{labelSwapPanel, "0", "", status.Healthy, "", "", tabMemory},
-	{labelProcessesPanel, "0", labelUnitProcs, status.Healthy, "", "", tabProcesses},
+	{labelCPUPanel, "0", labelUnitPercent, status.Healthy, "", "", tabCPU, bindCPU},
+	{labelMemoryPanel, "0", "", status.Healthy, "", "", tabMemory, bindMemory},
+	{labelDiskIOPanel, "0", "", status.Warning, "", "", tabDisk, bindDiskIO},
+	{labelNetworkPanel, "0", "", status.Healthy, "", "", tabNetwork, bindNetwork},
+	{labelSwapPanel, "0", "", status.Healthy, "", "", tabMemory, bindSwap},
+	{labelProcessesPanel, "0", labelUnitProcs, status.Healthy, "", "", tabProcesses, bindProcesses},
 }
 
 // overviewSources bundles the live series the panels read. Each field may be
@@ -127,20 +129,15 @@ type overviewLive struct {
 	health func() statusKind
 }
 
-// bindings maps each wired metric's title to its live behavior. Unwired metrics
-// are absent, so their panels keep the static fallback. add inserts a binding
-// only when its metric is wired; an overviewLive is safe to build eagerly even
-// when unwired because its read closure is never invoked and nil sources are
-// only stored, never dereferenced.
-func (s overviewSources) bindings() map[string]overviewLive {
-	m := make(map[string]overviewLive)
-	add := func(ok bool, title string, live overviewLive) {
-		if ok {
-			m[title] = live
-		}
-	}
+// Each bind* function builds one panel's live behavior, returning the zero
+// overviewLive when its source isn't wired so the panel keeps its static
+// fallback. They share the overviewMetric table's bind signature.
 
-	add(s.cpu != nil, labelCPUPanel, overviewLive{
+func bindCPU(s overviewSources) overviewLive {
+	if s.cpu == nil {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.cpu,
 		opts: []lineChartOption{fixedRange(0, percentMax), valueFormat(formatPercentAxis)},
 		read: func() readout {
@@ -157,7 +154,11 @@ func (s overviewSources) bindings() map[string]overviewLive {
 		},
 	})
 
-	add(s.mem.wired(), labelMemoryPanel, overviewLive{
+func bindMemory(s overviewSources) overviewLive {
+	if !s.mem.wired() {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.mem.used,
 		opts: []lineChartOption{fixedRange(0, float64(s.mem.total)), valueFormat(formatBytesAxis)},
 		read: func() readout {
@@ -170,7 +171,11 @@ func (s overviewSources) bindings() map[string]overviewLive {
 		},
 	})
 
-	add(s.swap.wired(), labelSwapPanel, overviewLive{
+func bindSwap(s overviewSources) overviewLive {
+	if !s.swap.wired() {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.swap.used,
 		opts: []lineChartOption{autoRange(), valueFormat(formatBytesAxis)},
 		read: func() readout {
@@ -184,12 +189,25 @@ func (s overviewSources) bindings() map[string]overviewLive {
 		},
 	})
 
-	add(s.diskIO.wired(), labelDiskIOPanel,
-		rateBinding(s.diskIO.total, s.diskIO.read, s.diskIO.write, labelReadPrefix, labelWritePrefix))
-	add(s.net.wired(), labelNetworkPanel,
-		rateBinding(s.net.total, s.net.download, s.net.upload, labelDownPrefix, labelUpPrefix))
+func bindDiskIO(s overviewSources) overviewLive {
+	if !s.diskIO.wired() {
+		return overviewLive{}
+	}
+	return rateBinding(s.diskIO.total, s.diskIO.read, s.diskIO.write, labelReadPrefix, labelWritePrefix)
+}
 
-	add(s.procs != nil, labelProcessesPanel, overviewLive{
+func bindNetwork(s overviewSources) overviewLive {
+	if !s.net.wired() {
+		return overviewLive{}
+	}
+	return rateBinding(s.net.total, s.net.download, s.net.upload, labelDownPrefix, labelUpPrefix)
+}
+
+func bindProcesses(s overviewSources) overviewLive {
+	if s.procs == nil {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.procs,
 		opts: []lineChartOption{autoRange(), valueFormat(formatWhole)},
 		read: func() readout {
@@ -200,9 +218,7 @@ func (s overviewSources) bindings() map[string]overviewLive {
 				footLeft: labelPeakPrefix + formatWhole(peakSample(vals)),
 			}
 		},
-	})
-
-	return m
+	}
 }
 
 // usagePercent is used/total as a percentage, guarding against a zero total
@@ -317,7 +333,7 @@ func newOverviewView(src overviewSources, nav tabNavigator) *overviewView {
 	binds := src.bindings()
 	v := &overviewView{badge: newStatusPill(status.Healthy), nav: nav}
 	for _, m := range overviewMetrics {
-		v.newPanel(m, binds[m.title]) // newPanel appends to v.panels
+		v.newPanel(m, m.bind(src)) // newPanel appends to v.panels
 	}
 	v.refresh() // paint the initial badge from the panels' first states
 	return v
@@ -432,19 +448,17 @@ func (c *clickableCard) CreateRenderer() fyne.WidgetRenderer {
 // when wired, otherwise a reserved empty plot rectangle so chartless panels
 // keep the same height.
 func (v *overviewView) sparkArea(p *overviewPanel, b overviewLive) fyne.CanvasObject {
-	var plot fyne.CanvasObject
-	if b.src != nil {
-		opts := append([]lineChartOption{window(metrics.HistoryCapacity)}, b.opts...)
-		p.chart = newLineChart(opts...)
-		p.chart.addSeries(b.src, emphasized())
-		plot = p.chart
-	} else {
+	pad := layout.NewCustomPaddedLayout(spaceMD, spaceMD, 0, 0)
+	if b.src == nil {
 		rect := canvas.NewRectangle(palette.PlotBG)
 		rect.CornerRadius = theme.Size(sizeName.PanelRadius)
 		rect.SetMinSize(fyne.NewSize(0, overviewSparkMinHeight))
-		plot = rect
+		return container.New(pad, rect)
 	}
-	return container.New(layout.NewCustomPaddedLayout(spaceMD, spaceMD, 0, 0), plot)
+	opts := append([]lineChartOption{window(metrics.HistoryCapacity)}, b.opts...)
+	p.chart = newLineChart(opts...)
+	p.chart.addSeries(b.src, emphasized())
+	return container.New(pad, p.chart)
 }
 
 // statusDot is a small filled status circle for a panel header, colored by kind
