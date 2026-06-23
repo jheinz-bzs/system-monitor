@@ -59,8 +59,9 @@ const (
 	overviewColumns        = 3  // panels per row
 )
 
-// overviewMetric is one panel's identity and static fallback content, used when
-// the panel's live source isn't wired.
+// overviewMetric is one panel's identity, static fallback content, and the
+// builder for its live behavior. bind returns the zero overviewLive when the
+// metric's source isn't wired, leaving the panel on its static fallback.
 type overviewMetric struct {
 	title     string
 	value     string
@@ -69,16 +70,17 @@ type overviewMetric struct {
 	footLeft  string
 	footRight string
 	tab       tabID // the tab a click on this panel navigates to
+	bind      func(overviewSources) overviewLive
 }
 
 // Swap shares the Memory tab — there is no dedicated Swap tab.
 var overviewMetrics = []overviewMetric{
-	{labelCPUPanel, "0", labelUnitPercent, status.Healthy, "", "", tabCPU},
-	{labelMemoryPanel, "0", "", status.Healthy, "", "", tabMemory},
-	{labelDiskIOPanel, "0", "", status.Warning, "", "", tabDisk},
-	{labelNetworkPanel, "0", "", status.Healthy, "", "", tabNetwork},
-	{labelSwapPanel, "0", "", status.Healthy, "", "", tabMemory},
-	{labelProcessesPanel, "0", labelUnitProcs, status.Healthy, "", "", tabProcesses},
+	{labelCPUPanel, "0", labelUnitPercent, status.Healthy, "", "", tabCPU, bindCPU},
+	{labelMemoryPanel, "0", "", status.Healthy, "", "", tabMemory, bindMemory},
+	{labelDiskIOPanel, "0", "", status.Warning, "", "", tabDisk, bindDiskIO},
+	{labelNetworkPanel, "0", "", status.Healthy, "", "", tabNetwork, bindNetwork},
+	{labelSwapPanel, "0", "", status.Healthy, "", "", tabMemory, bindSwap},
+	{labelProcessesPanel, "0", labelUnitProcs, status.Healthy, "", "", tabProcesses, bindProcesses},
 }
 
 // overviewSources bundles the live series the panels read. Each field may be
