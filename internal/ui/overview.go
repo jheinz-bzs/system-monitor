@@ -26,7 +26,6 @@ import (
 const (
 	labelOverviewPageTitle = "Overview"
 	labelOverviewSubtitle  = "Live · all systems"
-	labelOverallStatus     = "HEALTHY"
 
 	labelCPUPanel       = "CPU"
 	labelMemoryPanel    = "Memory"
@@ -73,7 +72,9 @@ type overviewMetric struct {
 	bind      func(overviewSources) overviewLive
 }
 
-// Swap shares the Memory tab — there is no dedicated Swap tab.
+// Swap shares the Memory tab — there is no dedicated Swap tab. The initial state
+// is the dot color shown before the first refresh; metrics with a live health
+// binding recolor it from real data, the rest stay at this color.
 var overviewMetrics = []overviewMetric{
 	{labelCPUPanel, "0", labelUnitPercent, status.Healthy, "", "", tabCPU, bindCPU},
 	{labelMemoryPanel, "0", "", status.Healthy, "", "", tabMemory, bindMemory},
@@ -117,12 +118,15 @@ type readout struct {
 }
 
 // overviewLive is a panel's live behavior: the sparkline source (nil = no
-// chart, reserved plot area instead), the chart's range/format options, and the
-// readout function producing the panel's text each refresh.
+// chart, reserved plot area instead), the chart's range/format options, the
+// readout function producing the panel's text each refresh, and an optional
+// health function classifying the metric's current value (nil for metrics with
+// no capacity ceiling, whose dot stays healthy).
 type overviewLive struct {
-	src  series.Source
-	opts []lineChartOption
-	read func() readout
+	src    series.Source
+	opts   []lineChartOption
+	read   func() readout
+	health func() statusKind
 }
 
 // Each bind* function builds one panel's live behavior, returning the zero
@@ -145,6 +149,9 @@ func bindCPU(s overviewSources) overviewLive {
 				footRight: labelPeakPrefix + formatWhole(peakSample(vals)) + labelUnitPercent,
 			}
 		},
+		health: func() statusKind {
+			return cpuHealth.classify(latestSample(s.cpu.Values()))
+		},
 	}
 }
 
@@ -159,6 +166,9 @@ func bindMemory(s overviewSources) overviewLive {
 			r := byteUsage(latestSample(s.mem.used.Values()), s.mem.total)
 			r.footRight = labelCachePrefix + formatBytesShort(uint64(latestSample(s.mem.cached.Values())))
 			return r
+		},
+		health: func() statusKind {
+			return memHealth.classify(usagePercent(latestSample(s.mem.used.Values()), s.mem.total))
 		},
 	}
 }
@@ -175,6 +185,9 @@ func bindSwap(s overviewSources) overviewLive {
 			r := byteUsage(latestSample(vals), s.swap.total)
 			r.footRight = labelPeakPrefix + formatBytesShort(uint64(peakSample(vals)))
 			return r
+		},
+		health: func() statusKind {
+			return swapHealth.classify(usagePercent(latestSample(s.swap.used.Values()), s.swap.total))
 		},
 	}
 }
@@ -211,15 +224,23 @@ func bindProcesses(s overviewSources) overviewLive {
 	}
 }
 
+// usagePercent is used/total as a percentage, guarding against a zero total
+// (an unreadable or absent capacity).
+func usagePercent(used float64, total uint64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return used / float64(total) * percentMax
+}
+
 // byteUsage fills the value, unit, and footLeft of a "used / total" memory-style
 // panel (Memory and Swap share this); the caller sets footRight. footLeft is the
 // percent-used readout.
 func byteUsage(used float64, total uint64) readout {
-	pct := used / float64(total) * percentMax
 	return readout{
 		value:    formatBytesShort(uint64(used)),
 		unit:     labelTotalSlash + formatBytesShort(total),
-		footLeft: formatWhole(pct) + labelUnitPercent + labelUsedSuffix,
+		footLeft: formatWhole(usagePercent(used, total)) + labelUnitPercent + labelUsedSuffix,
 	}
 }
 
@@ -243,22 +264,29 @@ func rateBinding(total, a, b series.Source, prefixA, prefixB string) overviewLiv
 }
 
 // overviewView is the live Overview tab. Build with newOverviewView and drive
-// updates through refresh.
+// updates through refresh. badge is the header's overall-health pill, recolored
+// from the aggregate of the panels' live states each refresh.
 type overviewView struct {
 	panels []*overviewPanel
+	badge  *statusPill
 	nav    tabNavigator // jumps to a panel's tab on click; nil leaves panels inert
 }
 
 // overviewPanel is one live card: the readout text widgets, an optional
-// sparkline, and the readout function. read is nil for a static panel.
+// sparkline, the readout function, and an optional health classifier driving the
+// header dot. read/health are nil for a static (or capacity-less) panel. state
+// holds the dot's last computed kind so the view can aggregate the badge.
 type overviewPanel struct {
 	read                      func() readout
+	health                    func() statusKind
 	value, unit, footL, footR *canvas.Text
+	dot                       *canvas.Circle
 	chart                     *lineChart
 	card                      fyne.CanvasObject
+	state                     statusKind
 }
 
-// refresh re-reads the panel's data and redraws its text and sparkline. It
+// refresh re-reads the panel's data and redraws its text, dot, and sparkline. It
 // touches the canvas, so a background poller must marshal it via fyne.Do.
 func (p *overviewPanel) refresh() {
 	if p.read != nil {
@@ -269,15 +297,28 @@ func (p *overviewPanel) refresh() {
 		p.footL.Refresh()
 		p.footR.Refresh()
 	}
+	if p.health != nil {
+		p.state = p.health()
+		p.dot.FillColor = statusColor(p.state)
+		p.dot.Refresh()
+	}
 	if p.chart != nil {
 		p.chart.Refresh()
 	}
 }
 
-// refresh redraws every live panel.
+// refresh redraws every live panel, then recolors the header badge to the
+// aggregate of the classified panels' states (those carrying a health function).
 func (v *overviewView) refresh() {
+	var states []statusKind
 	for _, p := range v.panels {
 		p.refresh()
+		if p.health != nil {
+			states = append(states, p.state)
+		}
+	}
+	if v.badge != nil {
+		v.badge.set(aggregateHealth(states))
 	}
 }
 
@@ -292,10 +333,11 @@ func newOverview() fyne.CanvasObject {
 // makes each panel clickable, jumping to that metric's tab; pass nil for inert
 // panels.
 func newOverviewView(src overviewSources, nav tabNavigator) *overviewView {
-	v := &overviewView{nav: nav}
+	v := &overviewView{badge: newStatusPill(status.Healthy), nav: nav}
 	for _, m := range overviewMetrics {
 		v.newPanel(m, m.bind(src)) // newPanel appends to v.panels
 	}
+	v.refresh() // paint the initial badge from the panels' first states
 	return v
 }
 
@@ -314,19 +356,19 @@ func (v *overviewView) object() fyne.CanvasObject {
 		rows = append(rows, weightedPane{object: newWeightedHBox(tabPad, panes...), weight: 1})
 	}
 
-	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), overviewHead())
+	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), v.head())
 	body := newTightBorder(head, nil, nil, nil, newWeightedVBox(tabPad, rows...))
 	return container.New(layout.NewCustomPaddedLayout(tabPad, tabPad, tabPad, tabPad), body)
 }
 
-// overviewHead is the page header: title and subtitle on the left, the overall
-// machine-health pill on the right.
-func overviewHead() fyne.CanvasObject {
+// head is the page header: title and subtitle on the left, the overall
+// machine-health badge (live) on the right.
+func (v *overviewView) head() fyne.CanvasObject {
 	return container.New(layout.NewCustomPaddedHBoxLayout(spaceMD),
 		vCenter(newHeading(labelOverviewPageTitle)),
 		vCenter(newPageSubtitle(labelOverviewSubtitle)),
 		layout.NewSpacer(),
-		vCenter(newStatusPill(labelOverallStatus, status.Healthy)),
+		vCenter(v.badge.obj),
 	)
 }
 
@@ -334,19 +376,23 @@ func overviewHead() fyne.CanvasObject {
 // nil) and a sparkline when b carries a source. It registers the panel for
 // refresh and returns it.
 func (v *overviewView) newPanel(m overviewMetric, b overviewLive) *overviewPanel {
+	dot, dotObj := coloredDot(statusColor(m.state))
 	p := &overviewPanel{
-		read:  b.read,
-		value: newMetricValue(m.value),
-		unit:  newTableText(m.unit),
-		footL: newMeta(m.footLeft),
-		footR: newMeta(m.footRight),
+		read:   b.read,
+		health: b.health,
+		value:  newMetricValue(m.value),
+		unit:   newTableText(m.unit),
+		footL:  newMeta(m.footLeft),
+		footR:  newMeta(m.footRight),
+		dot:    dot,
+		state:  m.state,
 	}
 
 	spark := v.sparkArea(p, b)
 	value := container.New(layout.NewCustomPaddedHBoxLayout(spaceMD), p.value, vCenter(p.unit))
 	footer := container.NewHBox(p.footL, layout.NewSpacer(), p.footR)
 	content := newTightBorder(value, footer, nil, nil, spark)
-	p.card = newMetricPanel(m.title, m.state, content)
+	p.card = newMetricPanel(m.title, dotObj, content)
 	if v.nav != nil {
 		tab := m.tab
 		p.card = newClickableCard(p.card, func() { v.nav.showTab(tab) })
@@ -417,23 +463,24 @@ func (v *overviewView) sparkArea(p *overviewPanel, b overviewLive) fyne.CanvasOb
 	return container.New(pad, p.chart)
 }
 
-// statusDot is the small filled circle in a panel header, colored by health.
+// statusDot is a small filled status circle for a panel header, colored by kind
+// — the static-dot constructor for callers that don't recolor it live.
 func statusDot(kind statusKind) fyne.CanvasObject {
-	dot := canvas.NewCircle(statusColor(kind))
-	return container.NewGridWrap(fyne.NewSize(overviewDotSize, overviewDotSize), dot)
+	_, obj := coloredDot(statusColor(kind))
+	return obj
 }
 
 // newMetricPanel is the reusable Overview metric-card shell: a rounded surface
-// card with a header row — uppercase title left, health dot right — above a
-// caller-supplied content area.
-func newMetricPanel(title string, state statusKind, content fyne.CanvasObject) fyne.CanvasObject {
+// card with a header row — uppercase title left, the given health dot right —
+// above a caller-supplied content area.
+func newMetricPanel(title string, dot fyne.CanvasObject, content fyne.CanvasObject) fyne.CanvasObject {
 	card := canvas.NewRectangle(palette.Surface)
 	card.StrokeColor = palette.Border
 	card.StrokeWidth = panelBorderWidth
 	card.CornerRadius = theme.Size(sizeName.PanelRadius)
 
 	header := container.NewHBox(
-		vCenter(newColumnLabel(title)), layout.NewSpacer(), vCenter(statusDot(state)))
+		vCenter(newColumnLabel(title)), layout.NewSpacer(), vCenter(dot))
 	body := container.New(layout.NewCustomPaddedLayout(spaceMD, 0, 0, 0), content)
 
 	inner := newTightBorder(header, nil, nil, nil, body)
