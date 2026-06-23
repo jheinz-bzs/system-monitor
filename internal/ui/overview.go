@@ -150,9 +150,14 @@ func (s overviewSources) bindings() map[string]overviewLive {
 				footRight: labelPeakPrefix + formatWhole(peakSample(vals)) + labelUnitPercent,
 			}
 		},
-	})
+	}
+}
 
-	add(s.mem.wired(), labelMemoryPanel, overviewLive{
+func bindMemory(s overviewSources) overviewLive {
+	if !s.mem.wired() {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.mem.used,
 		opts: []lineChartOption{fixedRange(0, float64(s.mem.total)), valueFormat(formatBytesAxis)},
 		read: func() readout {
@@ -160,9 +165,14 @@ func (s overviewSources) bindings() map[string]overviewLive {
 			r.footRight = labelCachePrefix + formatBytesShort(uint64(latestSample(s.mem.cached.Values())))
 			return r
 		},
-	})
+	}
+}
 
-	add(s.swap.wired(), labelSwapPanel, overviewLive{
+func bindSwap(s overviewSources) overviewLive {
+	if !s.swap.wired() {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.swap.used,
 		opts: []lineChartOption{autoRange(), valueFormat(formatBytesAxis)},
 		read: func() readout {
@@ -171,14 +181,28 @@ func (s overviewSources) bindings() map[string]overviewLive {
 			r.footRight = labelPeakPrefix + formatBytesShort(uint64(peakSample(vals)))
 			return r
 		},
-	})
+	}
+}
 
-	add(s.diskIO.wired(), labelDiskIOPanel,
-		rateBinding(s.diskIO.total, s.diskIO.read, s.diskIO.write, labelReadPrefix, labelWritePrefix))
-	add(s.net.wired(), labelNetworkPanel,
-		rateBinding(s.net.total, s.net.download, s.net.upload, labelDownPrefix, labelUpPrefix))
+func bindDiskIO(s overviewSources) overviewLive {
+	if !s.diskIO.wired() {
+		return overviewLive{}
+	}
+	return rateBinding(s.diskIO.total, s.diskIO.read, s.diskIO.write, labelReadPrefix, labelWritePrefix)
+}
 
-	add(s.procs != nil, labelProcessesPanel, overviewLive{
+func bindNetwork(s overviewSources) overviewLive {
+	if !s.net.wired() {
+		return overviewLive{}
+	}
+	return rateBinding(s.net.total, s.net.download, s.net.upload, labelDownPrefix, labelUpPrefix)
+}
+
+func bindProcesses(s overviewSources) overviewLive {
+	if s.procs == nil {
+		return overviewLive{}
+	}
+	return overviewLive{
 		src:  s.procs,
 		opts: []lineChartOption{autoRange(), valueFormat(formatWhole)},
 		read: func() readout {
@@ -189,9 +213,7 @@ func (s overviewSources) bindings() map[string]overviewLive {
 				footLeft: labelPeakPrefix + formatWhole(peakSample(vals)),
 			}
 		},
-	})
-
-	return m
+	}
 }
 
 // byteUsage fills the value, unit, and footLeft of a "used / total" memory-style
