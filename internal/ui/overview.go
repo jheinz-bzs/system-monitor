@@ -26,7 +26,6 @@ import (
 const (
 	labelOverviewPageTitle = "Overview"
 	labelOverviewSubtitle  = "Live · all systems"
-	labelOverallStatus     = "HEALTHY"
 
 	labelCPUPanel       = "CPU"
 	labelMemoryPanel    = "Memory"
@@ -314,10 +313,11 @@ func newOverview() fyne.CanvasObject {
 // panels.
 func newOverviewView(src overviewSources, nav tabNavigator) *overviewView {
 	binds := src.bindings()
-	v := &overviewView{nav: nav}
+	v := &overviewView{badge: newStatusPill(status.Healthy), nav: nav}
 	for _, m := range overviewMetrics {
 		v.newPanel(m, binds[m.title]) // newPanel appends to v.panels
 	}
+	v.refresh() // paint the initial badge from the panels' first states
 	return v
 }
 
@@ -336,19 +336,19 @@ func (v *overviewView) object() fyne.CanvasObject {
 		rows = append(rows, weightedPane{object: newWeightedHBox(tabPad, panes...), weight: 1})
 	}
 
-	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), overviewHead())
+	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0), v.head())
 	body := newTightBorder(head, nil, nil, nil, newWeightedVBox(tabPad, rows...))
 	return container.New(layout.NewCustomPaddedLayout(tabPad, tabPad, tabPad, tabPad), body)
 }
 
-// overviewHead is the page header: title and subtitle on the left, the overall
-// machine-health pill on the right.
-func overviewHead() fyne.CanvasObject {
+// head is the page header: title and subtitle on the left, the overall
+// machine-health badge (live) on the right.
+func (v *overviewView) head() fyne.CanvasObject {
 	return container.New(layout.NewCustomPaddedHBoxLayout(spaceMD),
 		vCenter(newHeading(labelOverviewPageTitle)),
 		vCenter(newPageSubtitle(labelOverviewSubtitle)),
 		layout.NewSpacer(),
-		vCenter(newStatusPill(labelOverallStatus, status.Healthy)),
+		vCenter(v.badge.obj),
 	)
 }
 
@@ -356,19 +356,23 @@ func overviewHead() fyne.CanvasObject {
 // nil) and a sparkline when b carries a source. It registers the panel for
 // refresh and returns it.
 func (v *overviewView) newPanel(m overviewMetric, b overviewLive) *overviewPanel {
+	dot, dotObj := coloredDot(statusColor(m.state))
 	p := &overviewPanel{
-		read:  b.read,
-		value: newMetricValue(m.value),
-		unit:  newTableText(m.unit),
-		footL: newMeta(m.footLeft),
-		footR: newMeta(m.footRight),
+		read:   b.read,
+		health: b.health,
+		value:  newMetricValue(m.value),
+		unit:   newTableText(m.unit),
+		footL:  newMeta(m.footLeft),
+		footR:  newMeta(m.footRight),
+		dot:    dot,
+		state:  m.state,
 	}
 
 	spark := v.sparkArea(p, b)
 	value := container.New(layout.NewCustomPaddedHBoxLayout(spaceMD), p.value, vCenter(p.unit))
 	footer := container.NewHBox(p.footL, layout.NewSpacer(), p.footR)
 	content := newTightBorder(value, footer, nil, nil, spark)
-	p.card = newMetricPanel(m.title, m.state, content)
+	p.card = newMetricPanel(m.title, dotObj, content)
 	if v.nav != nil {
 		tab := m.tab
 		p.card = newClickableCard(p.card, func() { v.nav.showTab(tab) })
