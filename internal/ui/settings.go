@@ -21,17 +21,23 @@ const (
 	labelSettingsPageTitle = "Settings"
 	labelSettingsPanel     = "Preferences"
 
-	labelSettingStartTab = "Start tab"
-	labelSettingPoll     = "Poll interval"
-	labelSettingMemCap   = "Memory cap"
-	labelSettingTheme    = "Appearance"
+	labelSettingStartTab   = "Start tab"
+	labelSettingPoll       = "Poll interval"
+	labelSettingMemCap     = "Memory cap"
+	labelSettingTheme      = "Appearance"
+	labelSettingAutoUpdate = "Auto-update"
+	labelSettingVersion    = "Version"
 
-	helpSettingStartTab = "Tab shown on launch"
-	helpSettingPoll     = "Sampling cadence · next launch"
-	helpSettingMemCap   = "GC soft heap limit · next launch"
-	helpSettingTheme    = "Color palette · next launch"
+	helpSettingStartTab   = "Tab shown on launch"
+	helpSettingPoll       = "Sampling cadence · next launch"
+	helpSettingMemCap     = "GC soft heap limit · next launch"
+	helpSettingTheme      = "Color palette · next launch"
+	helpSettingAutoUpdate = "Install updates on next launch · off by default"
+	helpSettingVersion    = "Installed build · read-only"
 
-	labelMemCapChip = "Enabled"
+	// labelToggleEnabled is the on/off chip caption shared by the boolean
+	// settings (memory cap, auto-update).
+	labelToggleEnabled = "Enabled"
 )
 
 // Settings-form geometry. The label column is a fixed min width so every row's
@@ -58,7 +64,8 @@ type settingsView struct {
 }
 
 // newSettingsView builds the Settings tab from the persisted preferences.
-func newSettingsView(prefs settings) *settingsView {
+// version is the build-time app version, shown as a read-only row (BZS253-71).
+func newSettingsView(prefs settings, version string) *settingsView {
 	v := &settingsView{prefs: prefs}
 
 	form := container.New(layout.NewCustomPaddedVBoxLayout(settingRowGap),
@@ -66,6 +73,8 @@ func newSettingsView(prefs settings) *settingsView {
 		settingRow(labelSettingPoll, helpSettingPoll, v.pollControl()),
 		settingRow(labelSettingMemCap, helpSettingMemCap, v.memCapControl()),
 		settingRow(labelSettingTheme, helpSettingTheme, v.themeControl()),
+		settingRow(labelSettingAutoUpdate, helpSettingAutoUpdate, v.autoUpdateControl()),
+		settingRow(labelSettingVersion, helpSettingVersion, newTableText(version)),
 	)
 	panel := newPanel(labelSettingsPanel, nil, form)
 
@@ -135,8 +144,16 @@ func (v *settingsView) pollControl() fyne.CanvasObject {
 
 // memCapControl toggles the GC soft memory limit (applied next launch).
 func (v *settingsView) memCapControl() fyne.CanvasObject {
-	return newToggleChip(labelMemCapChip, palette.Series[0], v.prefs.memoryCapEnabled(),
+	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.memoryCapEnabled(),
 		func(on bool) { v.prefs.setMemoryCapEnabled(on) })
+}
+
+// autoUpdateControl toggles opt-in auto-install (applied next launch). Off by
+// default; enabling it is the user's consent to self-update without a click
+// (ADR-010).
+func (v *settingsView) autoUpdateControl() fyne.CanvasObject {
+	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.autoUpdateEnabled(),
+		func(on bool) { v.prefs.setAutoUpdateEnabled(on) })
 }
 
 // themeControl is a segmented Dark/Light selector; the choice persists as the
