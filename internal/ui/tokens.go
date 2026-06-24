@@ -63,9 +63,16 @@ type colorPalette struct {
 	Shadow         color.Color
 }
 
-// palette holds the design-system colors. Hex values are taken verbatim from
-// design-system-01-color-palette.html / the CLAUDE.md quick reference.
-var palette = colorPalette{
+// palette is the active design-system color dictionary every widget reads.
+// applyTheme (theme.go) points it at paletteDark or paletteLight once at startup
+// from the persisted theme preference (BZS253-72); it defaults to dark, the
+// design's primary identity. It's a var, not a const, so that single startup
+// swap reaches every call site that reads palette.X.
+var palette = paletteDark
+
+// paletteDark holds the design-system colors. Hex values are taken verbatim
+// from design-system-01-color-palette.html / the CLAUDE.md quick reference.
+var paletteDark = colorPalette{
 	BG:           rgb(0x0e, 0x10, 0x14),
 	Surface:      rgb(0x16, 0x1a, 0x21),
 	Surface2:     rgb(0x1b, 0x21, 0x2b),
@@ -106,6 +113,48 @@ var palette = colorPalette{
 
 	DisabledButton: rgb(0x14, 0x18, 0x1e),
 	Shadow:         color.NRGBA{R: 0, G: 0, B: 0, A: 0x66},
+}
+
+// paletteLight is the light-theme variant (BZS253-72). No light wireframe
+// exists — the design system is dark-first — so these are a coherent first
+// pass: surfaces inverted to near-white tiers, text darkened to matching
+// contrast, and the accent / semantic / categorical hues kept (slightly
+// deepened where they'd wash out on a pale background). The translucent fills
+// reuse their hue at the same alpha, reading as light tints over the light plot
+// area. Tune against a real light wireframe if the design system grows one.
+var paletteLight = colorPalette{
+	BG:           rgb(0xf5, 0xf6, 0xf8),
+	Surface:      rgb(0xff, 0xff, 0xff),
+	Surface2:     rgb(0xec, 0xee, 0xf2),
+	Surface3:     rgb(0xe1, 0xe5, 0xec),
+	PlotBG:       rgb(0xfb, 0xfc, 0xfd),
+	Border:       rgb(0xd4, 0xd9, 0xe0),
+	BorderStrong: rgb(0xb4, 0xbc, 0xc8),
+
+	Text:  rgb(0x1a, 0x1f, 0x27),
+	Text2: rgb(0x4a, 0x54, 0x62),
+	Text3: rgb(0x7c, 0x86, 0x96),
+
+	Accent:  rgb(0x46, 0x79, 0xfa),
+	Accent2: rgb(0x35, 0x5f, 0xd0),
+
+	Green:  rgb(0x2a, 0x9d, 0x5f),
+	Yellow: rgb(0xb0, 0x7d, 0x12),
+	Red:    rgb(0xd2, 0x3a, 0x22),
+
+	AccentLine: color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x52},
+	AccentDim:  color.NRGBA{R: 0x46, G: 0x79, B: 0xfa, A: 0x24},
+	GreenDim:   color.NRGBA{R: 0x2a, G: 0x9d, B: 0x5f, A: 0x29},
+	YellowDim:  color.NRGBA{R: 0xb0, G: 0x7d, B: 0x12, A: 0x29},
+	RedDim:     color.NRGBA{R: 0xd2, G: 0x3a, B: 0x22, A: 0x29},
+
+	// Categorical series hues are shared with the dark palette: they're chosen
+	// for inter-series distinguishability, which holds on either background.
+	Series:      paletteDark.Series,
+	SeriesMuted: rgb(0xc2, 0xc8, 0xd2),
+
+	DisabledButton: rgb(0xe8, 0xea, 0xee),
+	Shadow:         color.NRGBA{R: 0, G: 0, B: 0, A: 0x33},
 }
 
 // sizeName groups the custom theme size names for the design-system typographic

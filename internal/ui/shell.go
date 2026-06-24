@@ -1,7 +1,8 @@
 package ui
 
-// Shell assembly: the persistent application chrome that hosts the eight tabs,
-// laid out to match the design-system wireframes.
+// Shell assembly: the persistent application chrome that hosts the nine tabs
+// (eight metric areas plus Settings), laid out to match the design-system
+// wireframes.
 //
 //	┌─────────────────────────────────┐
 //	│ title bar (38px, surface-2)     │
@@ -48,11 +49,12 @@ const (
 	tabProcesses
 	tabPorts
 	tabConnections
+	tabSettings
 )
 
 // tabDef describes one nav entry: its identity, label, and nav icon. Content is
 // built lazily on first view (see buildContent) rather than stored here, so the
-// seven unopened tabs pay no construction or memory cost at launch.
+// eight unopened tabs pay no construction or memory cost at launch.
 type tabDef struct {
 	id   tabID
 	name string
@@ -83,6 +85,7 @@ type buildSources struct {
 	cpuInfo      cpuMeta            // static processor description; zero when unknown
 	mem          memSources         // memory band sources + total; zero when not wired
 	swap         swapSources        // Overview swap usage source + total; zero when not wired
+	settings     settings           // persisted user preferences (Settings tab)
 	nav          *crossNav          // cross-tab navigation target; populated by buildContent
 }
 
@@ -214,6 +217,10 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newConnsView(src.conns, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabSettings: func(src buildSources) tabContent {
+		v := newSettingsView(src.settings)
+		return tabContent{object: v.object()}
+	},
 }
 
 // tabRefresher drives per-tab redraws: the poll tick redraws only the active
@@ -264,6 +271,7 @@ func tabDefs() []tabDef {
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: labelPortsPageTitle, icon: icon.Ports},
 		{id: tabConnections, name: labelConnectionsPageTitle, icon: icon.Connections},
+		{id: tabSettings, name: labelSettingsPageTitle, icon: icon.Settings},
 	}
 }
 
@@ -302,7 +310,7 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 
 	tabs := tabDefs()
 	n := len(tabs)
-	panes := make([]*fyne.Container, n)       // per-tab Stack holders, filled on first view
+	panes := make([]*fyne.Container, n) // per-tab Stack holders, filled on first view
 	items := make([]*navItem, n)
 	holder := container.NewStack()
 	refresher := &tabRefresher{refreshers: make([]func(), n)} // aligned with tab positions
@@ -355,7 +363,11 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 			selectIndex(i)
 		}
 	}
-	selectIndex(0)
+	// Open on the user's persisted start tab, falling back to the first tab when
+	// it isn't found (indexOfTab returns 0), so a stale preference can't land on
+	// nothing.
+	start, _ := indexOfTab(tabs, src.settings.startTab())
+	selectIndex(start)
 
 	// The footer redraws on the same tick as the active tab; combine both into
 	// the refresh closure the poller drives.

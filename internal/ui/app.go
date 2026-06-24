@@ -22,9 +22,13 @@ import (
 	"github.com/josephheinz/system-monitor/internal/series"
 )
 
-// pollInterval is the cadence at which collectors sample and the UI redraws:
-// 1s, matching the ring buffers' 1-second resolution (metrics.HistoryCapacity).
-const pollInterval = time.Second
+// pollInterval is the cadence at which collectors sample and the UI redraws,
+// defaulting to 1s to match the ring buffers' 1-second resolution
+// (metrics.HistoryCapacity). It is a var, not a const, because Run overrides it
+// once at startup from the persisted poll-interval preference (BZS253-72);
+// historySpan, the poller, and the status-bar poll label all read it, so the
+// chosen cadence stays consistent across the time axes and chrome.
+var pollInterval = time.Second
 
 // historySpan is the wall-clock window the metric ring buffers cover — the
 // span charts' time axes and "last N" panel titles describe. It derives from
@@ -40,6 +44,13 @@ const appName = "System Monitor"
 // and blocks until it is closed.
 func Run() {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
+
+	// Load persisted preferences before any UI or collector is built: the theme
+	// palette, memory cap, and poll cadence are all read once here and applied at
+	// startup (each Settings change is documented "next launch").
+	prefs := newSettings(a.Preferences())
+	applyTheme(prefs.theme())
+
 	a.Settings().SetTheme(newTheme())
 	// Taskbar/window icon: the same brandMark the title-bar logo uses, so the
 	// window icon and the in-app logo match (and both get the heavier stroke).
@@ -52,7 +63,14 @@ func Run() {
 
 	// Cap the Go heap so the GC holds RSS down (trading a little CPU), unless the
 	// operator already set GOMEMLIMIT. Done once at startup, before collectors run.
-	installDefaultMemoryLimit()
+	// Skipped when the user has turned the cap off in Settings.
+	if prefs.memoryCapEnabled() {
+		installDefaultMemoryLimit()
+	}
+
+	// Apply the persisted poll cadence before building charts and the poller, so
+	// the time axes and the status-bar poll label all describe the chosen rate.
+	pollInterval = prefs.pollInterval()
 
 	// Optional baseline instrumentation for the perf plans; no-op unless enabled.
 	startMemStatsLogger(ctx, os.Getenv)
@@ -74,8 +92,9 @@ func Run() {
 	}
 
 	src := buildSources{
-		charts:  make(liveSources),
-		cpuInfo: cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
+		charts:   make(liveSources),
+		cpuInfo:  cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
+		settings: prefs,
 	}
 	var collectors []monitor.Collector
 	if cpu != nil {
