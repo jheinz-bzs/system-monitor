@@ -99,7 +99,10 @@ func (c *Controller) Start(ctx context.Context) {
 // install downloads the verified asset next to the current binary and swaps it
 // in, advancing the observable state through the download/install phases.
 func (c *Controller) install(ctx context.Context, a available) error {
-	exe, err := os.Executable()
+	// Download beside the swap target (the AppImage file, or the running exe), so
+	// the temp file is on the same volume and the swap is an atomic rename. Inside
+	// an AppImage, os.Executable would point into the read-only mount instead.
+	exe, err := targetExecutable()
 	if err != nil {
 		return err
 	}
@@ -131,7 +134,7 @@ func (c *Controller) shutdown() {
 // same arguments, so the user lands on the new version once this process exits.
 // os.StartProcess is used rather than exec-in-place because Windows has no exec.
 func restart() error {
-	exe, err := os.Executable()
+	exe, err := targetExecutable()
 	if err != nil {
 		return err
 	}

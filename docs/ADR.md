@@ -259,3 +259,23 @@ BZS253-71's acceptance criteria state "no silent background replacement" — eve
 ### Rationale
 
 Making it opt-in and default-off preserves the AC's intent — nothing replaces the binary silently *unless the user explicitly turned that on* — so "opt-in/visible" still holds at the consent boundary even though the per-update click is waived. This is a conscious, recorded deviation from the literal AC, made by the card owner, not an accidental one. Keeping the policy in `Run` rather than the controller maintains the seam from ADR-009: the controller still just checks/installs on command, and the only new knowledge (read the pref, auto-start) sits with the composition root that already owns wiring. The auto path reuses the exact download→verify→swap→restart code, so it inherits the same checksum guard and graceful-failure behavior; a failed auto-install logs and no-ops like a manual one. Same-binary verification still applies — auto-install does not weaken the integrity check, only the human confirmation.
+
+---
+
+## ADR-011: Linux ships .deb + AppImage + bare binary; only the AppImage self-updates
+
+**Date:** 2026-06-24
+**Status:** Active
+**Area:** Infrastructure / UI
+
+### Context
+
+The cross-platform story is a selling point, so the Linux release should offer real install formats, not just a raw binary. But ADR-009's self-update model — rename a downloaded binary over the running one — doesn't fit every Linux format: a `.deb` installs into root-owned `/usr/bin` under apt's control (the app can't and shouldn't swap it), while an AppImage is a single self-contained file that swaps exactly like a bare binary. Naming also matters: the in-app downloader resolves one asset name per platform from `runtime.GOOS/GOARCH`.
+
+### Decision
+
+**The Linux release publishes three artifacts from one native build: a bare binary (`system-monitor-linux-amd64`, manual/server use), a `.deb` (apt-managed, install-only), and an AppImage (`system-monitor-linux-amd64.AppImage`). In-app self-update on Linux targets the AppImage only: `assetName()` returns the `.AppImage`, and swap/restart/download operate on `$APPIMAGE` (the running AppImage file) rather than `os.Executable()` (which points into the read-only mount). `update.Supported()` gates the updater to AppImage launches — a bare-binary or `.deb` install isn't wired, so it shows no update affordance and manages its own updates. The `.deb` is built with nfpm and the AppImage with linuxdeploy in the release workflow.**
+
+### Rationale
+
+One native build feeds all three packagers, so there's no extra compile. Making the AppImage the self-update target is the natural fit — it's already a relocatable, user-writable single file, so the existing rename-swap works unchanged once it targets `$APPIMAGE` (a one-line indirection via `targetExecutable()`, shared by swap, restart, and the download dir so the temp file lands on the AppImage's volume for an atomic rename). Gating with `Supported()` avoids dishonest UI: a `.deb` user would otherwise see "update failed" when the swap hit a permission wall, so instead they see nothing and update through apt — the correct distro convention. nfpm (a Go binary, `go install`-able on the runner) drives the `.deb` from a small YAML with no FPM/Ruby; linuxdeploy bundles the GL/X11 shared libs the Fyne binary links, so the AppImage runs on machines without them. macOS code-signing/notarization remains deferred (ADR-009); this ADR only broadens Linux.

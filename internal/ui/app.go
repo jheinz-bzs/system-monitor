@@ -176,7 +176,9 @@ func Run(version string) {
 	// exist yet); the controller calls it after spawning the new binary.
 	update.CleanupOld()
 	var shutdown func()
-	if update.IsRelease(version) {
+	// Supported() gates Linux to AppImage launches only — a bare binary or .deb
+	// install manages its own updates (apt / re-download), so no updater is wired.
+	if update.IsRelease(version) && update.Supported() {
 		updater := update.NewController(version, func() {
 			if shutdown != nil {
 				fyne.Do(shutdown)
