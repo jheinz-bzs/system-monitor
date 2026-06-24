@@ -224,7 +224,7 @@ var tabRegistry = map[tabID]tabBuilder{
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabSettings: func(src buildSources) tabContent {
-		v := newSettingsView(src.settings)
+		v := newSettingsView(src.settings, src.version)
 		return tabContent{object: v.object()}
 	},
 }
@@ -375,15 +375,19 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	start, _ := indexOfTab(tabs, src.settings.startTab())
 	selectIndex(start)
 
-	// The footer redraws on the same tick as the active tab; combine both into
-	// the refresh closure the poller drives.
+	// The footer and the update banner redraw on the same tick as the active
+	// tab; combine all three into the refresh closure the poller drives.
 	statusBar := newStatusBarView(src)
+	banner := newUpdateBannerView(src)
 	body := newTightBorder(nil, nil, newSidebar(list), nil, holder)
-	title := vStackTight(newTitleBar(), hLine())
+	// Banner sits below the title bar's divider, above the content; hidden until
+	// an update is available, it adds no height to the top chrome.
+	title := vStackTight(newTitleBar(), hLine(), banner.object())
 	statusRegion := vStackTight(hLine(), statusBar.object())
 	refresh := func() {
 		refresher.refresh()
 		statusBar.refresh()
+		banner.refresh()
 	}
 	return newTightBorder(title, statusRegion, nil, nil, body), refresh
 }
@@ -452,12 +456,18 @@ func newTitleBar() fyne.CanvasObject {
 	return newBar(titleBarHeight, brand)
 }
 
-// newBar builds a fixed-height surface-2 bar with its content inset from both
-// edges and vertically centered. content is stretched to the full bar width, so
-// a row with a trailing layout.Spacer (the status bar) can push its tail group
-// to the right edge.
+// newBar builds a fixed-height surface-2 bar (the title and status bars).
 func newBar(height float32, content fyne.CanvasObject) fyne.CanvasObject {
-	bg := canvas.NewRectangle(palette.Surface2)
+	return newColoredBar(height, palette.Surface2, content)
+}
+
+// newColoredBar builds a fixed-height bar in fill, with its content inset from
+// both edges and vertically centered. content is stretched to the full bar
+// width, so a row with a trailing layout.Spacer can push its tail group to the
+// right edge. The update banner uses an accent-tinted fill to stand out from the
+// surface-2 chrome.
+func newColoredBar(height float32, fill color.Color, content fyne.CanvasObject) fyne.CanvasObject {
+	bg := canvas.NewRectangle(fill)
 	bg.SetMinSize(fyne.NewSize(0, height))
 
 	inset := container.New(layout.NewCustomPaddedLayout(0, 0, barHPad, barHPad), content)
