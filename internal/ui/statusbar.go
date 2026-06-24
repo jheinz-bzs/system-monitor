@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 
 	"github.com/josephheinz/system-monitor/internal/series"
+	"github.com/josephheinz/system-monitor/internal/update"
 )
 
 // Status bar readout labels. The metric abbreviations are shorter than the panel
@@ -27,6 +28,12 @@ const (
 	labelStatusMem  = "MEM "
 	labelStatusNet  = "NET "
 	labelStatusPoll = "s poll" // suffixed to the poll interval in seconds: "1s poll"
+
+	// Self-update affordance (BZS253-71): a tappable link shown only when a newer
+	// release is available, plus a status word for the install phases.
+	labelUpdateLink   = "↑ Update"
+	labelUpdating     = "updating…"
+	labelUpdateFailed = "update failed"
 )
 
 // Status bar layout geometry.
@@ -59,24 +66,40 @@ type statusBarView struct {
 	memText      *canvas.Text
 	netText      *canvas.Text
 	procsText    *canvas.Text
+
+	updateStatus func() update.Snapshot // nil on a dev build → no update affordance
+	updateLink   *jumpLink              // tappable when an update is available
+	updateText   *canvas.Text           // new version / install-phase word
+	updateGroup  *fyne.Container        // link + text; hidden unless an update is pending
 }
 
 // newStatusBarView builds the footer from the same sources the metric tabs read.
 // An unwired source leaves its readout blank rather than crashing.
 func newStatusBarView(src buildSources) *statusBarView {
 	v := &statusBarView{
-		cpu:         src.charts[tabCPU],
-		mem:         src.mem,
-		net:         src.net,
-		swap:        src.swap,
-		procs:       src.procCount,
-		healthLabel: newMeta(statusLabel(status.Healthy)),
-		cpuText:     newMeta(""),
-		memText:     newMeta(""),
-		netText:     newMeta(""),
-		procsText:   newMeta(""),
+		cpu:          src.charts[tabCPU],
+		mem:          src.mem,
+		net:          src.net,
+		swap:         src.swap,
+		procs:        src.procCount,
+		updateStatus: src.updateStatus,
+		healthLabel:  newMeta(statusLabel(status.Healthy)),
+		cpuText:      newMeta(""),
+		memText:      newMeta(""),
+		netText:      newMeta(""),
+		procsText:    newMeta(""),
 	}
 	v.healthDot, v.healthDotObj = coloredDot(statusColor(status.Healthy))
+
+	// The update affordance is built whether or not it's wired; it simply stays
+	// hidden when there's no updater (dev build) or no update pending, taking no
+	// space in the footer's box layout until refresh reveals it.
+	v.updateLink = newJumpLink(labelUpdateLink, src.startUpdate)
+	v.updateText = newMeta("")
+	v.updateGroup = container.New(layout.NewCustomPaddedHBoxLayout(statusDotGap),
+		vCenter(v.updateLink), vCenter(v.updateText))
+	v.updateGroup.Hide()
+
 	v.refresh() // paint initial values before the first poll tick
 	return v
 }
@@ -97,6 +120,7 @@ func (v *statusBarView) object() fyne.CanvasObject {
 		vCenter(v.cpuText),
 		vCenter(v.memText),
 		vCenter(v.netText),
+		v.updateGroup,
 		layout.NewSpacer(),
 		vCenter(v.procsText),
 		poll,
@@ -132,6 +156,37 @@ func (v *statusBarView) refresh() {
 	if v.procs != nil {
 		v.procsText.Text = formatWhole(latestSample(v.procs.Values())) + labelRateGap + labelUnitProcs
 		v.procsText.Refresh()
+	}
+	v.refreshUpdate()
+}
+
+// refreshUpdate reflects the self-update state into the footer affordance: a
+// tappable link offering the new version when one is available, a quiet status
+// word during install, and nothing at all when idle or unwired. The check runs
+// once per launch, so a failed state simply persists rather than nagging.
+func (v *statusBarView) refreshUpdate() {
+	if v.updateStatus == nil {
+		return // dev build: no updater wired
+	}
+	snap := v.updateStatus()
+	switch snap.State {
+	case update.StatusAvailable:
+		v.updateLink.Show()
+		v.updateText.Text = snap.NewVersion
+		v.updateText.Refresh()
+		v.updateGroup.Show()
+	case update.StatusDownloading, update.StatusInstalling:
+		v.updateLink.Hide() // not tappable mid-install
+		v.updateText.Text = labelUpdating
+		v.updateText.Refresh()
+		v.updateGroup.Show()
+	case update.StatusFailed:
+		v.updateLink.Hide()
+		v.updateText.Text = labelUpdateFailed
+		v.updateText.Refresh()
+		v.updateGroup.Show()
+	default: // StatusIdle, StatusChecking
+		v.updateGroup.Hide()
 	}
 }
 
