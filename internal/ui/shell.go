@@ -20,12 +20,15 @@ package ui
 // the chrome flush, with the 1px dividers drawn explicitly.
 
 import (
+	"image/color"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 
 	"github.com/josephheinz/system-monitor/internal/series"
+	"github.com/josephheinz/system-monitor/internal/update"
 )
 
 const (
@@ -86,7 +89,10 @@ type buildSources struct {
 	mem          memSources         // memory band sources + total; zero when not wired
 	swap         swapSources        // Overview swap usage source + total; zero when not wired
 	settings     settings           // persisted user preferences (Settings tab)
+	version      string             // build-time app version, shown read-only in Settings (BZS253-71)
 	nav          *crossNav          // cross-tab navigation target; populated by buildContent
+	updateStatus func() update.Snapshot // self-update state for the status bar; nil on a dev build (BZS253-71)
+	startUpdate  func()                 // install the available update on user confirmation; nil when not wired
 }
 
 // processNavigator is the cross-tab navigation seam the CPU and Memory tabs
