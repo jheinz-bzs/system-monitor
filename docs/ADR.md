@@ -219,3 +219,43 @@ BZS253-72 adds a Settings tab so users can adjust app preferences (start tab, po
 ### Rationale
 
 `app.Preferences()` adds no dependency and no file I/O of our own; it's the idiomatic Fyne store, and keys are namespaced in a `prefKey` dictionary (no loose string literals). The `prefStore` seam is one tiny interface defined at the consumer — fakeable without standing up a Fyne app — so the set→get→default round-trip is unit-tested directly. Startup-only application is the deliberate lazy choice: every widget reads the global `palette` at construction (not through theme indirection), so a *live* theme switch would require rebuilding the whole window — far more machinery than the value warrants. Reading prefs once and applying before the UI builds satisfies the acceptance criterion ("live or on next launch, documented") at a fraction of the cost; `pollInterval` likewise becomes a startup-set `var` (was a `const`) so the time axes and the status-bar poll label all describe the chosen cadence. Every accessor clamps out-of-range stored values to its default (no nonexistent start tab, no zero poll tick, no unknown palette), so a hand-edited or stale preference can't wedge the app. The light palette is a coherent first pass, not a design-reviewed artifact — the design system is dark-first and no light wireframe exists — and is marked as such in `tokens.go` for a future tuning pass.
+
+---
+
+## ADR-009: Self-update from GitHub Releases via the `internal/update` seam
+
+**Date:** 2026-06-24
+**Status:** Active
+**Area:** Architecture / Infrastructure
+
+### Context
+
+BZS253-71 adds opt-in self-update: the app should notice a newer GitHub release and replace its own binary on user confirmation. This needs a build-time version to compare against (none existed), a place for the check/download/verify/swap logic that doesn't drag Fyne into testable code, a UI affordance, and a release pipeline that produces predictably-named, checksummed assets for the downloader to resolve. Releases had been manual; there was no `.github/` workflow. Updating a *running* binary is also OS-specific — Windows blocks deleting/overwriting a locked `.exe`, Unix does not.
+
+### Decision
+
+**Self-update lives in a Fyne-free `internal/update` leaf package (peer to `internal/monitor`), consumed by the UI through a `Controller` seam (`Snapshot`/`Check`/`Start`) wired only in the composition root; the binary is downloaded, never built on the user's machine. The version is stamped via `-ldflags "-X main.version=…"`; a non-release ("dev") build disables the feature. A 3-OS native-runner GitHub Actions matrix (`.github/workflows/release.yml`) builds per platform, names assets `system-monitor-<goos>-<goarch>[.exe]`, and publishes one `checksums.txt` — the naming being the contract the downloader resolves against. Binary swap is build-tagged: Windows renames the running exe to `<exe>.old` (cleaned up next launch) then moves the new one in; Unix renames over the running file directly.**
+
+### Rationale
+
+A leaf package keeps the network/semver/checksum logic unit-testable with a mocked `http.RoundTripper` and no Fyne app, and preserves layering — `update` imports only stdlib, the UI depends on it through two function-typed `buildSources` fields, and only `Run` knows the concrete `Controller`. No new dependency: stdlib `net/http`/`crypto/sha256` cover the work, and a ~15-line `vX.Y.Z` comparator avoids pulling in `golang.org/x/mod/semver` (escalate only if tags grow pre-release suffixes). Native runners sidestep Fyne's painful CGO cross-compilation — each OS builds itself. The Windows rename dance avoids a separate helper process (a running exe can be renamed even while locked); Unix needs no dance at all. macOS ships a bare `darwin-arm64` binary that self-updates like Linux — Developer ID signing/notarization and `.app`-bundle self-update are deferred to a future card, since the current audience is technical. All update activity is opt-in and surfaced in the status bar; the startup check is a non-blocking goroutine and any failure (offline, checksum mismatch, API error) degrades to a logged no-op with no retry loop.
+
+---
+
+## ADR-010: Opt-in auto-install (deviation from BZS253-71 "no silent replacement")
+
+**Date:** 2026-06-24
+**Status:** Active
+**Area:** UI / Product
+
+### Context
+
+BZS253-71's acceptance criteria state "no silent background replacement" — every update is meant to be user-confirmed. After the initial click-to-update flow shipped, the product owner (the card reporter) asked for an *automatic* update option so the app can keep itself current without a click. A blanket auto-installer would contradict the AC; the question was how to add the convenience without reintroducing the surprise the AC guards against.
+
+### Decision
+
+**Auto-install is an opt-in Settings toggle (`autoUpdate`), OFF by default. With it off, behavior is unchanged: detect → show the banner/pill → install only on click. With it on, a found update is downloaded, verified, and installed on next launch with no click. The decision lives in the composition root (`Run` reads the pref and calls `Controller.Start` after a successful check); the `update.Controller` stays unaware of preferences.**
+
+### Rationale
+
+Making it opt-in and default-off preserves the AC's intent — nothing replaces the binary silently *unless the user explicitly turned that on* — so "opt-in/visible" still holds at the consent boundary even though the per-update click is waived. This is a conscious, recorded deviation from the literal AC, made by the card owner, not an accidental one. Keeping the policy in `Run` rather than the controller maintains the seam from ADR-009: the controller still just checks/installs on command, and the only new knowledge (read the pref, auto-start) sits with the composition root that already owns wiring. The auto path reuses the exact download→verify→swap→restart code, so it inherits the same checksum guard and graceful-failure behavior; a failed auto-install logs and no-ops like a manual one. Same-binary verification still applies — auto-install does not weaken the integrity check, only the human confirmation.
