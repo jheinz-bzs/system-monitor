@@ -38,11 +38,28 @@ const (
 	assetPrefix    = "system-monitor-"
 	checksumsAsset = "checksums.txt"
 	windowsExt     = ".exe"
+	// appImageExt is the Linux self-update asset suffix: the AppImage is a single
+	// self-contained file, so it swaps like a bare binary. The .deb is install-only
+	// (apt updates it), and a bare Linux binary doesn't self-update — only the
+	// AppImage does (see Supported / ADR-011).
+	appImageExt = ".AppImage"
 
 	// oldSuffix parks the previous binary during a Windows swap (see swap_windows.go);
 	// it is deleted on the next launch by CleanupOld.
 	oldSuffix = ".old"
 )
+
+// GOOS values the updater special-cases (extracted so the asset/swap logic reads
+// these identifiers, not bare runtime-string literals).
+const (
+	goosWindows = "windows"
+	goosLinux   = "linux"
+)
+
+// envAppImage is the env var the AppImage runtime sets to the path of the running
+// .AppImage file. Its presence both identifies an AppImage launch and gives the
+// swap/restart their target (the inner os.Executable points into a read-only mount).
+const envAppImage = "APPIMAGE"
 
 // httpTimeout bounds both the release check and the asset download so a stalled
 // network degrades to a logged no-op rather than hanging a goroutine forever.
@@ -74,15 +91,40 @@ type available struct {
 	checksum string // hex-encoded SHA-256
 }
 
-// assetName is this platform's release binary name, e.g. system-monitor-linux-amd64
-// or system-monitor-windows-amd64.exe. It must match the names produced by the
-// release workflow's build matrix.
+// assetName is this platform's self-update asset name — the file the downloader
+// resolves in the release. It must match the names the release workflow produces:
+// Windows .exe, the Linux .AppImage (not the bare binary or .deb), macOS bare.
 func assetName() string {
 	name := assetPrefix + runtime.GOOS + "-" + runtime.GOARCH
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case goosWindows:
 		name += windowsExt
+	case goosLinux:
+		name += appImageExt
 	}
 	return name
+}
+
+// Supported reports whether in-app self-update applies to this running instance.
+// Windows and macOS always self-update; on Linux only an AppImage launch does —
+// a bare binary or a .deb install manages its own updates (apt / re-download), so
+// the updater isn't wired and no "update failed" noise is shown there.
+func Supported() bool {
+	if runtime.GOOS == goosLinux {
+		return os.Getenv(envAppImage) != ""
+	}
+	return true
+}
+
+// targetExecutable is the path self-update replaces and re-launches: the AppImage
+// file when running as one ($APPIMAGE), otherwise the running executable. Inside
+// an AppImage, os.Executable points into a read-only mount, so the env var is the
+// only correct swap target.
+func targetExecutable() (string, error) {
+	if p := os.Getenv(envAppImage); p != "" {
+		return p, nil
+	}
+	return os.Executable()
 }
 
 // CleanupOld removes the parked previous binary left by a Windows swap. It runs

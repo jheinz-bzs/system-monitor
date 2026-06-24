@@ -27,6 +27,23 @@ func TestCompare(t *testing.T) {
 	}
 }
 
+func TestTargetExecutableHonorsAppImage(t *testing.T) {
+	const path = "/home/user/Applications/system-monitor-linux-amd64.AppImage"
+	t.Setenv(envAppImage, path)
+	got, err := targetExecutable()
+	if err != nil || got != path {
+		t.Fatalf("targetExecutable with $APPIMAGE = %q, %v; want %q", got, err, path)
+	}
+}
+
+func TestTargetExecutableFallsBackToExe(t *testing.T) {
+	t.Setenv(envAppImage, "") // present but empty → not an AppImage launch
+	got, err := targetExecutable()
+	if err != nil || got == "" {
+		t.Fatalf("targetExecutable fallback = %q, %v; want the running exe", got, err)
+	}
+}
+
 func TestIsReleaseVersion(t *testing.T) {
 	for _, v := range []string{"v1.0.0", "1.2.3", "v0.0.1"} {
 		if !isReleaseVersion(v) {

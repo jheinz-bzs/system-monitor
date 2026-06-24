@@ -16,7 +16,7 @@ const executableMode = 0o755
 // keeps the open inode alive for the current process — so no park-and-restore
 // dance is needed, unlike Windows.
 func swap(newBin string) error {
-	exe, err := os.Executable()
+	exe, err := targetExecutable()
 	if err != nil {
 		return err
 	}

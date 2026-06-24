@@ -14,7 +14,7 @@ import (
 // next launch by CleanupOld. On failure the park is rolled back so the install
 // directory is never left without a runnable binary.
 func swap(newBin string) error {
-	exe, err := os.Executable()
+	exe, err := targetExecutable()
 	if err != nil {
 		return err
 	}
