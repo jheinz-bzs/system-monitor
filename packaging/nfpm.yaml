@@ -1,0 +1,24 @@
+# nfpm config for the Linux .deb (BZS253-71). Driven by `nfpm package` in the
+# release workflow; ${VERSION} is the tag without its leading "v" (Debian
+# versions can't start with a letter). The .deb is install-only — apt manages
+# its updates; in-app self-update targets the AppImage instead (ADR-011).
+name: system-monitor
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: BizStream <jheinz@bizstream.com>
+description: Native desktop system monitor — CPU, memory, disk, network, processes.
+homepage: https://github.com/jheinz-bzs/system-monitor
+license: MIT
+depends:
+  - libgl1
+  - libx11-6
+contents:
+  - src: ./system-monitor-linux-amd64
+    dst: /usr/bin/system-monitor
+  - src: ./packaging/system-monitor.desktop
+    dst: /usr/share/applications/system-monitor.desktop
+  - src: ./system-monitor.png
+    dst: /usr/share/icons/hicolor/256x256/apps/system-monitor.png
