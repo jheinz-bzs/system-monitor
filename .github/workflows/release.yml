@@ -37,8 +37,8 @@ jobs:
             ldflags: ""
             setup: ""
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: install linux gui deps
@@ -52,29 +52,67 @@ jobs:
         run: |
           go build -ldflags "${{ matrix.ldflags }} -X main.version=${GITHUB_REF_NAME}" \
             -o "${{ matrix.asset }}" ./cmd/system-monitor
-      - uses: actions/upload-artifact@v4
+      # Linux ships three artifacts from the one binary: the bare binary (manual /
+      # server use), an AppImage (the self-update target — a single file that swaps
+      # like a binary), and a .deb (apt-managed, install-only). Naming must match
+      # update.assetName(): the AppImage is system-monitor-linux-amd64.AppImage.
+      - name: package linux (.deb + AppImage)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_nov="${GITHUB_REF_NAME#v}" # Debian versions can't start with "v"
+
+          # Brand diamond → PNG for the desktop entry / AppImage / .deb icon.
+          sudo apt-get install -y librsvg2-bin
+          rsvg-convert -w 256 -h 256 internal/ui/icons/diamond.svg -o system-monitor.png
+
+          # .deb via nfpm (installed through the Go toolchain already on the runner).
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          VERSION="$version_nov" "$(go env GOPATH)/bin/nfpm" package \
+            --config packaging/nfpm.yaml --packager deb --target .
+
+          # AppImage via linuxdeploy (bundles the GL/X11 libs the binary links).
+          mkdir -p AppDir/usr/bin
+          cp "${{ matrix.asset }}" AppDir/usr/bin/system-monitor
+          curl -sSfL -o linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -sSfL -o linuxdeploy-plugin-appimage https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-appimage
+          export PATH="$PWD:$PATH"
+          export APPIMAGE_EXTRACT_AND_RUN=1 # CI runners have no FUSE
+          export OUTPUT="system-monitor-linux-amd64.AppImage"
+          ./linuxdeploy --appdir AppDir \
+            --executable AppDir/usr/bin/system-monitor \
+            --desktop-file packaging/system-monitor.desktop \
+            --icon-file system-monitor.png \
+            --output appimage
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.asset }}
-          path: ${{ matrix.asset }}
+          path: |
+            system-monitor-*
+            *.deb
 
   release:
     name: publish release
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true # flatten all per-OS artifacts into dist/
       # Checksums computed once here, over every asset, so the build jobs don't
       # each need a cross-platform sha256 tool (macOS lacks sha256sum).
+      # Glob covers both hyphen-named assets (binaries, AppImage) and the
+      # underscore-named .deb (system-monitor_<ver>_amd64.deb).
       - name: checksums
         run: |
           cd dist
-          sha256sum system-monitor-* > checksums.txt
+          sha256sum system-monitor* > checksums.txt
           cat checksums.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/system-monitor-*
+            dist/system-monitor*
             dist/checksums.txt

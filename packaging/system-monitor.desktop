@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=System Monitor
+Comment=Native desktop system monitor — CPU, memory, disk, network, processes
+Exec=system-monitor
+Icon=system-monitor
+Terminal=false
+Categories=System;Monitor;Utility;
+Keywords=system;monitor;cpu;memory;disk;network;processes;
