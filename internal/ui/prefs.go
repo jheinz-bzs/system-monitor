@@ -19,11 +19,13 @@ var prefKey = struct {
 	MemoryCap   string
 	PollSeconds string
 	Theme       string
+	AutoUpdate  string
 }{
 	StartTab:    "startTab",
 	MemoryCap:   "memoryCapEnabled",
 	PollSeconds: "pollSeconds",
 	Theme:       "theme",
+	AutoUpdate:  "autoUpdate",
 }
 
 // Preference defaults, returned whenever a key is unset — so a fresh install,
@@ -37,6 +39,10 @@ const (
 	// pollInterval() would clamp the default away as out-of-range.
 	defaultPollSeconds = 1
 	defaultTheme       = themeDark
+	// defaultAutoUpdate is off: self-update is click-to-confirm by default
+	// (BZS253-71's "no silent background replacement"); enabling this is the
+	// user's explicit opt-in to auto-install on next launch (ADR-010).
+	defaultAutoUpdate = false
 )
 
 // pollSecondsAllowed is the set of sampling cadences the settings UI offers, in
@@ -123,3 +129,12 @@ func (s settings) theme() themeChoice {
 
 // setTheme persists the palette choice.
 func (s settings) setTheme(t themeChoice) { s.store.SetInt(prefKey.Theme, int(t)) }
+
+// autoUpdateEnabled reports whether a found update is installed automatically on
+// next launch (vs. waiting for the user to click). Defaults off (ADR-010).
+func (s settings) autoUpdateEnabled() bool {
+	return s.store.BoolWithFallback(prefKey.AutoUpdate, defaultAutoUpdate)
+}
+
+// setAutoUpdateEnabled persists the auto-install opt-in.
+func (s settings) setAutoUpdateEnabled(on bool) { s.store.SetBool(prefKey.AutoUpdate, on) }
