@@ -20,6 +20,7 @@ import (
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/monitor"
 	"github.com/josephheinz/system-monitor/internal/series"
+	"github.com/josephheinz/system-monitor/internal/update"
 )
 
 // pollInterval is the cadence at which collectors sample and the UI redraws,
@@ -41,8 +42,10 @@ func historySpan() time.Duration {
 const appName = "System Monitor"
 
 // Run creates the application, starts metric collection, shows the main window,
-// and blocks until it is closed.
-func Run() {
+// and blocks until it is closed. version is the build-time release version
+// (main.version); a non-release value ("dev") disables the GitHub self-update
+// check (BZS253-71).
+func Run(version string) {
 	a := app.NewWithID("com.josephheinz.systemmonitor")
 
 	// Load persisted preferences before any UI or collector is built: the theme
@@ -95,6 +98,7 @@ func Run() {
 		charts:   make(liveSources),
 		cpuInfo:  cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
 		settings: prefs,
+		version:  version,
 	}
 	var collectors []monitor.Collector
 	if cpu != nil {
@@ -165,6 +169,34 @@ func Run() {
 		collectors = append(collectors, procs)
 	}
 
+	// Self-update (BZS253-71). CleanupOld clears any binary parked by a prior
+	// swap. The controller is wired only on a real released build — a "dev" build
+	// has no version to compare against, so both the check and its status-bar
+	// affordance are skipped. shutdown is late-bound (the poller it stops doesn't
+	// exist yet); the controller calls it after spawning the new binary.
+	update.CleanupOld()
+	var shutdown func()
+	if update.IsRelease(version) {
+		updater := update.NewController(version, func() {
+			if shutdown != nil {
+				fyne.Do(shutdown)
+			}
+		})
+		src.updateStatus = updater.Snapshot
+		src.startUpdate = func() { updater.Start(ctx) }
+		// Non-blocking startup check; offline degrades to a no-op. When the user
+		// has opted into auto-install, a found update installs without a click —
+		// the policy lives here (composition root), so the controller stays
+		// unaware of preferences (ADR-010).
+		autoInstall := prefs.autoUpdateEnabled()
+		go func() {
+			updater.Check(ctx)
+			if autoInstall {
+				updater.Start(ctx) // no-ops unless Check found a newer release
+			}
+		}()
+	}
+
 	content, refresh := buildContent(src)
 
 	// The shell draws its own chrome flush to the window edges, so suppress
@@ -182,11 +214,14 @@ func Run() {
 	poller.OnTick(func() { fyne.Do(refresh) })
 	poller.Start(ctx)
 
-	w.SetCloseIntercept(func() {
+	// One teardown path, shared by the window's close button and a self-update
+	// restart (which needs to exit this process so the new binary takes over).
+	shutdown = func() {
 		cancel()
 		poller.Stop()
 		w.Close()
-	})
+	}
+	w.SetCloseIntercept(shutdown)
 
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()
