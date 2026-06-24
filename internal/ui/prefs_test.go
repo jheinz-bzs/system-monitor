@@ -68,6 +68,13 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if got := s.theme(); got != themeLight {
 		t.Errorf("theme = %d, want %d", got, themeLight)
 	}
+	if s.autoUpdateEnabled() {
+		t.Error("autoUpdateEnabled = true before setting (default should be off)")
+	}
+	s.setAutoUpdateEnabled(true)
+	if !s.autoUpdateEnabled() {
+		t.Error("autoUpdateEnabled = false after setting true")
+	}
 }
 
 // TestSettingsOutOfRangeFallsBack: stored values outside the valid set degrade

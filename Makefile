@@ -20,7 +20,7 @@ BIN := bin/system-monitor
 ASSETS_GEN := internal/ui/assets_gen.go
 ASSET_SRC  := $(wildcard internal/ui/fonts/*.ttf internal/ui/icons/*.svg) tools/genassets/main.go
 
-.PHONY: run start build build-win vet tidy fmt clean generate
+.PHONY: run start build build-win release vet tidy fmt clean generate
 
 $(ASSETS_GEN): $(ASSET_SRC)
 	go run ./tools/genassets
@@ -39,6 +39,11 @@ build: $(ASSETS_GEN)
 ## build-win: compile a windowed Windows binary (no console window)
 build-win: $(ASSETS_GEN)
 	go build -ldflags="-H windowsgui" -o $(BIN).exe $(PKG)
+
+## release: build a versioned Windows release binary locally (usage: VERSION=v1.2.3 make release)
+## Mirrors the ldflags the release workflow uses, for a hand-cut release or a swap test.
+release: $(ASSETS_GEN)
+	go build -ldflags="-H windowsgui -X main.version=$(VERSION)" -o $(BIN)-$(VERSION).exe $(PKG)
 
 ## vet: run go vet across all packages
 vet: $(ASSETS_GEN)
