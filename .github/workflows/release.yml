@@ -1,0 +1,80 @@
+# Release pipeline for BZS253-71 (self-update). A pushed semver tag (v1.2.3)
+# fans out one native build per OS, then a collector job computes checksums and
+# publishes a single GitHub Release. The app's internal/update downloader pulls
+# these assets — so the asset names here are a contract with update.assetName().
+#
+# Native runners, NOT cross-compilation: Fyne needs CGO + a per-OS C toolchain
+# (and OpenGL/X11 headers on Linux), which is painful to cross-compile. Each
+# runner builds its own platform, so no cross toolchain is needed.
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write # create the GitHub Release + upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: 1 # Fyne requires cgo
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: system-monitor-linux-amd64
+            ldflags: ""
+            setup: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev
+          - os: windows-latest
+            asset: system-monitor-windows-amd64.exe
+            ldflags: "-H windowsgui" # no console window
+            setup: ""
+          - os: macos-latest # Apple Silicon runner -> darwin-arm64
+            asset: system-monitor-darwin-arm64
+            ldflags: ""
+            setup: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: install linux gui deps
+        if: matrix.setup != ''
+        run: ${{ matrix.setup }}
+      # genassets directly (not `make generate`) so CI needs no GNU make on PATH.
+      - name: generate bundled assets
+        run: go run ./tools/genassets
+      - name: build
+        shell: bash
+        run: |
+          go build -ldflags "${{ matrix.ldflags }} -X main.version=${GITHUB_REF_NAME}" \
+            -o "${{ matrix.asset }}" ./cmd/system-monitor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true # flatten all per-OS artifacts into dist/
+      # Checksums computed once here, over every asset, so the build jobs don't
+      # each need a cross-platform sha256 tool (macOS lacks sha256sum).
+      - name: checksums
+        run: |
+          cd dist
+          sha256sum system-monitor-* > checksums.txt
+          cat checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/system-monitor-*
+            dist/checksums.txt
