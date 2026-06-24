@@ -67,8 +67,11 @@ jobs:
           sudo apt-get install -y librsvg2-bin
           rsvg-convert -w 256 -h 256 internal/ui/icons/diamond.svg -o system-monitor.png
 
-          # .deb via nfpm (installed through the Go toolchain already on the runner).
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          # .deb via nfpm. GOTOOLCHAIN=auto for just this install: nfpm@latest may
+          # need a newer Go than our pinned 1.26.3, and setup-go pins GOTOOLCHAIN=local
+          # (which would error instead of fetching it). The app binary was already
+          # built in the previous step on 1.26.3, so this doesn't touch our build.
+          GOTOOLCHAIN=auto go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           VERSION="$version_nov" "$(go env GOPATH)/bin/nfpm" package \
             --config packaging/nfpm.yaml --packager deb --target .
 
