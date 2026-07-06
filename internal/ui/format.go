@@ -5,8 +5,10 @@ package ui
 // to change — the chart's labeling and scaling logic).
 
 import (
+	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -151,6 +153,37 @@ func formatAge(d time.Duration) string {
 		return "-" + strconv.Itoa(int(d.Round(time.Second)/time.Second)) + "s"
 	}
 	return "-" + strconv.Itoa(int(d.Round(time.Minute)/time.Minute)) + "m"
+}
+
+// System-info formatting (Settings "System" section, BZS253-74).
+
+// uptimeDay is a day as a Duration — Go's time package tops out at Hour, so the
+// day/hour split for uptime derives from it (no bare 24/60 unit literals).
+const uptimeDay = 24 * time.Hour
+
+// bootTimeLayout formats the boot timestamp: local date and time to the minute
+// (seconds add noise for a once-at-startup value).
+const bootTimeLayout = "2006-01-02 15:04"
+
+// formatUptime renders a machine uptime as a compact human span — day, hour, and
+// minute parts with leading zero units dropped ("6d 3h 12m", "3h 12m", "12m") —
+// or whole seconds under a minute ("45s").
+func formatUptime(d time.Duration) string {
+	if d < time.Minute {
+		return strconv.Itoa(int(d.Seconds())) + "s"
+	}
+	days := int(d / uptimeDay)
+	hours := int(d % uptimeDay / time.Hour)
+	mins := int(d % time.Hour / time.Minute)
+	var b strings.Builder
+	if days > 0 {
+		fmt.Fprintf(&b, "%dd ", days)
+	}
+	if days > 0 || hours > 0 {
+		fmt.Fprintf(&b, "%dh ", hours)
+	}
+	fmt.Fprintf(&b, "%dm", mins)
+	return b.String()
 }
 
 // clamp32 constrains v to [lo, hi].
