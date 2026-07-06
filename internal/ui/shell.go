@@ -72,25 +72,25 @@ type liveSources map[tabID]series.Source
 // buildSources bundles all live data sources the tab builders need. Extend
 // this struct (not the tabBuilder signature) when new source types are added.
 type buildSources struct {
-	charts       liveSources        // time-series chart sources, keyed by tabID
-	cpuCores     []series.Source    // per-core CPU sources, core order; empty when not wired
-	allProcs     allProcessSource   // full process list, feeding all process tables; nil when not wired
-	procCount    series.Source      // process-count history for the Overview sparkline; nil when not wired
-	ports        allPortsSource     // listening-port list feeding the Ports table; nil when not wired
-	conns        allConnsSource     // active-connection list feeding the Connections table; nil when not wired
-	killProc     processKiller      // process termination; nil when not wired
-	disk         diskUsageSource    // per-partition usage feeding the volumes list; nil when not wired
-	diskDirs     diskDirSource      // selected-volume directory sizes feeding the storage treemap; nil when not wired
-	diskIO       diskIOSources      // disk read/write/total rate series; zero when not wired
-	net          netSources         // network upload/download/total rate series; zero when not wired
-	selectVolume func(mount string) // retargets the directory scan; nil when not wired
-	rescanDirs   func()             // triggers a fresh walk of the selected volume; nil when not wired
-	cpuInfo      cpuMeta            // static processor description; zero when unknown
-	mem          memSources         // memory band sources + total; zero when not wired
-	swap         swapSources        // Overview swap usage source + total; zero when not wired
-	settings     settings           // persisted user preferences (Settings tab)
-	version      string             // build-time app version, shown read-only in Settings (BZS253-71)
-	nav          *crossNav          // cross-tab navigation target; populated by buildContent
+	charts       liveSources            // time-series chart sources, keyed by tabID
+	cpuCores     []series.Source        // per-core CPU sources, core order; empty when not wired
+	allProcs     allProcessSource       // full process list, feeding all process tables; nil when not wired
+	procCount    series.Source          // process-count history for the Overview sparkline; nil when not wired
+	ports        allPortsSource         // listening-port list feeding the Ports table; nil when not wired
+	conns        allConnsSource         // active-connection list feeding the Connections table; nil when not wired
+	killProc     processKiller          // process termination; nil when not wired
+	disk         diskUsageSource        // per-partition usage feeding the volumes list; nil when not wired
+	diskDirs     diskDirSource          // selected-volume directory sizes feeding the storage treemap; nil when not wired
+	diskIO       diskIOSources          // disk read/write/total rate series; zero when not wired
+	net          netSources             // network upload/download/total rate series; zero when not wired
+	selectVolume func(mount string)     // retargets the directory scan; nil when not wired
+	rescanDirs   func()                 // triggers a fresh walk of the selected volume; nil when not wired
+	cpuInfo      cpuMeta                // static processor description; zero when unknown
+	mem          memSources             // memory band sources + total; zero when not wired
+	swap         swapSources            // Overview swap usage source + total; zero when not wired
+	settings     settings               // persisted user preferences (Settings tab)
+	system       systemInfo             // static machine facts for the Settings "System" section (BZS253-74)
+	nav          *crossNav              // cross-tab navigation target; populated by buildContent
 	updateStatus func() update.Snapshot // self-update state for the status bar; nil on a dev build (BZS253-71)
 	startUpdate  func()                 // install the available update on user confirmation; nil when not wired
 }
@@ -224,7 +224,7 @@ var tabRegistry = map[tabID]tabBuilder{
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
 	tabSettings: func(src buildSources) tabContent {
-		v := newSettingsView(src.settings, src.version)
+		v := newSettingsView(src.settings, src.system)
 		return tabContent{object: v.object()}
 	},
 }
