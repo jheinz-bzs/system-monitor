@@ -15,17 +15,19 @@ import (
 // string values are the on-disk keys: keep them stable across releases, or
 // persisted settings silently reset to their defaults.
 var prefKey = struct {
-	StartTab    string
-	MemoryCap   string
-	PollSeconds string
-	Theme       string
-	AutoUpdate  string
+	StartTab        string
+	MemoryCap       string
+	PollSeconds     string
+	Theme           string
+	AutoUpdate      string
+	LastSeenVersion string
 }{
-	StartTab:    "startTab",
-	MemoryCap:   "memoryCapEnabled",
-	PollSeconds: "pollSeconds",
-	Theme:       "theme",
-	AutoUpdate:  "autoUpdate",
+	StartTab:        "startTab",
+	MemoryCap:       "memoryCapEnabled",
+	PollSeconds:     "pollSeconds",
+	Theme:           "theme",
+	AutoUpdate:      "autoUpdate",
+	LastSeenVersion: "lastSeenVersion",
 }
 
 // Preference defaults, returned whenever a key is unset — so a fresh install,
@@ -68,6 +70,8 @@ type prefStore interface {
 	SetBool(key string, value bool)
 	IntWithFallback(key string, fallback int) int
 	SetInt(key string, value int)
+	StringWithFallback(key string, fallback string) string
+	SetString(key string, value string)
 }
 
 // settings reads and writes the app's persisted preferences with typed
@@ -138,3 +142,17 @@ func (s settings) autoUpdateEnabled() bool {
 
 // setAutoUpdateEnabled persists the auto-install opt-in.
 func (s settings) setAutoUpdateEnabled(on bool) { s.store.SetBool(prefKey.AutoUpdate, on) }
+
+// lastSeenVersion is the build version at the last launch that showed (or, on a
+// fresh install, silently recorded) the "What's New" page (BZS253-78). Empty
+// means unset — a brand-new install that has never recorded a version. The
+// launch compare against the current build version is the whole "don't show
+// again until updated" mechanism; no seen-flags or timestamps.
+func (s settings) lastSeenVersion() string {
+	return s.store.StringWithFallback(prefKey.LastSeenVersion, "")
+}
+
+// setLastSeenVersion records the build version whose "What's New" page has been
+// dismissed (or recorded on first install), suppressing the page until the next
+// version change.
+func (s settings) setLastSeenVersion(v string) { s.store.SetString(prefKey.LastSeenVersion, v) }
