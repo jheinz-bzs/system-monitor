@@ -28,7 +28,7 @@ const (
 )
 
 // globs of bundled assets, relative to uiDir.
-var globs = []string{"fonts/*.ttf", "icons/*.svg"}
+var globs = []string{"fonts/*.ttf", "icons/*.svg", "whatsnew.md"}
 
 type asset struct {
 	key string // path under internal/ui, slash-separated (e.g. "fonts/X.ttf")
