@@ -8,12 +8,13 @@ import (
 // fakePrefs is a map-backed prefStore for round-trip tests — no Fyne app or
 // disk. Unset keys return the caller's fallback, exactly like fyne.Preferences.
 type fakePrefs struct {
-	bools map[string]bool
-	ints  map[string]int
+	bools   map[string]bool
+	ints    map[string]int
+	strings map[string]string
 }
 
 func newFakePrefs() *fakePrefs {
-	return &fakePrefs{bools: map[string]bool{}, ints: map[string]int{}}
+	return &fakePrefs{bools: map[string]bool{}, ints: map[string]int{}, strings: map[string]string{}}
 }
 
 func (f *fakePrefs) BoolWithFallback(key string, fallback bool) bool {
@@ -30,6 +31,13 @@ func (f *fakePrefs) IntWithFallback(key string, fallback int) int {
 	return fallback
 }
 func (f *fakePrefs) SetInt(key string, value int) { f.ints[key] = value }
+func (f *fakePrefs) StringWithFallback(key string, fallback string) string {
+	if v, ok := f.strings[key]; ok {
+		return v
+	}
+	return fallback
+}
+func (f *fakePrefs) SetString(key string, value string) { f.strings[key] = value }
 
 // TestSettingsDefaults: unset keys yield the shipped defaults.
 func TestSettingsDefaults(t *testing.T) {
@@ -74,6 +82,13 @@ func TestSettingsRoundTrip(t *testing.T) {
 	s.setAutoUpdateEnabled(true)
 	if !s.autoUpdateEnabled() {
 		t.Error("autoUpdateEnabled = false after setting true")
+	}
+	if got := s.lastSeenVersion(); got != "" {
+		t.Errorf("lastSeenVersion default = %q, want empty", got)
+	}
+	s.setLastSeenVersion("v1.2.0")
+	if got := s.lastSeenVersion(); got != "v1.2.0" {
+		t.Errorf("lastSeenVersion = %q, want %q", got, "v1.2.0")
 	}
 }
 
