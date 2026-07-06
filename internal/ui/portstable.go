@@ -62,7 +62,7 @@ const labelListenState = "LISTEN"
 // labelNoProcess fills the owning-process column when the PID could not be
 // resolved to a name (permission-restricted or already exited) — a dash rather
 // than a blank cell, so an unresolved owner reads as "unknown", not "missing".
-const labelNoProcess = "—"
+const labelNoProcess = glyphDash
 
 // labelJumpSuffix is the trailing arrow on the cross-nav "process →" link cell
 // (the wireframe's jump-to-process affordance). The link is display-only for now;
