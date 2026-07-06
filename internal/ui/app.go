@@ -227,6 +227,12 @@ func Run(version string) {
 
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()
+
+	// First launch after a version change shows the bundled "What's New" page as
+	// a fullscreen overlay (BZS253-78); a fresh install records the version
+	// silently. Reuses the same build version the updater compares against.
+	maybeShowWhatsNew(w.Canvas(), prefs, version, os.Getenv)
+
 	w.ShowAndRun()
 }
 
