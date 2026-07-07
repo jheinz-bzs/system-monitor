@@ -91,6 +91,11 @@ func newMeta(text string) *canvas.Text {
 	return styledText(text, font.MonoRegular, sizeName.Meta, palette.Text3)
 }
 
+// glyphDash is the design system's em-dash placeholder for an unresolved or
+// unknown value (an unowned port, a missing machine fact). One home so the
+// glyph reads identically everywhere it stands in for "no data".
+const glyphDash = "—"
+
 // --- Status text ------------------------------------------------------------
 
 // statusKind selects the semantic color for a status readout.

@@ -22,6 +22,22 @@ func TestFormatBytesShort(t *testing.T) {
 	}
 }
 
+func TestFormatUptime(t *testing.T) {
+	cases := map[time.Duration]string{
+		45 * time.Second:                              "45s",
+		90 * time.Second:                              "1m",
+		12 * time.Minute:                              "12m",
+		3*time.Hour + 12*time.Minute:                  "3h 12m",
+		6*24*time.Hour + 3*time.Hour + 12*time.Minute: "6d 3h 12m",
+		25 * time.Hour:                                "1d 1h 0m", // hours shown once days appear
+	}
+	for in, want := range cases {
+		if got := formatUptime(in); got != want {
+			t.Errorf("formatUptime(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestFormatSpan(t *testing.T) {
 	cases := map[time.Duration]string{
 		45 * time.Second: "45 s",

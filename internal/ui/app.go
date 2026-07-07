@@ -93,12 +93,18 @@ func Run(version string) {
 	if err != nil {
 		log.Printf("cpu info: %v", err) // subtitle is omitted; the tab still works
 	}
+	// Static machine facts for the Settings "System" section, read once here
+	// (BZS253-74). A failure leaves a zero summary; the panel shows dashes.
+	hostSummary, err := monitor.Host(ctx)
+	if err != nil {
+		log.Printf("host info: %v", err)
+	}
 
 	src := buildSources{
 		charts:   make(liveSources),
 		cpuInfo:  cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
 		settings: prefs,
-		version:  version,
+		system:   toSystemInfo(hostSummary, cpuInfo.Cores, version),
 	}
 	var collectors []monitor.Collector
 	if cpu != nil {
@@ -234,6 +240,23 @@ func Run(version string) {
 	maybeShowWhatsNew(w.Canvas(), prefs, version, os.Getenv)
 
 	w.ShowAndRun()
+}
+
+// toSystemInfo maps the static host summary (plus the logical core count and
+// build version, which come from other sources) into the UI's systemInfo, so
+// the ui package never imports the monitor concrete. The OS row joins the
+// platform product and version into one line; the rest is a field copy.
+func toSystemInfo(h monitor.HostSummary, cores int, version string) systemInfo {
+	return systemInfo{
+		hostname: h.Hostname,
+		os:       strings.TrimSpace(h.Platform + " " + h.PlatformVersion),
+		kernel:   h.KernelVersion,
+		bootTime: h.BootTime,
+		uptime:   h.Uptime,
+		cores:    cores,
+		users:    h.Users,
+		version:  version,
+	}
 }
 
 // coreSources adapts each logical core's usage history into a series.Source,

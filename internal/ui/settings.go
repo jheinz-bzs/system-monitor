@@ -9,6 +9,9 @@ package ui
 import (
 	"image/color"
 	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -20,24 +23,38 @@ import (
 const (
 	labelSettingsPageTitle = "Settings"
 	labelSettingsPanel     = "Preferences"
+	labelSystemPanel       = "System"
 
 	labelSettingStartTab   = "Start tab"
 	labelSettingPoll       = "Poll interval"
 	labelSettingMemCap     = "Memory cap"
 	labelSettingTheme      = "Appearance"
 	labelSettingAutoUpdate = "Auto-update"
-	labelSettingVersion    = "Version"
 
 	helpSettingStartTab   = "Tab shown on launch"
 	helpSettingPoll       = "Sampling cadence · next launch"
 	helpSettingMemCap     = "GC soft heap limit · next launch"
 	helpSettingTheme      = "Color palette · next launch"
 	helpSettingAutoUpdate = "Install updates on next launch · off by default"
-	helpSettingVersion    = "Installed build · read-only"
+
+	// System-section row labels (BZS253-74): static, read-once machine facts.
+	labelSysHostname = "Hostname"
+	labelSysOS       = "OS"
+	labelSysKernel   = "Kernel"
+	labelSysBootTime = "Boot time"
+	labelSysUptime   = "Uptime"
+	labelSysCores    = "Logical cores"
+	labelSysUsers    = "Logged-in users"
+	labelSysVersion  = "Version"
 
 	// labelToggleEnabled is the on/off chip caption shared by the boolean
 	// settings (memory cap, auto-update).
 	labelToggleEnabled = "Enabled"
+
+	// labelUnknownValue stands in for a machine fact the host lookup couldn't
+	// fill — the shared em-dash, matching the tables' unresolved-value convention.
+	labelUnknownValue = glyphDash
+	usersJoinSep      = ", "
 )
 
 // Settings-form geometry. The label column is a fixed min width so every row's
@@ -63,9 +80,25 @@ type settingsView struct {
 	root  fyne.CanvasObject
 }
 
-// newSettingsView builds the Settings tab from the persisted preferences.
-// version is the build-time app version, shown as a read-only row (BZS253-71).
-func newSettingsView(prefs settings, version string) *settingsView {
+// systemInfo is the static machine description shown in the Settings "System"
+// section (BZS253-74). Read once at startup and rendered directly — no ring
+// buffer, no per-tick refresh. The app.go composition root maps
+// monitor.HostSummary (+ core count + build version) into it, so this package
+// never imports the monitor concretes.
+type systemInfo struct {
+	hostname string
+	os       string // OS product + platform version, pre-joined
+	kernel   string
+	bootTime time.Time
+	uptime   time.Duration
+	cores    int
+	users    []string // distinct logged-in usernames; empty omits the row
+	version  string
+}
+
+// newSettingsView builds the Settings tab: the preferences form plus a
+// read-only System section (BZS253-74) describing the monitored machine.
+func newSettingsView(prefs settings, sys systemInfo) *settingsView {
 	v := &settingsView{prefs: prefs}
 
 	form := container.New(layout.NewCustomPaddedVBoxLayout(settingRowGap),
@@ -74,18 +107,68 @@ func newSettingsView(prefs settings, version string) *settingsView {
 		settingRow(labelSettingMemCap, helpSettingMemCap, v.memCapControl()),
 		settingRow(labelSettingTheme, helpSettingTheme, v.themeControl()),
 		settingRow(labelSettingAutoUpdate, helpSettingAutoUpdate, v.autoUpdateControl()),
-		settingRow(labelSettingVersion, helpSettingVersion, newTableText(version)),
 	)
-	panel := newPanel(labelSettingsPanel, nil, form)
+	panels := container.New(layout.NewCustomPaddedVBoxLayout(tabPad),
+		newPanel(labelSettingsPanel, nil, form),
+		newPanel(labelSystemPanel, nil, systemInfoRows(sys)),
+	)
 
 	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0),
 		container.NewHBox(vCenter(newHeading(labelSettingsPageTitle))))
-	body := newTightBorder(head, nil, nil, nil, panel)
+	body := newTightBorder(head, nil, nil, nil, panels)
 	v.root = container.New(layout.NewCustomPaddedLayout(tabPad, tabPad, tabPad, tabPad), body)
 	return v
 }
 
 func (v *settingsView) object() fyne.CanvasObject { return v.root }
+
+// systemInfoRows lays out the System section's label→value rows. The users row
+// is omitted entirely when the (degradable) users lookup returned nothing, so a
+// failed lookup shows no row rather than an empty value (BZS253-74).
+func systemInfoRows(sys systemInfo) fyne.CanvasObject {
+	rows := []fyne.CanvasObject{
+		infoRow(labelSysHostname, orDash(sys.hostname)),
+		infoRow(labelSysOS, orDash(sys.os)),
+		infoRow(labelSysKernel, orDash(sys.kernel)),
+		infoRow(labelSysBootTime, formatBootTime(sys.bootTime)),
+		infoRow(labelSysUptime, formatUptime(sys.uptime)),
+		infoRow(labelSysCores, strconv.Itoa(sys.cores)),
+	}
+	if len(sys.users) > 0 {
+		rows = append(rows, infoRow(labelSysUsers, strings.Join(sys.users, usersJoinSep)))
+	}
+	rows = append(rows, infoRow(labelSysVersion, orDash(sys.version)))
+	return container.New(layout.NewCustomPaddedVBoxLayout(settingRowGap), rows...)
+}
+
+// infoRow is a static label→value row: the same fixed-width label column as
+// settingRow (so both panels' values align to one x), beside a plain mono value.
+// Unlike settingRow it carries no helper caption — these are read-only facts,
+// not controls.
+func infoRow(name, value string) fyne.CanvasObject {
+	sizer := canvas.NewRectangle(color.Transparent)
+	sizer.SetMinSize(fyne.NewSize(settingLabelWidth, 0))
+	labelCol := container.NewStack(sizer, newColumnLabel(name))
+	return container.New(layout.NewCustomPaddedHBoxLayout(settingLabelGap),
+		vCenter(labelCol), vCenter(newTableText(value)))
+}
+
+// orDash shows v, or the unknown-value dash when the host lookup left it empty.
+func orDash(v string) string {
+	if v == "" {
+		return labelUnknownValue
+	}
+	return v
+}
+
+// formatBootTime renders the boot timestamp, or the dash when it is unknown
+// (zero) — e.g. gopsutil returned no boot time.
+func formatBootTime(t time.Time) string {
+	if t.IsZero() {
+		return labelUnknownValue
+	}
+	return t.Format(bootTimeLayout)
+}
 
 // settingRow is one preference row: a fixed-width label column (uppercase name
 // over a muted helper caption) beside its control. The control sits in an HBox,
