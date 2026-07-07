@@ -4,13 +4,8 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Self-update
-- The app now checks GitHub Releases on launch and can update itself in place.
-- Auto-install on next launch is opt-in — enable it under **Settings**.
-
-### Settings
-- Your start tab, poll interval, theme, and memory cap now persist between runs.
-
-### This page
-- After each update, this page shows once so you can see what's new. Close it and
-  it won't return until the next version.
+### System info
+- **Settings** now has a **System** section describing the monitored machine:
+  hostname, OS, kernel, boot time, uptime, logical cores, and logged-in users.
+- The build **Version** moved here too, alongside the rest of the machine facts.
+- These are read once at launch — static facts, no per-second refresh.
