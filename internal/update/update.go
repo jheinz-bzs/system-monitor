@@ -93,9 +93,7 @@ type available struct {
 
 // assetName is this platform's self-update asset name — the file the downloader
 // resolves in the release. It must match the names the release workflow produces:
-// Windows .exe, the Linux .AppImage (not the bare binary or .deb). Releases ship
-// no macOS asset (build-from-source only), so on darwin the lookup misses and
-// checkLatest treats it as a normal no-update.
+// Windows .exe, the Linux .AppImage (not the bare binary or .deb), macOS bare.
 func assetName() string {
 	name := assetPrefix + runtime.GOOS + "-" + runtime.GOARCH
 	switch runtime.GOOS {
@@ -108,10 +106,9 @@ func assetName() string {
 }
 
 // Supported reports whether in-app self-update applies to this running instance.
-// Windows always self-updates; on Linux only an AppImage launch does — a bare
-// binary or a .deb install manages its own updates (apt / re-download), so the
-// updater isn't wired and no "update failed" noise is shown there. macOS stays
-// true but no-ops: releases carry no darwin asset, so the check finds nothing.
+// Windows and macOS always self-update; on Linux only an AppImage launch does —
+// a bare binary or a .deb install manages its own updates (apt / re-download), so
+// the updater isn't wired and no "update failed" noise is shown there.
 func Supported() bool {
 	if runtime.GOOS == goosLinux {
 		return os.Getenv(envAppImage) != ""
