@@ -20,6 +20,7 @@ var prefKey = struct {
 	PollSeconds     string
 	Theme           string
 	AutoUpdate      string
+	MinimizeToTray  string
 	LastSeenVersion string
 }{
 	StartTab:        "startTab",
@@ -27,6 +28,7 @@ var prefKey = struct {
 	PollSeconds:     "pollSeconds",
 	Theme:           "theme",
 	AutoUpdate:      "autoUpdate",
+	MinimizeToTray:  "minimizeToTray",
 	LastSeenVersion: "lastSeenVersion",
 }
 
@@ -45,6 +47,9 @@ const (
 	// (BZS253-71's "no silent background replacement"); enabling this is the
 	// user's explicit opt-in to auto-install on next launch (ADR-010).
 	defaultAutoUpdate = false
+	// defaultMinimizeToTray is off: closing the window quits as it always has
+	// until the user opts into hide-to-tray (BZS253-76).
+	defaultMinimizeToTray = false
 )
 
 // pollSecondsAllowed is the set of sampling cadences the settings UI offers, in
@@ -142,6 +147,16 @@ func (s settings) autoUpdateEnabled() bool {
 
 // setAutoUpdateEnabled persists the auto-install opt-in.
 func (s settings) setAutoUpdateEnabled(on bool) { s.store.SetBool(prefKey.AutoUpdate, on) }
+
+// minimizeToTrayEnabled reports whether closing the window hides it to the
+// system tray instead of quitting (BZS253-76). Defaults off. Read once at
+// startup, like every other preference.
+func (s settings) minimizeToTrayEnabled() bool {
+	return s.store.BoolWithFallback(prefKey.MinimizeToTray, defaultMinimizeToTray)
+}
+
+// setMinimizeToTrayEnabled persists the hide-to-tray opt-in.
+func (s settings) setMinimizeToTrayEnabled(on bool) { s.store.SetBool(prefKey.MinimizeToTray, on) }
 
 // lastSeenVersion is the build version at the last launch that showed (or, on a
 // fresh install, silently recorded) the "What's New" page (BZS253-78). Empty
