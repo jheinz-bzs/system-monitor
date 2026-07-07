@@ -30,12 +30,14 @@ const (
 	labelSettingMemCap     = "Memory cap"
 	labelSettingTheme      = "Appearance"
 	labelSettingAutoUpdate = "Auto-update"
+	labelSettingTray       = "Minimize to tray"
 
 	helpSettingStartTab   = "Tab shown on launch"
 	helpSettingPoll       = "Sampling cadence · next launch"
 	helpSettingMemCap     = "GC soft heap limit · next launch"
 	helpSettingTheme      = "Color palette · next launch"
 	helpSettingAutoUpdate = "Install updates on next launch · off by default"
+	helpSettingTray       = "Close hides to the tray · next launch · off by default"
 
 	// System-section row labels (BZS253-74): static, read-once machine facts.
 	labelSysHostname = "Hostname"
@@ -107,6 +109,7 @@ func newSettingsView(prefs settings, sys systemInfo) *settingsView {
 		settingRow(labelSettingMemCap, helpSettingMemCap, v.memCapControl()),
 		settingRow(labelSettingTheme, helpSettingTheme, v.themeControl()),
 		settingRow(labelSettingAutoUpdate, helpSettingAutoUpdate, v.autoUpdateControl()),
+		settingRow(labelSettingTray, helpSettingTray, v.trayControl()),
 	)
 	panels := container.New(layout.NewCustomPaddedVBoxLayout(tabPad),
 		newPanel(labelSettingsPanel, nil, form),
@@ -237,6 +240,13 @@ func (v *settingsView) memCapControl() fyne.CanvasObject {
 func (v *settingsView) autoUpdateControl() fyne.CanvasObject {
 	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.autoUpdateEnabled(),
 		func(on bool) { v.prefs.setAutoUpdateEnabled(on) })
+}
+
+// trayControl toggles minimize-to-tray-on-close (applied next launch). Off by
+// default so quit-on-close stays unchanged until the user opts in (BZS253-76).
+func (v *settingsView) trayControl() fyne.CanvasObject {
+	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.minimizeToTrayEnabled(),
+		func(on bool) { v.prefs.setMinimizeToTrayEnabled(on) })
 }
 
 // themeControl is a segmented Dark/Light selector; the choice persists as the
