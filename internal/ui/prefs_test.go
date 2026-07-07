@@ -83,6 +83,13 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if !s.autoUpdateEnabled() {
 		t.Error("autoUpdateEnabled = false after setting true")
 	}
+	if s.minimizeToTrayEnabled() {
+		t.Error("minimizeToTrayEnabled = true before setting (default should be off)")
+	}
+	s.setMinimizeToTrayEnabled(true)
+	if !s.minimizeToTrayEnabled() {
+		t.Error("minimizeToTrayEnabled = false after setting true")
+	}
 	if got := s.lastSeenVersion(); got != "" {
 		t.Errorf("lastSeenVersion default = %q, want empty", got)
 	}
