@@ -35,10 +35,21 @@ chmod +x scripts/install.sh               # Linux / macOS
 powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1   # Windows
 ```
 
-> **macOS release downloads:** the .dmg is ad-hoc signed (no Apple Developer
-> ID), so the first launch is blocked by Gatekeeper. Open **System Settings →
-> Privacy & Security**, scroll to the blocked-app notice, and click
-> **Open Anyway** — needed once per install.
+## Installing on macOS (from a release)
+
+1. Download `system-monitor-darwin-arm64.dmg` from the
+   [latest release](https://github.com/jheinz-bzs/system-monitor/releases/latest)
+   (Apple Silicon — M1 or newer).
+2. Open the .dmg and drag **System Monitor** into **Applications**.
+3. The first launch is blocked by Gatekeeper — the app is ad-hoc signed, not
+   notarized (no Apple Developer ID). Open **System Settings → Privacy &
+   Security**, scroll to the blocked-app notice, and click **Open Anyway**.
+   Needed once per install.
+4. If instead macOS reports the app is **"damaged"** (releases up to v0.2.0,
+   which were fully unsigned), clear the quarantine flag and launch again:
+   ```sh
+   xattr -cr "/Applications/System Monitor.app"
+   ```
 
 ## Running
 
