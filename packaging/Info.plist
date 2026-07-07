@@ -9,7 +9,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>System Monitor</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.bizstream.system-monitor</string>
+	<string>com.josephheinz.system-monitor</string>
 	<key>CFBundleExecutable</key>
 	<string>system-monitor</string>
 	<key>CFBundleIconFile</key>
