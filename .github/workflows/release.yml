@@ -32,10 +32,9 @@ jobs:
             asset: system-monitor-windows-amd64.exe
             ldflags: "-H windowsgui" # no console window
             setup: ""
-          - os: macos-latest # Apple Silicon runner -> darwin-arm64
-            asset: system-monitor-darwin-arm64
-            ldflags: ""
-            setup: ""
+          # No macOS job: unsigned apps hit Gatekeeper's "damaged" dead end, and
+          # signing + notarization needs a paid Apple Developer account. macOS is
+          # build-from-source only (scripts/install.sh).
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -89,44 +88,6 @@ jobs:
             --desktop-file packaging/system-monitor.desktop \
             --icon-file system-monitor.png \
             --output appimage
-      # macOS ships two artifacts from the one binary: the bare binary (the
-      # self-update target — update.assetName() resolves it, ADR-011 pattern)
-      # and a drag-to-Applications .dmg (install-only). Unsigned: first launch
-      # needs right-click → Open until we adopt codesign + notarization.
-      - name: package macos (.dmg)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          version_nov="${GITHUB_REF_NAME#v}"
-
-          # Brand diamond → .icns via rsvg-convert + the built-in iconutil.
-          # Only the 16/32/128/256/512 (+@2x) names are valid iconset members.
-          brew install librsvg
-          mkdir icon.iconset
-          for size in 16 32 128 256 512; do
-            rsvg-convert -w "$size" -h "$size" internal/ui/icons/diamond.svg \
-              -o "icon.iconset/icon_${size}x${size}.png"
-            rsvg-convert -w "$((size * 2))" -h "$((size * 2))" internal/ui/icons/diamond.svg \
-              -o "icon.iconset/icon_${size}x${size}@2x.png"
-          done
-          iconutil -c icns icon.iconset -o system-monitor.icns
-
-          # Hand-rolled .app bundle — it's just a directory layout + Info.plist,
-          # so no packaging tool is needed.
-          app="System Monitor.app"
-          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-          cp "${{ matrix.asset }}" "$app/Contents/MacOS/system-monitor"
-          chmod +x "$app/Contents/MacOS/system-monitor"
-          cp system-monitor.icns "$app/Contents/Resources/"
-          sed "s/__VERSION__/${version_nov}/g" packaging/Info.plist > "$app/Contents/Info.plist"
-
-          # Standard drag-install window: the .app beside an /Applications symlink.
-          mkdir dmg-staging
-          cp -R "$app" dmg-staging/
-          ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname "System Monitor" -srcfolder dmg-staging \
-            -format UDZO "${{ matrix.asset }}.dmg"
       - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.asset }}
