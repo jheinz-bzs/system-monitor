@@ -4,13 +4,13 @@ go 1.26.3
 
 require (
 	fyne.io/fyne/v2 v2.7.4
+	fyne.io/systray v1.12.1
 	github.com/charlievieth/fastwalk v1.0.14
 	github.com/shirou/gopsutil/v4 v4.26.5
 	golang.org/x/image v0.24.0
 )
 
 require (
-	fyne.io/systray v1.12.1 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
