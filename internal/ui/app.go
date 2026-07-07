@@ -16,6 +16,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/systray"
 
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/monitor"
@@ -40,6 +42,12 @@ func historySpan() time.Duration {
 }
 
 const appName = "System Monitor"
+
+// Tray menu item labels (BZS253-76).
+const (
+	labelTrayShow = "Show"
+	labelTrayQuit = "Quit"
+)
 
 // Run creates the application, starts metric collection, shows the main window,
 // and blocks until it is closed. version is the build-time release version
@@ -227,9 +235,38 @@ func Run(version string) {
 	shutdown = func() {
 		cancel()
 		poller.Stop()
-		w.Close()
+		// a.Quit, not w.Close: with a system tray active Fyne keeps the app
+		// running after the last window closes, so closing the window would
+		// leave a zombie process behind the tray icon (BZS253-76). Quit stops
+		// the run loop and removes the tray icon on every path.
+		a.Quit()
 	}
 	w.SetCloseIntercept(shutdown)
+
+	// Minimize to tray (BZS253-76): when opted in and the driver has a tray
+	// (desktop.App), closing the window hides it — collection keeps running —
+	// and the tray menu carries the two intents: Show restores the window, Quit
+	// runs the one real teardown above (whose a.Quit also removes the tray
+	// icon, so neither tray-Quit nor a self-update restart leaves a ghost
+	// icon). Read once at startup like every other preference; non-desktop
+	// drivers fail the assertion and keep quit-on-close.
+	// No explicit SetSystemTrayIcon: the tray isn't initialized until
+	// SetSystemTrayMenu runs (an eager set logs "tray not ready yet"), and once
+	// ready Fyne applies the app icon — already brandMark via a.SetIcon above.
+	if desk, ok := a.(desktop.App); ok && prefs.minimizeToTrayEnabled() {
+		desk.SetSystemTrayMenu(fyne.NewMenu(appName,
+			fyne.NewMenuItem(labelTrayShow, func() { fyne.Do(w.Show) }),
+			fyne.NewMenuItem(labelTrayQuit, func() { fyne.Do(shutdown) }),
+		))
+		// Hover tooltip on the tray icon. Fyne doesn't expose this, but its own
+		// tray backend (fyne.io/systray — already linked into the binary) does.
+		// Deferred to OnStarted because the icon must exist first: Fyne starts
+		// the tray at the top of its run loop, before firing OnStarted, on both
+		// Windows (ready even earlier, inside SetSystemTrayMenu) and macOS
+		// (status item created synchronously in trayStart).
+		a.Lifecycle().SetOnStarted(func() { systray.SetTooltip(appName) })
+		w.SetCloseIntercept(w.Hide)
+	}
 
 	w.Resize(defaultWindowSize())
 	w.CenterOnScreen()
