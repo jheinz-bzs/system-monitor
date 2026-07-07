@@ -28,7 +28,8 @@ The installer detects your OS, installs the build deps above, generates the
 bundled assets, and builds `bin/system-monitor`:
 
 ```sh
-./scripts/install.sh                      # Linux / macOS
+chmod +x scripts/install.sh               # Linux / macOS
+./scripts/install.sh
 ```
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1   # Windows
