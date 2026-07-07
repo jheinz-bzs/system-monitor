@@ -35,6 +35,11 @@ chmod +x scripts/install.sh               # Linux / macOS
 powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1   # Windows
 ```
 
+> **macOS release downloads:** the .dmg is ad-hoc signed (no Apple Developer
+> ID), so the first launch is blocked by Gatekeeper. Open **System Settings →
+> Privacy & Security**, scroll to the blocked-app notice, and click
+> **Open Anyway** — needed once per install.
+
 ## Running
 
 Bundled fonts/icons are compiled into `internal/ui/assets_gen.go` (which is

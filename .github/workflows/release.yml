@@ -91,8 +91,11 @@ jobs:
             --output appimage
       # macOS ships two artifacts from the one binary: the bare binary (the
       # self-update target — update.assetName() resolves it, ADR-011 pattern)
-      # and a drag-to-Applications .dmg (install-only). Unsigned: first launch
-      # needs right-click → Open until we adopt codesign + notarization.
+      # and a drag-to-Applications .dmg (install-only). The bundle is ad-hoc
+      # signed (no Developer ID): a fully unsigned bundle hits Gatekeeper's
+      # "damaged, move to trash" dead end, while ad-hoc gets the recoverable
+      # "Open Anyway" path (System Settings → Privacy & Security). Frictionless
+      # installs need paid Developer ID signing + notarization.
       - name: package macos (.dmg)
         if: runner.os == 'macOS'
         shell: bash
@@ -120,6 +123,10 @@ jobs:
           chmod +x "$app/Contents/MacOS/system-monitor"
           cp system-monitor.icns "$app/Contents/Resources/"
           sed "s/__VERSION__/${version_nov}/g" packaging/Info.plist > "$app/Contents/Info.plist"
+
+          # Ad-hoc sign the assembled bundle (see step comment above).
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
 
           # Standard drag-install window: the .app beside an /Applications symlink.
           mkdir dmg-staging
