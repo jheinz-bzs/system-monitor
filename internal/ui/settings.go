@@ -31,6 +31,9 @@ const (
 	labelSettingTheme      = "Appearance"
 	labelSettingAutoUpdate = "Auto-update"
 	labelSettingTray       = "Minimize to tray"
+	labelSettingCPUAlert   = "CPU alert"
+	labelSettingMemAlert   = "Memory alert"
+	labelSettingDiskAlert  = "Disk alert"
 
 	helpSettingStartTab   = "Tab shown on launch"
 	helpSettingPoll       = "Sampling cadence · next launch"
@@ -38,6 +41,9 @@ const (
 	helpSettingTheme      = "Color palette · next launch"
 	helpSettingAutoUpdate = "Install updates on next launch · off by default"
 	helpSettingTray       = "Close hides to the tray · next launch · off by default"
+	// Shared by the CPU and memory alert rows (disk names its volume choice).
+	helpSettingAlert     = "Notify above the threshold · next launch · off by default"
+	helpSettingDiskAlert = "Busiest volume above the threshold · next launch · off by default"
 
 	// System-section row labels (BZS253-74): static, read-once machine facts.
 	labelSysHostname = "Hostname"
@@ -57,6 +63,17 @@ const (
 	// fill — the shared em-dash, matching the tables' unresolved-value convention.
 	labelUnknownValue = glyphDash
 	usersJoinSep      = ", "
+
+	// labelPercentSuffix trails each alert threshold entry, naming its unit.
+	labelPercentSuffix = "%"
+)
+
+// Alert threshold range (percent): the inclusive bounds the entry accepts, so a
+// typed value can't store a negative or above-100 threshold that never fires
+// (or fires every tick). defaultAlertThreshold sits inside this range.
+const (
+	alertThresholdMin = 0
+	alertThresholdMax = 100
 )
 
 // Settings-form geometry. The label column is a fixed min width so every row's
@@ -67,6 +84,7 @@ const (
 	settingRowGap     = space2XL // 24; vertical gap between setting rows
 	settingLabelGap   = spaceXL  // 16; gap from the label column to its control
 	settingLabelWidth = 200      // px; label-column min width (fits the longest caption)
+	alertEntryWidth   = 64       // px; alert threshold numeric input (fits "100")
 )
 
 // Poll-interval segment labels, aligned by index with pollSecondsAllowed.
@@ -110,6 +128,9 @@ func newSettingsView(prefs settings, sys systemInfo) *settingsView {
 		settingRow(labelSettingTheme, helpSettingTheme, v.themeControl()),
 		settingRow(labelSettingAutoUpdate, helpSettingAutoUpdate, v.autoUpdateControl()),
 		settingRow(labelSettingTray, helpSettingTray, v.trayControl()),
+		settingRow(labelSettingCPUAlert, helpSettingAlert, v.alertControl(thresholdCPU)),
+		settingRow(labelSettingMemAlert, helpSettingAlert, v.alertControl(thresholdMemory)),
+		settingRow(labelSettingDiskAlert, helpSettingDiskAlert, v.alertControl(thresholdDisk)),
 	)
 	panels := container.New(layout.NewCustomPaddedVBoxLayout(tabPad),
 		newPanel(labelSettingsPanel, nil, form),
@@ -118,7 +139,11 @@ func newSettingsView(prefs settings, sys systemInfo) *settingsView {
 
 	head := container.New(layout.NewCustomPaddedLayout(0, tabPad, 0, 0),
 		container.NewHBox(vCenter(newHeading(labelSettingsPageTitle))))
-	body := newTightBorder(head, nil, nil, nil, panels)
+	// Scroll the panels rather than let them grow the window: a VScroll reports a
+	// small min height, so more preference rows never force the window taller —
+	// they scroll once they'd overflow the tab's height. The heading stays fixed
+	// above the scrolled region.
+	body := newTightBorder(head, nil, nil, nil, container.NewVScroll(panels))
 	v.root = container.New(layout.NewCustomPaddedLayout(tabPad, tabPad, tabPad, tabPad), body)
 	return v
 }
@@ -247,6 +272,48 @@ func (v *settingsView) autoUpdateControl() fyne.CanvasObject {
 func (v *settingsView) trayControl() fyne.CanvasObject {
 	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.minimizeToTrayEnabled(),
 		func(on bool) { v.prefs.setMinimizeToTrayEnabled(on) })
+}
+
+// alertControl is one metric's threshold-alert row control (BZS253-75): an
+// enable chip beside a numeric percentage entry and its "%" suffix. Both write
+// straight through to settings; the watcher reads them at next launch (app.go),
+// like every other preference.
+func (v *settingsView) alertControl(m thresholdMetric) fyne.CanvasObject {
+	toggle := newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.alertEnabled(m),
+		func(on bool) { v.prefs.setAlertEnabled(m, on) })
+	entry := newThresholdEntry(v.prefs.alertThreshold(m), func(pct int) {
+		v.prefs.setAlertThreshold(m, pct)
+	})
+	sized := container.NewGridWrap(fyne.NewSize(alertEntryWidth, entry.MinSize().Height), entry)
+	return container.New(layout.NewCustomPaddedHBoxLayout(settingLabelGap),
+		vCenter(toggle), vCenter(flatFocus(sized)), vCenter(newTableText(labelPercentSuffix)))
+}
+
+// newThresholdEntry is the small numeric input for an alert threshold. It seeds
+// the current value and persists any integer in [alertThresholdMin,
+// alertThresholdMax] through onChange; a non-numeric or out-of-range value is
+// silently ignored (never stored), so a bad entry can't wedge the watcher. No
+// Validator is set on purpose — that would paint Fyne's ✓/✗ status icon in the
+// field, which we don't want here.
+func newThresholdEntry(value int, onChange func(pct int)) *widget.Entry {
+	e := widget.NewEntry()
+	e.TextStyle = fyne.TextStyle{Monospace: true}
+	e.SetText(strconv.Itoa(value))
+	e.OnChanged = func(s string) {
+		if pct, ok := parseThreshold(s); ok {
+			onChange(pct)
+		}
+	}
+	return e
+}
+
+// parseThreshold reads a threshold entry's text as an in-range percentage.
+func parseThreshold(s string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < alertThresholdMin || n > alertThresholdMax {
+		return 0, false
+	}
+	return n, true
 }
 
 // themeControl is a segmented Dark/Light selector; the choice persists as the
