@@ -12,6 +12,36 @@ import (
 	"github.com/josephheinz/system-monitor/internal/series"
 )
 
+// thresholdSpans must find every contiguous at-or-above-threshold run,
+// inclusive at the boundary, including single-sample spikes and a run left open
+// at the end of the data.
+func TestThresholdSpans(t *testing.T) {
+	const thr = 90
+	tests := []struct {
+		name string
+		vals []float64
+		want [][2]int
+	}{
+		{"none above", []float64{1, 2, 3}, nil},
+		{"single spike", []float64{1, 95, 1}, [][2]int{{1, 1}}},
+		{"middle run", []float64{1, 95, 96, 1}, [][2]int{{1, 2}}},
+		{"open at end", []float64{1, 95, 96}, [][2]int{{1, 2}}},
+		{"all above", []float64{95, 96}, [][2]int{{0, 1}}},
+		{"boundary inclusive", []float64{90}, [][2]int{{0, 0}}},
+		{"two runs", []float64{95, 1, 96, 97}, [][2]int{{0, 0}, {2, 3}}},
+	}
+	for _, tt := range tests {
+		got := thresholdSpans(tt.vals, thr)
+		ok := len(got) == len(tt.want)
+		for i := 0; ok && i < len(got); i++ {
+			ok = got[i] == tt.want[i]
+		}
+		if !ok {
+			t.Errorf("%s: thresholdSpans = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 // A chart built like the CPU multi-line use case (BZS253-46) must render
 // through the full widget path — CreateRenderer, Layout, Refresh, Objects —
 // without panicking, including the empty-buffer and live-update cases.
