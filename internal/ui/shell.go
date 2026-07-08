@@ -93,6 +93,8 @@ type buildSources struct {
 	nav          *crossNav              // cross-tab navigation target; populated by buildContent
 	updateStatus func() update.Snapshot // self-update state for the status bar; nil on a dev build (BZS253-71)
 	startUpdate  func()                 // install the available update on user confirmation; nil when not wired
+	recording    func() bool            // reports whether a tracking session is active; nil when not wired (BZS253-77)
+	toggleRecord func()                 // starts (via save dialog) or stops a tracking session; nil when not wired
 }
 
 // processNavigator is the cross-tab navigation seam the CPU and Memory tabs
