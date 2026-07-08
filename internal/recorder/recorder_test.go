@@ -121,6 +121,50 @@ func TestStartTwiceReturnsError(t *testing.T) {
 	}
 }
 
+func TestReadRoundTrip(t *testing.T) {
+	rec := New(testColumns()...)
+	rec.now = fixedNow()
+	buf := &nopCloser{Buffer: &bytes.Buffer{}}
+	if err := rec.Start(buf); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	const ticks = 3
+	for range ticks {
+		rec.Tick()
+	}
+	if err := rec.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	got, err := Read(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if want := []string{"cpu_pct", "mem_used_bytes"}; !equal(got.Columns, want) {
+		t.Fatalf("columns = %v, want %v", got.Columns, want)
+	}
+	if len(got.Timestamps) != ticks {
+		t.Fatalf("timestamps = %d, want %d", len(got.Timestamps), ticks)
+	}
+	for c, want := range []float64{42.5, 1048576} {
+		if len(got.Series[c]) != ticks {
+			t.Fatalf("series[%d] len = %d, want %d", c, len(got.Series[c]), ticks)
+		}
+		if got.Series[c][0] != want {
+			t.Fatalf("series[%d][0] = %v, want %v", c, got.Series[c][0], want)
+		}
+	}
+}
+
+func TestReadRejectsForeignHeader(t *testing.T) {
+	if _, err := Read(bytes.NewReader([]byte("when,cpu\n1,2\n"))); err == nil {
+		t.Fatal("Read accepted a header without the timestamp column")
+	}
+	if _, err := Read(bytes.NewReader(nil)); err == nil {
+		t.Fatal("Read accepted an empty file")
+	}
+}
+
 func equal(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

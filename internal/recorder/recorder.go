@@ -156,3 +156,49 @@ func (r *Recorder) header() []string {
 	}
 	return row
 }
+
+// Recording is a parsed session CSV: the timestamp column plus each metric
+// column's samples, aligned by row. It is the inverse of what Start/Tick write —
+// Read round-trips anything this package produced — and lets a viewer replay a
+// recording without re-implementing the format.
+type Recording struct {
+	Timestamps []time.Time
+	Columns    []string    // metric headers in file order (timestamp excluded)
+	Series     [][]float64 // one slice per Column, each len == len(Timestamps)
+}
+
+// Read parses a tracking-session CSV: a header row (timestamp + metric columns)
+// followed by one row per tick. An empty file, a header that isn't ours, or an
+// unparseable timestamp/sample is an error rather than silently-zeroed data, so
+// a corrupt file surfaces instead of plotting garbage. csv.Reader enforces a
+// uniform field count, so every data row lines up with the header.
+func Read(r io.Reader) (*Recording, error) {
+	rows, err := csv.NewReader(r).ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("recorder: read csv: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, errors.New("recorder: empty recording")
+	}
+	header := rows[0]
+	if len(header) < 2 || header[0] != headerTimestamp {
+		return nil, fmt.Errorf("recorder: unexpected header %v", header)
+	}
+	cols := header[1:]
+	rec := &Recording{Columns: cols, Series: make([][]float64, len(cols))}
+	for i, row := range rows[1:] {
+		ts, err := time.Parse(timestampLayout, row[0])
+		if err != nil {
+			return nil, fmt.Errorf("recorder: row %d timestamp: %w", i+1, err)
+		}
+		rec.Timestamps = append(rec.Timestamps, ts)
+		for c := range cols {
+			v, err := strconv.ParseFloat(row[c+1], sampleBits)
+			if err != nil {
+				return nil, fmt.Errorf("recorder: row %d %s: %w", i+1, cols[c], err)
+			}
+			rec.Series[c] = append(rec.Series[c], v)
+		}
+	}
+	return rec, nil
+}
