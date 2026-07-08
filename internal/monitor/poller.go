@@ -22,7 +22,7 @@ type Collector interface {
 type Poller struct {
 	interval   time.Duration
 	collectors []Collector
-	onTick     func()
+	onTick     []func()
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -39,15 +39,16 @@ func NewPoller(interval time.Duration, collectors ...Collector) *Poller {
 	}
 }
 
-// OnTick registers a callback invoked once after every collection pass —
+// OnTick registers an observer invoked once after every collection pass —
 // including the immediate one on Start — so the data and any reaction to it
-// (e.g. a UI redraw) share a single clock. Without this, a separate ticker on
-// another goroutine drifts against the poll ticker and the two beat against
-// each other, producing uneven update cadence. Call before Start; the callback
-// runs on the poller goroutine, so any UI work inside it must be marshalled
-// onto the UI thread by the callback itself.
+// (e.g. a UI redraw, a threshold watcher) share a single clock. Without this, a
+// separate ticker on another goroutine drifts against the poll ticker and the
+// two beat against each other, producing uneven update cadence. Observers fire
+// in registration order. Call before Start; each runs on the poller goroutine,
+// so any UI work inside it must be marshalled onto the UI thread by the
+// observer itself.
 func (p *Poller) OnTick(fn func()) {
-	p.onTick = fn
+	p.onTick = append(p.onTick, fn)
 }
 
 // Start launches the polling goroutine. It collects once immediately so the
@@ -102,12 +103,12 @@ func (p *Poller) run(ctx context.Context, done chan struct{}) {
 	}
 }
 
-// tick performs one collection pass and then fires the registered callback, so
-// observers react exactly once per pass, right after fresh data has landed.
+// tick performs one collection pass and then fires every registered observer,
+// so each reacts exactly once per pass, right after fresh data has landed.
 func (p *Poller) tick(ctx context.Context) {
 	p.collectAll(ctx)
-	if p.onTick != nil {
-		p.onTick()
+	for _, fn := range p.onTick {
+		fn()
 	}
 }
 

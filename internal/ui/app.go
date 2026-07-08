@@ -228,6 +228,22 @@ func Run(version string) {
 	// fyne.Do (RingBuffer reads are concurrency-safe; touching the canvas is not).
 	poller := monitor.NewPoller(pollInterval, collectors...)
 	poller.OnTick(func() { fyne.Do(refresh) })
+
+	// Threshold notifications (BZS253-75): a pure, Fyne-free watcher reads the
+	// same live values the charts read and sends a native OS notification the
+	// tick usage crosses up through a user-set threshold, re-arming when it
+	// drops back below. Registered as a second OnTick observer — no new
+	// collector, no Run() wiring beyond this. SendNotification is safe off the
+	// UI goroutine, so unlike the redraw it needs no fyne.Do.
+	watcher := newThresholdWatcher(prefs, thresholdReaders{
+		cpu:    cpuUsageReader(cpu),
+		memory: memUsageReader(memory),
+		disk:   diskUsageReader(diskCol),
+	}, func(title, body string) {
+		a.SendNotification(fyne.NewNotification(title, body))
+	})
+	poller.OnTick(watcher.tick)
+
 	poller.Start(ctx)
 
 	// One teardown path, shared by the window's close button and a self-update
@@ -475,3 +491,69 @@ func procStatusOf(s monitor.ProcessState) procStatus {
 // Memory tabs' top-process tables.
 func byCPUDesc(a, b monitor.ProcessInfo) bool    { return a.CPUPercent > b.CPUPercent }
 func byMemoryDesc(a, b monitor.ProcessInfo) bool { return a.MemoryBytes > b.MemoryBytes }
+
+// The three usage readers below feed the threshold watcher (BZS253-75) from the
+// same collectors the charts read; each returns ok=false when its collector
+// failed to start or hasn't produced a sample yet, so the watcher skips the rule
+// rather than firing on a zero. They live in the composition root because it is
+// the only place that knows the collector concretes.
+
+// lastSample returns the most recent value of a usage history, false when empty.
+func lastSample(v []float64) (float64, bool) {
+	if len(v) == 0 {
+		return 0, false
+	}
+	return v[len(v)-1], true
+}
+
+// cpuUsageReader reads the latest overall-CPU percentage.
+func cpuUsageReader(c *monitor.CPUCollector) usageReader {
+	return func() (float64, bool) {
+		if c == nil {
+			return 0, false
+		}
+		return lastSample(c.Overall())
+	}
+}
+
+// memUsageReader reads current memory use as a percentage of total.
+func memUsageReader(c *monitor.MemoryCollector) usageReader {
+	return func() (float64, bool) {
+		if c == nil {
+			return 0, false
+		}
+		used, total := c.Used(), c.Total()
+		if len(used) == 0 || total == 0 {
+			return 0, false
+		}
+		return usagePercent(float64(used[len(used)-1]), total), true
+	}
+}
+
+// diskUsageReader reads the busiest volume's used percentage — matching the
+// Overview disk panel's "most-used volume" choice (BZS253-65).
+func diskUsageReader(c *monitor.DiskCollector) usageReader {
+	return func() (float64, bool) {
+		if c == nil {
+			return 0, false
+		}
+		return mostUsedPercent(c.Usage())
+	}
+}
+
+// mostUsedPercent returns the highest used percentage across the volumes, false
+// when none has real capacity.
+func mostUsedPercent(parts []monitor.PartitionUsage) (float64, bool) {
+	var top float64
+	found := false
+	for _, p := range parts {
+		if p.Total == 0 {
+			continue
+		}
+		if pct := usagePercent(float64(p.Used), p.Total); pct > top {
+			top = pct
+		}
+		found = true
+	}
+	return top, found
+}

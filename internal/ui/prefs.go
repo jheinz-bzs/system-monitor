@@ -50,7 +50,26 @@ const (
 	// defaultMinimizeToTray is off: closing the window quits as it always has
 	// until the user opts into hide-to-tray (BZS253-76).
 	defaultMinimizeToTray = false
+	// Threshold-alert defaults (BZS253-75): every alert ships off, so a fresh
+	// install never surprises the user with a toast. The threshold default
+	// applies only once an alert is enabled; it sits within
+	// [alertThresholdMin, alertThresholdMax], the range the settings entry accepts.
+	defaultAlertEnabled   = false
+	defaultAlertThreshold = 90
 )
+
+// alertPrefKeys is the on-disk enable/threshold key pair for one metric's
+// threshold alert (BZS253-75).
+type alertPrefKeys struct{ enabled, threshold string }
+
+// alertKey maps each metric to its persisted keys. Kept here with prefKey so
+// this file stays the single home for raw pref strings; keep the values stable
+// across releases or a stored alert silently resets to its default.
+var alertKey = map[thresholdMetric]alertPrefKeys{
+	thresholdCPU:    {enabled: "cpuAlertEnabled", threshold: "cpuAlertThreshold"},
+	thresholdMemory: {enabled: "memAlertEnabled", threshold: "memAlertThreshold"},
+	thresholdDisk:   {enabled: "diskAlertEnabled", threshold: "diskAlertThreshold"},
+}
 
 // pollSecondsAllowed is the set of sampling cadences the settings UI offers, in
 // seconds. A stored value outside this set falls back to the default, so a
@@ -171,3 +190,25 @@ func (s settings) lastSeenVersion() string {
 // dismissed (or recorded on first install), suppressing the page until the next
 // version change.
 func (s settings) setLastSeenVersion(v string) { s.store.SetString(prefKey.LastSeenVersion, v) }
+
+// alertEnabled reports whether the metric's threshold notification is on
+// (BZS253-75). Defaults off, so no alert fires until the user opts in.
+func (s settings) alertEnabled(m thresholdMetric) bool {
+	return s.store.BoolWithFallback(alertKey[m].enabled, defaultAlertEnabled)
+}
+
+// setAlertEnabled persists the metric's alert toggle.
+func (s settings) setAlertEnabled(m thresholdMetric, on bool) {
+	s.store.SetBool(alertKey[m].enabled, on)
+}
+
+// alertThreshold is the usage percentage at which the metric's alert fires. An
+// unset key yields the shipped default.
+func (s settings) alertThreshold(m thresholdMetric) int {
+	return s.store.IntWithFallback(alertKey[m].threshold, defaultAlertThreshold)
+}
+
+// setAlertThreshold persists the metric's threshold percentage.
+func (s settings) setAlertThreshold(m thresholdMetric, v int) {
+	s.store.SetInt(alertKey[m].threshold, v)
+}
