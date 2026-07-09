@@ -22,6 +22,7 @@ type iconSet struct {
 	Connections fyne.Resource
 	Settings    fyne.Resource
 	Diamond     fyne.Resource // title-bar brand mark
+	Check       fyne.Resource // table checkbox mark
 }
 
 var icon = iconSet{
@@ -35,4 +36,5 @@ var icon = iconSet{
 	Connections: resource("icons/connections.svg"),
 	Settings:    resource("icons/settings.svg"),
 	Diamond:     resource("icons/diamond.svg"),
+	Check:       resource("icons/check.svg"),
 }
