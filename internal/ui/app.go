@@ -43,6 +43,11 @@ func historySpan() time.Duration {
 
 const appName = "System Monitor"
 
+// appID is the Fyne unique app ID — it keys Preferences storage and is the
+// Windows AppUserModelID on toast notifications, so changing it loses saved
+// settings.
+const appID = "com.josephheinz.systemmonitor"
+
 // Tray menu item labels (BZS253-76).
 const (
 	labelTrayShow = "Show"
@@ -54,7 +59,8 @@ const (
 // (main.version); a non-release value ("dev") disables the GitHub self-update
 // check (BZS253-71).
 func Run(version string) {
-	a := app.NewWithID("com.josephheinz.systemmonitor")
+	a := app.NewWithID(appID)
+	registerNotificationDisplayName()
 
 	// Load persisted preferences before any UI or collector is built: the theme
 	// palette, memory cap, and poll cadence are all read once here and applied at
