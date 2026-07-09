@@ -83,6 +83,12 @@ type thresholdRule struct {
 	threshold float64   // threshold at the last evaluation, for the notification body
 }
 
+// enabled reports whether this metric's alert is switched on in Settings, read
+// live each tick so a toggle takes effect immediately.
+func (r *thresholdRule) enabled() bool {
+	return r.prefs.alertEnabled(r.metric)
+}
+
 // crossedUp reports whether this tick is an up-crossing that should notify:
 // usage at or above the threshold when the rule was previously armed, and no
 // notification sent within the cooldown. It stays silent while usage remains
@@ -90,7 +96,7 @@ type thresholdRule struct {
 // sustained spike notifies exactly once and an oscillating one at most once
 // per notifyCooldown.
 func (r *thresholdRule) crossedUp(now time.Time) bool {
-	if !r.prefs.alertEnabled(r.metric) {
+	if !r.enabled() {
 		r.firing = false
 		return false
 	}
