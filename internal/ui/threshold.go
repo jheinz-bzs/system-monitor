@@ -54,15 +54,20 @@ type thresholdReaders struct {
 // the test supplies a recorder, so the watcher needs no running app.
 type notifyFunc func(title, body string)
 
-// thresholdRule is one metric's watch state: its reader, the persisted config,
-// and the edge-trigger latch. crossedUp holds the entire notify-once policy.
+// thresholdRule is one metric's watch state: its reader, the prefs it reads
+// live, and the edge-trigger latch. crossedUp holds the entire notify-once
+// policy. Config is read from prefs every tick — not cached at construction —
+// so a Settings change takes effect immediately and the notification body
+// always names the threshold that actually fired (Fyne preferences reads are
+// in-memory, so per-tick reads cost nothing).
 type thresholdRule struct {
+	metric    thresholdMetric
 	label     string
 	read      usageReader
-	enabled   bool
-	threshold float64
+	prefs     settings
 	firing    bool    // true once notified, until usage drops back below (re-arm)
 	value     float64 // last usage read, for the notification body
+	threshold float64 // threshold at the last evaluation, for the notification body
 }
 
 // crossedUp reports whether this tick is an up-crossing that should notify:
@@ -70,7 +75,7 @@ type thresholdRule struct {
 // silent while usage remains high (already firing) and re-arms the moment usage
 // falls back below, so each sustained spike notifies exactly once.
 func (r *thresholdRule) crossedUp() bool {
-	if !r.enabled {
+	if !r.prefs.alertEnabled(r.metric) {
 		r.firing = false
 		return false
 	}
@@ -79,6 +84,7 @@ func (r *thresholdRule) crossedUp() bool {
 		return false
 	}
 	r.value = v
+	r.threshold = float64(r.prefs.alertThreshold(r.metric))
 	if v < r.threshold {
 		r.firing = false
 		return false
@@ -97,15 +103,15 @@ type thresholdWatcher struct {
 	notify notifyFunc
 }
 
-// newThresholdWatcher builds the watcher from persisted settings and the live
-// usage readers. Every rule is created; a disabled one simply never fires.
+// newThresholdWatcher builds the watcher over the persisted settings and the
+// live usage readers. Every rule is created; a disabled one simply never fires.
 func newThresholdWatcher(prefs settings, r thresholdReaders, notify notifyFunc) *thresholdWatcher {
 	rule := func(m thresholdMetric, read usageReader) *thresholdRule {
 		return &thresholdRule{
-			label:     metricLabel[m],
-			read:      read,
-			enabled:   prefs.alertEnabled(m),
-			threshold: float64(prefs.alertThreshold(m)),
+			metric: m,
+			label:  metricLabel[m],
+			read:   read,
+			prefs:  prefs,
 		}
 	}
 	return &thresholdWatcher{

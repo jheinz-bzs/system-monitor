@@ -42,8 +42,10 @@ const (
 	helpSettingAutoUpdate = "Install updates on next launch · off by default"
 	helpSettingTray       = "Close hides to the tray · next launch · off by default"
 	// Shared by the CPU and memory alert rows (disk names its volume choice).
-	helpSettingAlert     = "Notify above the threshold · next launch · off by default"
-	helpSettingDiskAlert = "Busiest volume above the threshold · next launch · off by default"
+	// Unlike the other rows, alert changes apply immediately — the watcher
+	// reads these prefs live on every tick (threshold.go).
+	helpSettingAlert     = "Notify above the threshold · off by default"
+	helpSettingDiskAlert = "Busiest volume above the threshold · off by default"
 
 	// System-section row labels (BZS253-74): static, read-once machine facts.
 	labelSysHostname = "Hostname"
@@ -276,8 +278,8 @@ func (v *settingsView) trayControl() fyne.CanvasObject {
 
 // alertControl is one metric's threshold-alert row control (BZS253-75): an
 // enable chip beside a numeric percentage entry and its "%" suffix. Both write
-// straight through to settings; the watcher reads them at next launch (app.go),
-// like every other preference.
+// straight through to settings; the watcher reads them live each tick
+// (threshold.go), so changes apply immediately.
 func (v *settingsView) alertControl(m thresholdMetric) fyne.CanvasObject {
 	toggle := newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.alertEnabled(m),
 		func(on bool) { v.prefs.setAlertEnabled(m, on) })
