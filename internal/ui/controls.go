@@ -9,7 +9,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -290,3 +292,91 @@ func (r *toggleChipRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *toggleChipRenderer) Destroy() {}
+
+// Session tracking control labels (BZS253-77): the toggle reads "Record" idle
+// and "Stop" while a session is active.
+const (
+	labelRecordStart = "Record"
+	labelRecordStop  = "Stop"
+)
+
+// recordDotGap is the gap between the record control's state dot and its label,
+// matching the status bar's dot-to-label spacing.
+const recordDotGap = statusDotGap // 4
+
+// recordControl is the single start/stop toggle for session tracking mode
+// (BZS253-77), sitting in the status bar. Idle it shows a muted dot beside
+// "Record"; while a session is active the dot turns red and the label reads
+// "Stop" — the clear "recording" affordance the card calls for. Tapping invokes
+// onToggle; the composition root opens a save dialog and starts the recorder, or
+// stops the active session. Its painted state is read from recording() so it
+// tracks the session even when start is deferred behind an async save dialog;
+// refresh re-syncs it once per poll tick.
+type recordControl struct {
+	widget.BaseWidget
+
+	onToggle  func()
+	recording func() bool
+
+	dot    *canvas.Circle
+	dotObj fyne.CanvasObject
+	label  *canvas.Text
+}
+
+var (
+	_ fyne.Tappable      = (*recordControl)(nil)
+	_ desktop.Cursorable = (*recordControl)(nil)
+)
+
+// newRecordControl builds the toggle. recording reports whether a session is
+// active; onToggle is invoked on tap. Both canvas objects are built here (once)
+// so refresh can mutate them directly, the same pattern the status bar uses.
+func newRecordControl(recording func() bool, onToggle func()) *recordControl {
+	c := &recordControl{
+		onToggle:  onToggle,
+		recording: recording,
+		label:     newMeta(labelRecordStart),
+	}
+	// Reuse the status bar's dot helper: same geometry, and it returns the circle
+	// so refresh can recolor it (dry).
+	c.dot, c.dotObj = coloredDot(palette.Text3)
+	c.ExtendBaseWidget(c)
+	c.apply()
+	return c
+}
+
+// Tapped implements fyne.Tappable.
+func (c *recordControl) Tapped(_ *fyne.PointEvent) {
+	if c.onToggle != nil {
+		c.onToggle()
+	}
+}
+
+// Cursor implements desktop.Cursorable — a pointer, as over other controls.
+func (c *recordControl) Cursor() desktop.Cursor { return desktop.PointerCursor }
+
+func (c *recordControl) CreateRenderer() fyne.WidgetRenderer {
+	row := container.New(layout.NewCustomPaddedHBoxLayout(recordDotGap),
+		vCenter(c.dotObj), vCenter(c.label))
+	return widget.NewSimpleRenderer(row)
+}
+
+// apply paints the current session state onto the dot and label.
+func (c *recordControl) apply() {
+	if c.recording != nil && c.recording() {
+		c.dot.FillColor = palette.Red
+		c.label.Text = labelRecordStop
+		return
+	}
+	c.dot.FillColor = palette.Text3
+	c.label.Text = labelRecordStart
+}
+
+// refresh re-reads the session state and repaints, so the affordance tracks a
+// start/stop within one poll tick. Touches the canvas — the caller (status bar)
+// runs on the UI goroutine.
+func (c *recordControl) refresh() {
+	c.apply()
+	c.dot.Refresh()
+	c.label.Refresh()
+}

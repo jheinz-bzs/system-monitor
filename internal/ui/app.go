@@ -8,6 +8,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -18,9 +19,11 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/systray"
+	"github.com/ncruces/zenity"
 
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/monitor"
+	"github.com/josephheinz/system-monitor/internal/recorder"
 	"github.com/josephheinz/system-monitor/internal/series"
 	"github.com/josephheinz/system-monitor/internal/update"
 )
@@ -229,6 +232,16 @@ func Run(version string) {
 		}()
 	}
 
+	// Session tracking mode (BZS253-77): a recorder appends one CSV row per poll
+	// tick while a user-started session is active — an explicit, user-initiated
+	// export, distinct from the ambient in-memory history the no-persistence rule
+	// governs (ADR-012). Built here (the composition root) from the same live
+	// sources the charts read; the toggle opens a save dialog and the recorder's
+	// data path stays Fyne-free. Registered as a third OnTick observer below.
+	rec := recorder.New(recorderColumns(src)...)
+	src.recording = rec.Recording
+	src.toggleRecord = func() { toggleRecording(rec) }
+
 	content, refresh := buildContent(src)
 
 	// The shell draws its own chrome flush to the window edges, so suppress
@@ -276,6 +289,11 @@ func Run(version string) {
 	})
 	poller.OnTick(watcher.tick)
 
+	// Session tracking (BZS253-77): the recorder writes one row per tick while
+	// active. A third OnTick observer — no new collector, no Run() wiring beyond
+	// this. Tick is inert until a session starts, so it costs nothing when idle.
+	poller.OnTick(rec.Tick)
+
 	poller.Start(ctx)
 
 	// One teardown path, shared by the window's close button and a self-update
@@ -283,6 +301,12 @@ func Run(version string) {
 	shutdown = func() {
 		cancel()
 		poller.Stop()
+		// Flush and close any in-progress tracking session so a quit mid-recording
+		// still yields a complete file. No-op when not recording. After poller.Stop
+		// so no Tick races the close.
+		if err := rec.Stop(); err != nil {
+			log.Printf("stop recording: %v", err)
+		}
 		// a.Quit, not w.Close: with a system tray active Fyne keeps the app
 		// running after the last window closes, so closing the window would
 		// leave a zombie process behind the tray icon (BZS253-76). Quit stops
@@ -634,4 +658,115 @@ func mostUsedPercent(parts []monitor.PartitionUsage) (float64, bool) {
 		found = true
 	}
 	return top, found
+}
+
+// Session tracking mode (BZS253-77). The recorder wiring below lives in the
+// composition root because it is the only place that knows the live sources and
+// the window the save dialog needs.
+
+// CSV column headers, in row order after the recorder's fixed timestamp column.
+// Extracted as consts (no-string-literals): they are the file's stable schema,
+// not one-off prose. Units are in the name so a bare CSV is self-describing.
+const (
+	colCPUPct    = "cpu_pct"
+	colMemUsed   = "mem_used_bytes"
+	colMemTotal  = "mem_total_bytes"
+	colSwapUsed  = "swap_used_bytes"
+	colNetRx     = "net_rx_bytes_per_s"
+	colNetTx     = "net_tx_bytes_per_s"
+	colDiskRead  = "disk_read_bytes_per_s"
+	colDiskWrite = "disk_write_bytes_per_s"
+	colProcCount = "proc_count"
+)
+
+// Default save-dialog filename: a session stamp so successive recordings don't
+// collide. The stamp is a Go reference-time layout, not a magic number.
+const (
+	recordFilePrefix = "tracking-"
+	recordFileExt    = ".csv"
+	recordFileStamp  = "20060102-150405"
+)
+
+// Native save-dialog chrome (zenity).
+const (
+	recordDialogTitle   = "Save tracking session"
+	recordFilterName    = "CSV files"
+	recordFilterPattern = "*.csv"
+)
+
+// recorderColumns builds the tracking-mode column set from the same live sources
+// the charts read, in a fixed order. A source that isn't wired (its collector
+// failed to start) contributes a column that records 0, so the CSV keeps a
+// stable header regardless of which collectors came up. rx/tx map to
+// download/upload; disk rates come from the I/O series.
+func recorderColumns(src buildSources) []recorder.Column {
+	latest := func(s series.Source) func() float64 {
+		return func() float64 {
+			if s == nil {
+				return 0
+			}
+			return latestSample(s.Values())
+		}
+	}
+	constant := func(v uint64) func() float64 {
+		return func() float64 { return float64(v) }
+	}
+	return []recorder.Column{
+		{Header: colCPUPct, Read: latest(src.charts[tabCPU])},
+		{Header: colMemUsed, Read: latest(src.mem.used)},
+		{Header: colMemTotal, Read: constant(src.mem.total)},
+		{Header: colSwapUsed, Read: latest(src.swap.used)},
+		{Header: colNetRx, Read: latest(src.net.download)},
+		{Header: colNetTx, Read: latest(src.net.upload)},
+		{Header: colDiskRead, Read: latest(src.diskIO.read)},
+		{Header: colDiskWrite, Read: latest(src.diskIO.write)},
+		{Header: colProcCount, Read: latest(src.procCount)},
+	}
+}
+
+// toggleRecording is the status-bar toggle's action: stop an active session, or
+// start a new one behind a native OS save dialog. zenity opens the platform's
+// real file picker; the chosen path is opened here and handed to the recorder.
+// The dialog blocks, so it runs on its own goroutine to avoid freezing the UI
+// thread that dispatched the tap. A cancel leaves the session idle; genuine
+// errors are logged, not surfaced — a failed start stays off, matching the rest
+// of the app's degrade-quietly chrome.
+func toggleRecording(rec *recorder.Recorder) {
+	if rec.Recording() {
+		if err := rec.Stop(); err != nil {
+			log.Printf("stop recording: %v", err)
+		}
+		return
+	}
+	go func() {
+		path, err := zenity.SelectFileSave(
+			zenity.Title(recordDialogTitle),
+			zenity.ConfirmOverwrite(),
+			zenity.Filename(recordingFileName()),
+			zenity.FileFilters{{Name: recordFilterName, Patterns: []string{recordFilterPattern}}},
+		)
+		if err != nil {
+			if !errors.Is(err, zenity.ErrCanceled) {
+				log.Printf("save dialog: %v", err)
+			}
+			return // cancelled or errored: stay idle
+		}
+		f, err := os.Create(path)
+		if err != nil {
+			log.Printf("create recording file: %v", err)
+			return
+		}
+		if startErr := rec.Start(f); startErr != nil {
+			log.Printf("start recording: %v", startErr)
+			// Recorder didn't adopt it; close so the handle doesn't leak.
+			if closeErr := f.Close(); closeErr != nil {
+				log.Printf("close after failed start: %v", closeErr)
+			}
+		}
+	}()
+}
+
+// recordingFileName is the default name offered in the save dialog.
+func recordingFileName() string {
+	return recordFilePrefix + time.Now().Format(recordFileStamp) + recordFileExt
 }
