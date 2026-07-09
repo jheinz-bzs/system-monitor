@@ -41,6 +41,7 @@ const procTableRowPool = 48
 // flex name column absorbs the wider pane). All are off-grid component
 // dimensions, not spacing-scale steps.
 const (
+	procColCheckW  = 36  // px; selection checkbox (tableCheckSize + both cell insets)
 	procColPIDW    = 74  // px; PID
 	procColNameW   = 195 // px; process name
 	procColUserW   = 74  // px; owning user
@@ -401,10 +402,15 @@ func memColumns(total uint64) []procColumn {
 	)
 }
 
-// allColumns is the Processes tab's full column set: identity, CPU%, Mem, and
-// the status pill.
-func allColumns() []procColumn {
-	return append(identityColumns(),
+// allColumns is the Processes tab's full column set: the selection checkbox
+// (its cells read the model's live selection through sel), identity, CPU%,
+// Mem, and the status pill.
+func allColumns(sel func(PID) bool) []procColumn {
+	check := procColumn{
+		tableColumn: tableColumn{width: procColCheckW, kind: columnCheck},
+		cell:        func(r processRow) tableCell { return tableCell{checked: sel(r.pid)} },
+	}
+	return append(append([]procColumn{check}, identityColumns()...),
 		procColumn{tableColumn: tableColumn{header: colHeaderCPU, width: procColCPUW, align: fyne.TextAlignTrailing}, sort: sortByCPU, sortable: true, cell: cpuPctCell},
 		procColumn{tableColumn: tableColumn{header: colHeaderMem, width: procColMemW, align: fyne.TextAlignTrailing}, sort: sortByMem, sortable: true, cell: memBytesCell},
 		procColumn{tableColumn: tableColumn{header: colHeaderStatus, width: procColStatusW, kind: columnPill}, sort: sortByStatus, sortable: true, cell: statusCell},
@@ -471,14 +477,13 @@ type processTableModel struct {
 	highUsage int
 	users     []string
 
-	// Selection (Processes tab only; selectable false disables it), tracked by
-	// PID — the first-class identifier — then re-resolved to a row index against
-	// each snapshot. hasSelected disambiguates "none" (PID 0 is a real
-	// pseudo-process on Windows); selRow is noTableRow when nothing is selected.
-	selectable  bool
-	selected    PID
-	hasSelected bool
-	selRow      int
+	// Selection (Processes tab only; selectable false disables it), tracked as
+	// a set of PIDs — the first-class identifier — and re-resolved against each
+	// snapshot: a selected process that disappears (exited or filtered out) is
+	// pruned, so a mass kill can never hit a recycled PID. A set (not a single
+	// PID) because the check column multi-selects for the mass-kill action.
+	selectable bool
+	selected   map[PID]struct{}
 }
 
 // newCPUTableSource builds the CPU tab's model: top-N by CPU, CPU% descending,
@@ -490,7 +495,6 @@ func newCPUTableSource(src allProcessSource) *processTableModel {
 		cols:            cpuColumns(),
 		limit:           topCPUProcessLimit,
 		metric:          sortByCPU,
-		selRow:          noTableRow,
 	}
 }
 
@@ -503,21 +507,22 @@ func newMemTableSource(src allProcessSource, total uint64) *processTableModel {
 		cols:            memColumns(total),
 		limit:           topMemProcessLimit,
 		metric:          sortByMem,
-		selRow:          noTableRow,
 	}
 }
 
 // newAllProcessTableSource builds the Processes tab's model: the full list,
-// filterable and selectable, CPU% descending by default.
+// filterable and selectable, CPU% descending by default. The check column's
+// cells read the model's own selection set, so cols is wired after construction.
 func newAllProcessTableSource(src allProcessSource) *processTableModel {
-	return &processTableModel{
+	m := &processTableModel{
 		sortablePIDRows: sortablePIDRows{sortCol: sortByCPU, sortDir: sortDescending},
 		src:             src,
-		cols:            allColumns(),
 		filterable:      true,
 		selectable:      true,
-		selRow:          noTableRow,
+		selected:        map[PID]struct{}{},
 	}
+	m.cols = allColumns(m.isSelected)
+	return m
 }
 
 // Snapshot shapes the live process list into table cells, fresh on every
@@ -559,11 +564,6 @@ func topN(rows []processRow, metric procSortColumn, n int) []processRow {
 	}
 	return rows
 }
-
-// highlightedRow implements tableRowHighlighter: the selected row's index in
-// the last snapshot (noTableRow when nothing is selected or the table doesn't
-// select).
-func (m *processTableModel) highlightedRow() int { return m.selRow }
 
 // tally caches the page-head readout and the user-filter options from the
 // unfiltered list, so both describe the whole machine regardless of the
@@ -637,21 +637,24 @@ func matchesText(r processRow, needle string) bool {
 		strings.Contains(strconv.Itoa(int(r.pid)), needle)
 }
 
-// indexRows records each row's PID and re-resolves the selection against the
-// new row set. A selected process that disappeared — exited or filtered out —
-// clears the selection, so a later kill can never hit a recycled PID.
+// indexRows records each row's PID and prunes the selection to PIDs still in
+// the new row set. A selected process that disappeared — exited or filtered
+// out — drops out, so a later mass kill can never hit a recycled PID.
 func (m *processTableModel) indexRows(rows []processRow) {
 	m.recordPIDs(rows)
 
-	m.selRow = noTableRow
-	if !m.hasSelected {
+	if len(m.selected) == 0 {
 		return
 	}
-	if i := m.rowIndexOf(m.selected); i != noTableRow {
-		m.selRow = i
-		return
+	present := make(map[PID]struct{}, len(m.rowPIDs))
+	for _, pid := range m.rowPIDs {
+		present[pid] = struct{}{}
 	}
-	m.selected, m.hasSelected = 0, false
+	for pid := range m.selected {
+		if _, ok := present[pid]; !ok {
+			delete(m.selected, pid)
+		}
+	}
 }
 
 // setFilter sets the live free-text filter; the next Snapshot applies it.
@@ -663,41 +666,75 @@ func (m *processTableModel) setUserFilter(u string) { m.userFilter = u }
 // setStatusFilter restricts rows to one status; empty shows any.
 func (m *processTableModel) setStatusFilter(st procStatus) { m.statusFilter = st }
 
-// selectRow selects the process at row i of the last snapshot.
-func (m *processTableModel) selectRow(i int) {
-	if i < 0 || i >= len(m.rowPIDs) {
-		return
-	}
-	m.selected, m.hasSelected = m.rowPIDs[i], true
-	m.selRow = i
+// isSelected reports whether pid is in the selection — the check column's
+// cell state.
+func (m *processTableModel) isSelected(pid PID) bool {
+	_, ok := m.selected[pid]
+	return ok
 }
 
-// toggleRow selects the process at row i, or clears the selection when that row
-// is already selected — so a second tap on a selected row deselects it.
+// toggleRow adds the process at row i of the last snapshot to the selection,
+// or removes it when already selected — the whole row is the checkbox's
+// hit-target.
 func (m *processTableModel) toggleRow(i int) {
-	if m.hasSelected && i >= 0 && i < len(m.rowPIDs) && m.rowPIDs[i] == m.selected {
+	pid, ok := m.pidAt(i)
+	if !ok {
+		return
+	}
+	if m.isSelected(pid) {
+		delete(m.selected, pid)
+		return
+	}
+	m.selected[pid] = struct{}{}
+}
+
+// clearSelection drops the whole selection.
+func (m *processTableModel) clearSelection() {
+	clear(m.selected)
+}
+
+// allVisibleSelected reports whether every row of the last snapshot is
+// selected — the header checkbox's state (false when there are no rows).
+func (m *processTableModel) allVisibleSelected() bool {
+	return len(m.rowPIDs) > 0 && len(m.selected) == len(m.rowPIDs)
+}
+
+// toggleSelectAllVisible selects every row of the last snapshot, or clears the
+// selection when all of them already are — the header checkbox's tap. The
+// selection only ever holds visible PIDs (indexRows prunes), so the length
+// comparison suffices.
+func (m *processTableModel) toggleSelectAllVisible() {
+	if m.allVisibleSelected() {
 		m.clearSelection()
 		return
 	}
-	m.selectRow(i)
+	for _, pid := range m.rowPIDs {
+		m.selected[pid] = struct{}{}
+	}
 }
 
-// clearSelection drops any active selection.
-func (m *processTableModel) clearSelection() {
-	m.selected, m.hasSelected = 0, false
-	m.selRow = noTableRow
-}
-
-// selectPID selects the given PID. Its row index resolves on the next Snapshot
+// selectPID makes pid the sole selection — cross-tab navigation lands on
+// exactly the jumped-to process. Its row index resolves on the next Snapshot
 // (refresh the table before reading rowIndexOf).
 func (m *processTableModel) selectPID(pid PID) {
-	m.selected, m.hasSelected = pid, true
+	clear(m.selected)
+	m.selected[pid] = struct{}{}
 }
 
-// selectedPID returns the selected PID, false when nothing is selected.
-func (m *processTableModel) selectedPID() (PID, bool) {
-	return m.selected, m.hasSelected
+// selectedPIDs returns the selected PIDs in display order (the kill loop's
+// input; display order keeps it deterministic).
+func (m *processTableModel) selectedPIDs() []PID {
+	out := make([]PID, 0, len(m.selected))
+	for _, pid := range m.rowPIDs {
+		if m.isSelected(pid) {
+			out = append(out, pid)
+		}
+	}
+	return out
 }
+
+// selectionCount reports how many processes are selected (the Kill label).
+func (m *processTableModel) selectionCount() int { return len(m.selected) }
 
 // newCPUProcessTable builds the CPU tab's top-processes table, sized to its rows
 // so a short pane scrolls. onRowTap fires with the tapped data-row index (the
