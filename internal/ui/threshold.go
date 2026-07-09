@@ -21,7 +21,7 @@ import (
 // a stack of already-stale alerts. At most one notification per cooldown per
 // metric keeps the queue empty; crossings inside the window still latch and
 // re-arm, they just don't toast.
-const notifyCooldown = time.Minute
+const notifyCooldown = 15 * time.Second
 
 // thresholdMetric identifies which resource a rule watches. It is the typed key
 // for the persisted enable/threshold preference pair (prefs.go) and selects the
