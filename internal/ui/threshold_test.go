@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestThresholdWatcherEdgeTrigger feeds a rising-then-falling series through the
@@ -25,6 +26,9 @@ func TestThresholdWatcherEdgeTrigger(t *testing.T) {
 		memory: func() (float64, bool) { return 0, true },
 		disk:   func() (float64, bool) { return 0, true },
 	}, func(_, _ string) { fires++ })
+	// Advance the clock a full cooldown per tick so this test exercises the
+	// edge trigger alone; the cooldown has its own test below.
+	w.now = fakeClock(notifyCooldown)
 
 	for ; i < len(series); i++ {
 		w.tick()
@@ -32,6 +36,16 @@ func TestThresholdWatcherEdgeTrigger(t *testing.T) {
 
 	if fires != 2 {
 		t.Fatalf("got %d notifications, want 2 (one per up-crossing)", fires)
+	}
+}
+
+// fakeClock returns a clock that advances step per call, so tests control how
+// much wall time "passes" between ticks.
+func fakeClock(step time.Duration) func() time.Time {
+	t := time.Unix(0, 0)
+	return func() time.Time {
+		t = t.Add(step)
+		return t
 	}
 }
 
@@ -55,6 +69,44 @@ func TestThresholdWatcherDisabledAndUnavailable(t *testing.T) {
 
 	if fires != 0 {
 		t.Fatalf("got %d notifications, want 0 (disabled + unavailable)", fires)
+	}
+}
+
+// TestThresholdWatcherCooldown: usage oscillating across the threshold — an
+// up-crossing every other tick — must not queue a toast per crossing. Only the
+// first crossing notifies inside the cooldown window; once the cooldown
+// elapses, the next crossing notifies again.
+func TestThresholdWatcherCooldown(t *testing.T) {
+	// Alternates below/above every tick: crossings at ticks 1, 3, 5, ...
+	series := []float64{50, 95, 50, 95, 50, 95}
+	i := 0
+	prefs := newSettings(newFakePrefs())
+	prefs.setAlertEnabled(thresholdCPU, true)
+	prefs.setAlertThreshold(thresholdCPU, 90)
+
+	var fires int
+	w := newThresholdWatcher(prefs, thresholdReaders{
+		cpu:    func() (float64, bool) { return series[i%len(series)], true },
+		memory: func() (float64, bool) { return 0, true },
+		disk:   func() (float64, bool) { return 0, true },
+	}, func(_, _ string) { fires++ })
+	w.now = fakeClock(time.Second) // 1s of wall time per tick, like the poller
+
+	for ; i < len(series); i++ {
+		w.tick()
+	}
+	if fires != 1 {
+		t.Fatalf("got %d notifications inside the cooldown, want 1", fires)
+	}
+
+	// Idle past the cooldown (below threshold), then cross up once more.
+	w.now = fakeClock(notifyCooldown + time.Second)
+	i = 0 // series[0] = 50: below, re-arms and moves the clock past the cooldown
+	w.tick()
+	i = 1 // series[1] = 95: fresh crossing after the cooldown
+	w.tick()
+	if fires != 2 {
+		t.Fatalf("got %d notifications after the cooldown elapsed, want 2", fires)
 	}
 }
 
