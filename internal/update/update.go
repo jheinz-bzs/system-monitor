@@ -14,6 +14,7 @@ package update
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 )
@@ -38,10 +39,11 @@ const (
 	assetPrefix    = "system-monitor-"
 	checksumsAsset = "checksums.txt"
 	windowsExt     = ".exe"
-	// appImageExt is the Linux self-update asset suffix: the AppImage is a single
-	// self-contained file, so it swaps like a bare binary. The .deb is install-only
-	// (apt updates it), and a bare Linux binary doesn't self-update — only the
-	// AppImage does (see Supported / ADR-011).
+	// appImageExt is the asset suffix for an AppImage launch: a single
+	// self-contained file, so it swaps like a bare binary. A bare Linux binary
+	// resolves the extensionless asset instead and self-updates when its install
+	// dir is writable; the .deb is install-only (updated via apt or a re-download)
+	// — see Supported / ADR-011.
 	appImageExt = ".AppImage"
 
 	// oldSuffix parks the previous binary during a Windows swap (see swap_windows.go);
@@ -93,26 +95,53 @@ type available struct {
 
 // assetName is this platform's self-update asset name — the file the downloader
 // resolves in the release. It must match the names the release workflow produces:
-// Windows .exe, the Linux .AppImage (not the bare binary or .deb), macOS bare.
+// Windows .exe, macOS bare; Linux picks the .AppImage when launched as one and
+// the bare binary otherwise (the .deb never reaches here — Supported gates it).
 func assetName() string {
 	name := assetPrefix + runtime.GOOS + "-" + runtime.GOARCH
-	switch runtime.GOOS {
-	case goosWindows:
+	switch {
+	case runtime.GOOS == goosWindows:
 		name += windowsExt
-	case goosLinux:
+	case isAppImage():
 		name += appImageExt
 	}
 	return name
 }
 
+// isAppImage reports whether this process was launched from an AppImage.
+func isAppImage() bool {
+	return os.Getenv(envAppImage) != ""
+}
+
 // Supported reports whether in-app self-update applies to this running instance.
-// Windows and macOS always self-update; on Linux only an AppImage launch does —
-// a bare binary or a .deb install manages its own updates (apt / re-download), so
-// the updater isn't wired and no "update failed" noise is shown there.
+// Windows, macOS, and AppImage launches always self-update. A bare Linux binary
+// self-updates when its install dir is writable; a root-owned dir (the .deb's
+// /usr/bin, or any admin-installed path) gates the updater off entirely, so those
+// installs see no update affordance instead of a swap that fails on permissions
+// (ADR-011).
 func Supported() bool {
-	if runtime.GOOS == goosLinux {
-		return os.Getenv(envAppImage) != ""
+	if runtime.GOOS == goosLinux && !isAppImage() {
+		return canReplaceExecutable()
 	}
+	return true
+}
+
+// canReplaceExecutable probes whether the updater's download+rename would succeed
+// by creating (and removing) a temp file beside the running binary — the exact
+// operation install performs there.
+// ponytail: a .deb run as root probes writable and would swap the dpkg-owned
+// file; add a /usr-path guard if that ever bites.
+func canReplaceExecutable() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	f, err := os.CreateTemp(filepath.Dir(exe), assetPrefix+"probe-*")
+	if err != nil {
+		return false
+	}
+	f.Close()
+	os.Remove(f.Name())
 	return true
 }
 
