@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // TestThresholdWatcherEdgeTrigger feeds a rising-then-falling series through the
 // watcher and asserts exactly one notification per up-crossing, with a re-arm on
@@ -52,6 +55,36 @@ func TestThresholdWatcherDisabledAndUnavailable(t *testing.T) {
 
 	if fires != 0 {
 		t.Fatalf("got %d notifications, want 0 (disabled + unavailable)", fires)
+	}
+}
+
+// TestThresholdWatcherLiveConfig: a threshold change made after construction
+// applies on the next tick, and the notification body names the threshold that
+// actually fired — config is read live from prefs, never cached at startup.
+func TestThresholdWatcherLiveConfig(t *testing.T) {
+	prefs := newSettings(newFakePrefs())
+	prefs.setAlertEnabled(thresholdCPU, true)
+	prefs.setAlertThreshold(thresholdCPU, 90)
+
+	var bodies []string
+	w := newThresholdWatcher(prefs, thresholdReaders{
+		cpu:    func() (float64, bool) { return 85, true },
+		memory: func() (float64, bool) { return 0, true },
+		disk:   func() (float64, bool) { return 0, true },
+	}, func(_, body string) { bodies = append(bodies, body) })
+
+	w.tick() // 85 < 90: silent
+	if len(bodies) != 0 {
+		t.Fatalf("fired below threshold: %q", bodies)
+	}
+
+	prefs.setAlertThreshold(thresholdCPU, 80) // user lowers it mid-run
+	w.tick()                                  // 85 >= 80: fires with the new threshold
+	if len(bodies) != 1 {
+		t.Fatalf("got %d notifications after lowering threshold, want 1", len(bodies))
+	}
+	if want := "(threshold 80%)"; !strings.Contains(bodies[0], want) {
+		t.Errorf("body %q does not name the live threshold %q", bodies[0], want)
 	}
 }
 
