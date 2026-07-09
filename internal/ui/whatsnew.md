@@ -4,8 +4,12 @@
 
 Thanks for updating. Here's what changed recently.
 
-### System info
-- **Settings** now has a **System** section describing the monitored machine:
-  hostname, OS, kernel, boot time, uptime, logical cores, and logged-in users.
-- The build **Version** moved here too, alongside the rest of the machine facts.
-- These are read once at launch — static facts, no per-second refresh.
+### Threshold alerts
+- Get a native desktop notification when **CPU**, **memory**, or **disk** usage
+  crosses a threshold you set — so a spike reaches you even when the window
+  isn't in front of you.
+- Turn each alert on and set its percentage under **Settings** → the new
+  **CPU / Memory / Disk alert** rows. All three start off.
+- You're notified once when usage crosses above the line, not every second while
+  it stays high; the alert re-arms after usage drops back below.
+- The disk alert watches your busiest volume.
