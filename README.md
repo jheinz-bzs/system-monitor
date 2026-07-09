@@ -38,3 +38,7 @@ internal/
 Design artifacts (per-tab wireframes, design system, product spec) live under
 `docs/` and `.claude/`. Engineering standards are indexed in
 [docs/conventions/README.md](docs/conventions/README.md).
+
+## License
+
+[MIT](LICENSE)
