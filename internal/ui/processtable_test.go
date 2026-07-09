@@ -86,71 +86,88 @@ func TestToggleSortFlipsAndSwitchesColumns(t *testing.T) {
 func TestSelectionFollowsPIDAcrossResort(t *testing.T) {
 	s := newAllProcessTableSource(fixedProcs(testRows()))
 	s.Snapshot()            // CPU desc: 20, 30, 10
-	s.selectRow(2)          // selects PID 10
+	s.toggleRow(2)          // selects PID 10
 	s.toggleSort(sortByPID) // re-sort: 10, 20, 30
 	s.Snapshot()
 
-	if s.highlightedRow() != 0 {
-		t.Errorf("highlightedRow = %d, want 0 (PID 10 moved to the top)", s.highlightedRow())
+	if got := s.selectedPIDs(); !pidsEqual(got, []PID{10}) {
+		t.Errorf("selectedPIDs = %v, want [10]", got)
 	}
-	if pid, ok := s.selectedPID(); !ok || pid != 10 {
-		t.Errorf("selectedPID = %d,%v, want 10,true", pid, ok)
+	if got := s.rowIndexOf(10); got != 0 {
+		t.Errorf("rowIndexOf(10) = %d, want 0 (PID 10 moved to the top)", got)
 	}
 }
 
-// Tapping a row selects it; tapping the same row again clears the selection
-// (toggle-to-deselect), while tapping a different row moves the selection.
-func TestToggleRowDeselects(t *testing.T) {
+// Tapping rows accumulates a multi-selection; tapping a selected row again
+// removes just that row from it.
+func TestToggleRowAccumulatesAndDeselects(t *testing.T) {
 	s := newAllProcessTableSource(fixedProcs(testRows()))
 	s.Snapshot() // CPU desc: 20, 30, 10
 
 	s.toggleRow(0) // select PID 20
-	if pid, ok := s.selectedPID(); !ok || pid != 20 {
-		t.Fatalf("after first tap: selectedPID = %d,%v, want 20,true", pid, ok)
+	s.toggleRow(1) // add PID 30
+	if got := s.selectedPIDs(); !pidsEqual(got, []PID{20, 30}) {
+		t.Fatalf("after two taps: selectedPIDs = %v, want [20 30]", got)
 	}
 
-	s.toggleRow(0) // same row → deselect
-	if _, ok := s.selectedPID(); ok {
-		t.Error("second tap on the selected row left it selected; want cleared")
-	}
-	if s.highlightedRow() != noTableRow {
-		t.Errorf("highlightedRow = %d, want noTableRow after deselect", s.highlightedRow())
-	}
-
-	s.toggleRow(0) // re-select 20
-	s.toggleRow(1) // different row → move selection to PID 30
-	if pid, ok := s.selectedPID(); !ok || pid != 30 {
-		t.Errorf("after tapping a different row: selectedPID = %d,%v, want 30,true", pid, ok)
+	s.toggleRow(0) // same row → deselect only PID 20
+	if got := s.selectedPIDs(); !pidsEqual(got, []PID{30}) {
+		t.Errorf("after re-tap: selectedPIDs = %v, want [30]", got)
 	}
 }
 
-func TestSelectionClearsWhenProcessDisappears(t *testing.T) {
+func TestToggleSelectAllVisible(t *testing.T) {
+	s := newAllProcessTableSource(fixedProcs(testRows()))
+	s.Snapshot()
+
+	s.toggleSelectAllVisible()
+	if !s.allVisibleSelected() || s.selectionCount() != 3 {
+		t.Fatalf("select-all selected %d of 3", s.selectionCount())
+	}
+
+	s.toggleSelectAllVisible() // all selected → clears
+	if s.selectionCount() != 0 {
+		t.Errorf("second toggle left %d selected, want 0", s.selectionCount())
+	}
+}
+
+// Select-all only touches the visible (filtered) rows, and selectedPIDs
+// reports display order.
+func TestSelectAllRespectsFilter(t *testing.T) {
+	s := newAllProcessTableSource(fixedProcs(testRows()))
+	s.setUserFilter("you")
+	s.Snapshot() // CPU desc among "you": 20, 30
+
+	s.toggleSelectAllVisible()
+	if got := s.selectedPIDs(); !pidsEqual(got, []PID{20, 30}) {
+		t.Errorf("selectedPIDs = %v, want [20 30] (visible rows only)", got)
+	}
+}
+
+func TestSelectionPrunesWhenProcessDisappears(t *testing.T) {
 	rows := testRows()
 	s := newAllProcessTableSource(fixedProcs(rows[:2]))
 	s.Snapshot()
-	s.selectRow(0)
+	s.toggleSelectAllVisible() // PIDs 10 and 20
 
-	gone := newAllProcessTableSource(fixedProcs(rows[:1]))
-	gone.selected, gone.hasSelected = s.selected, s.hasSelected
+	gone := newAllProcessTableSource(fixedProcs(rows[:1])) // only PID 10 remains
+	gone.selected = s.selected
 	gone.Snapshot()
 
-	if _, ok := gone.selectedPID(); ok {
-		t.Error("selection survived its process disappearing; want it cleared")
-	}
-	if gone.highlightedRow() != noTableRow {
-		t.Errorf("highlightedRow = %d, want noTableRow", gone.highlightedRow())
+	if got := gone.selectedPIDs(); !pidsEqual(got, []PID{10}) {
+		t.Errorf("selectedPIDs = %v, want [10] (vanished PID pruned)", got)
 	}
 }
 
-func TestSelectionClearsWhenFilteredOut(t *testing.T) {
+func TestSelectionPrunesWhenFilteredOut(t *testing.T) {
 	s := newAllProcessTableSource(fixedProcs(testRows()))
 	s.Snapshot()
-	s.selectRow(0) // PID 20, "Bravo"
+	s.toggleRow(0) // PID 20, "Bravo"
 	s.setFilter("alpha")
 	s.Snapshot()
 
-	if _, ok := s.selectedPID(); ok {
-		t.Error("selection survived being filtered out; want it cleared")
+	if s.selectionCount() != 0 {
+		t.Error("selection survived being filtered out; want it pruned")
 	}
 }
 
@@ -304,13 +321,14 @@ func assertPIDAt(t *testing.T, label string, pidAt func(int) (PID, bool), row in
 
 func TestSelectPIDResolvesOnNextSnapshot(t *testing.T) {
 	s := newAllProcessTableSource(fixedProcs(testRows()))
+	s.toggleRow(0) // no snapshot yet → no-op; then cross-nav lands on PID 30
 	s.selectPID(30)
 	s.Snapshot() // CPU desc: 20, 30, 10
 
 	if got := s.rowIndexOf(30); got != 1 {
 		t.Errorf("rowIndexOf(30) = %d, want 1", got)
 	}
-	if s.highlightedRow() != 1 {
-		t.Errorf("highlightedRow = %d, want 1", s.highlightedRow())
+	if got := s.selectedPIDs(); !pidsEqual(got, []PID{30}) {
+		t.Errorf("selectedPIDs = %v, want [30] (cross-nav selects exactly one)", got)
 	}
 }
