@@ -53,6 +53,10 @@ const (
 	tabPorts
 	tabConnections
 	tabSettings
+	// tabRecordings is appended last so its numeric value doesn't shift the
+	// others' — startTab persists the tabID as an int (prefs.go). Nav order is
+	// set independently by tabDefs, which places it before Settings.
+	tabRecordings
 )
 
 // tabDef describes one nav entry: its identity, label, and nav icon. Content is
@@ -93,6 +97,10 @@ type buildSources struct {
 	nav          *crossNav              // cross-tab navigation target; populated by buildContent
 	updateStatus func() update.Snapshot // self-update state for the status bar; nil on a dev build (BZS253-71)
 	startUpdate  func()                 // install the available update on user confirmation; nil when not wired
+	apply        *applyHooks            // live-appliers for Settings changes; a pointer so app.go can late-bind them after the poller/window exist
+	initialTab   *tabID                 // overrides the persisted start tab (rebuilds land back where the user was); nil = startTab()
+	recording    func() bool            // reports whether a tracking session is active; nil when not wired (BZS253-77)
+	toggleRecord func()                 // starts (via save dialog) or stops a tracking session; nil when not wired
 }
 
 // processNavigator is the cross-tab navigation seam the CPU and Memory tabs
@@ -223,8 +231,12 @@ var tabRegistry = map[tabID]tabBuilder{
 		v := newConnsView(src.conns, src.nav)
 		return tabContent{object: v.object(), refresh: v.refresh}
 	},
+	tabRecordings: func(src buildSources) tabContent {
+		v := newRecordingsView(src.settings)
+		return tabContent{object: v.object()}
+	},
 	tabSettings: func(src buildSources) tabContent {
-		v := newSettingsView(src.settings, src.system)
+		v := newSettingsView(src.settings, src.system, src.apply)
 		return tabContent{object: v.object()}
 	},
 }
@@ -277,6 +289,7 @@ func tabDefs() []tabDef {
 		{id: tabProcesses, name: labelProcessesPageTitle, icon: icon.Processes},
 		{id: tabPorts, name: labelPortsPageTitle, icon: icon.Ports},
 		{id: tabConnections, name: labelConnectionsPageTitle, icon: icon.Connections},
+		{id: tabRecordings, name: labelRecordingsPageTitle, icon: icon.Recordings},
 		{id: tabSettings, name: labelSettingsPageTitle, icon: icon.Settings},
 	}
 }
@@ -371,8 +384,13 @@ func buildContent(src buildSources) (fyne.CanvasObject, func()) {
 	}
 	// Open on the user's persisted start tab, falling back to the first tab when
 	// it isn't found (indexOfTab returns 0), so a stale preference can't land on
-	// nothing.
-	start, _ := indexOfTab(tabs, src.settings.startTab())
+	// nothing. A rebuild (live theme/cadence change) overrides this to land back
+	// on the tab the user was on.
+	open := src.settings.startTab()
+	if src.initialTab != nil {
+		open = *src.initialTab
+	}
+	start, _ := indexOfTab(tabs, open)
 	selectIndex(start)
 
 	// The footer and the update banner redraw on the same tick as the active
