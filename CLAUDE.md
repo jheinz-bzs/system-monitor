@@ -43,7 +43,8 @@ Exact tokens (colors, type scale, spacing, chart language): **`docs/DESIGN-SYSTE
 - **Ring buffer per metric.** No database, no file I/O for metrics. ~1 min at 1s.
 - **Settings persist via `app.Preferences()`** (BZS253-72) — typed keys + defaults
   in `internal/ui/prefs.go`; no config file or DB (no-persistence rule still
-  governs *metric history*). Changes apply on next launch; see ADR-007.
+  governs *metric history*). Changes apply live via `applyHooks` (theme/cadence
+  rebuild the widget tree); see ADR-007 (storage) and ADR-013 (live apply).
 - **Fyne renders its own widgets** — translate wireframe intent into Fyne's
   canvas/widget model, no HTML/CSS conventions.
 

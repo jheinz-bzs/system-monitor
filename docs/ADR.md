@@ -205,7 +205,7 @@ Switching on a typed `id` decouples routing from labels (rename `name` freely; r
 ## ADR-007: Persisted settings via app.Preferences(); startup-applied; reversing "no settings screen"
 
 **Date:** 2026-06-23
-**Status:** Active
+**Status:** Active — the startup-only ("next launch") application rule is superseded by ADR-013; the storage decision stands
 **Area:** Architecture / UI
 
 ### Context
@@ -265,7 +265,7 @@ Making it opt-in and default-off preserves the AC's intent — nothing replaces 
 ## ADR-011: Linux ships .deb + AppImage + bare binary; only the AppImage self-updates
 
 **Date:** 2026-06-24
-**Status:** Active
+**Status:** Active — amended 2026-07-09: the bare Linux binary now also self-updates when its install directory is writable. `assetName()` resolves the `.AppImage` only for AppImage launches (`$APPIMAGE` set) and the extensionless binary otherwise; `update.Supported()` gates a bare-binary launch on a writability probe of the executable's directory (create+remove a temp file — the exact operation the installer performs), so a root-owned `/usr/bin` (.deb) install still shows no update affordance and stays apt-managed. The "no dishonest UI" rationale below is preserved by the probe rather than by excluding bare binaries wholesale.
 **Area:** Infrastructure / UI
 
 ### Context
@@ -279,3 +279,21 @@ The cross-platform story is a selling point, so the Linux release should offer r
 ### Rationale
 
 One native build feeds all three packagers, so there's no extra compile. Making the AppImage the self-update target is the natural fit — it's already a relocatable, user-writable single file, so the existing rename-swap works unchanged once it targets `$APPIMAGE` (a one-line indirection via `targetExecutable()`, shared by swap, restart, and the download dir so the temp file lands on the AppImage's volume for an atomic rename). Gating with `Supported()` avoids dishonest UI: a `.deb` user would otherwise see "update failed" when the swap hit a permission wall, so instead they see nothing and update through apt — the correct distro convention. nfpm (a Go binary, `go install`-able on the runner) drives the `.deb` from a small YAML with no FPM/Ruby; linuxdeploy bundles the GL/X11 shared libs the Fyne binary links, so the AppImage runs on machines without them. macOS code-signing/notarization remains deferred (ADR-009); this ADR only broadens Linux.
+
+## ADR-013: Settings apply live via applyHooks; supersedes ADR-007's startup-only rule
+
+**Date:** 2026-07-09
+**Status:** Active
+**Area:** Architecture / UI
+
+### Context
+
+ADR-007 (settings) deliberately applied every preference once at startup ("next launch" per row) because a live theme switch would require rebuilding the whole window. In practice the relaunch requirement read as broken UX — a threshold change not taking effect was reported as a bug — and the alert rows had already moved to live prefs reads (BZS253-75 follow-up). The remaining rows (appearance, poll cadence, memory cap, tray) needed a decision: keep next-launch or wire live application.
+
+### Decision
+
+**Settings apply immediately. A consumer-defined `applyHooks` struct (settings.go) carries live-appliers the composition root populates late through a shared pointer: appearance and poll cadence call `rebuild()` — a full `buildContent` reconstruction that re-bakes palette colors and time axes, landing back on the Settings tab via `buildSources.initialTab`; poll additionally re-paces the poller (Stop → SetInterval → Start); memory cap installs/removes the GC soft limit (never clearing an operator `GOMEMLIMIT`); tray enables live, and a mid-run disable restores quit-on-close but leaves the icon until exit (Fyne has no tray-removal API). Alert rows read prefs on every watcher tick. Only inherently launch-scoped rows (start tab, auto-update install) keep launch wording. Each control persists first, then fires its hook; nil hooks just persist (tests, non-desktop drivers).**
+
+### Rationale
+
+The "rebuild the whole window" cost ADR-007 avoided turned out to be small: tabs build lazily, so a rebuild constructs one tab plus chrome, and ring buffers live outside the widget tree so chart history survives. One mechanism (rebuild) covers both structural settings instead of per-widget re-theming machinery, and it guarantees axis labels, the status-bar poll label, and every palette-baked canvas object stay truthful. The hooks stay in the ui package but respect the seam direction: defined at the consumer (Settings tab), populated only by the composition root, which alone holds the window, poller, and runtime handles. `Poller.SetInterval` keeps the interval read race-free by passing it into the run goroutine at Start. The tray's lingering icon on live-disable is an accepted ponytail ceiling — the close behavior (the part users feel) switches instantly.
