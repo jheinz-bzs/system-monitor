@@ -71,6 +71,8 @@ type statusBarView struct {
 	updateLink   *jumpLink              // tappable when an update is available
 	updateText   *canvas.Text           // new version / install-phase word
 	updateGroup  *fyne.Container        // link + text; hidden unless an update is pending
+
+	record *recordControl // session tracking toggle (BZS253-77); nil when not wired
 }
 
 // newStatusBarView builds the footer from the same sources the metric tabs read.
@@ -100,6 +102,12 @@ func newStatusBarView(src buildSources) *statusBarView {
 		vCenter(v.updateLink), vCenter(v.updateText))
 	v.updateGroup.Hide()
 
+	// Session tracking toggle (BZS253-77): built only when the composition root
+	// wired both the state getter and the start/stop action.
+	if src.recording != nil && src.toggleRecord != nil {
+		v.record = newRecordControl(src.recording, src.toggleRecord)
+	}
+
 	v.refresh() // paint initial values before the first poll tick
 	return v
 }
@@ -115,16 +123,22 @@ func (v *statusBarView) object() fyne.CanvasObject {
 	poll := container.New(layout.NewCustomPaddedHBoxLayout(statusDotGap),
 		vCenter(pollDotObj), vCenter(newMeta(pollLabel())))
 
-	row := container.New(layout.NewCustomPaddedHBoxLayout(statusItemGap),
+	// Left group: health + live readouts. Right group (pushed by the spacer):
+	// the tracking toggle, process count, and poll indicator.
+	items := []fyne.CanvasObject{
 		health,
 		vCenter(v.cpuText),
 		vCenter(v.memText),
 		vCenter(v.netText),
 		v.updateGroup,
 		layout.NewSpacer(),
-		vCenter(v.procsText),
-		poll,
-	)
+	}
+	if v.record != nil {
+		items = append(items, vCenter(v.record))
+	}
+	items = append(items, vCenter(v.procsText), poll)
+
+	row := container.New(layout.NewCustomPaddedHBoxLayout(statusItemGap), items...)
 	return newBar(statusBarHeight, row)
 }
 
@@ -158,6 +172,9 @@ func (v *statusBarView) refresh() {
 		v.procsText.Refresh()
 	}
 	v.refreshUpdate()
+	if v.record != nil {
+		v.record.refresh()
+	}
 }
 
 // refreshUpdate reflects the self-update state into the footer affordance: a

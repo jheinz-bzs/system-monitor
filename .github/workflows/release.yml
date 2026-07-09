@@ -53,9 +53,11 @@ jobs:
           go build -ldflags "${{ matrix.ldflags }} -X main.version=${GITHUB_REF_NAME}" \
             -o "${{ matrix.asset }}" ./cmd/system-monitor
       # Linux ships three artifacts from the one binary: the bare binary (manual /
-      # server use), an AppImage (the self-update target — a single file that swaps
-      # like a binary), and a .deb (apt-managed, install-only). Naming must match
-      # update.assetName(): the AppImage is system-monitor-linux-amd64.AppImage.
+      # server use; self-updates when its install dir is writable), an AppImage
+      # (self-update target — a single file that swaps like a binary), and a .deb
+      # (apt-managed, install-only). Naming must match update.assetName(): the
+      # AppImage is system-monitor-linux-amd64.AppImage, the bare binary is the
+      # extensionless matrix asset name.
       - name: package linux (.deb + AppImage)
         if: runner.os == 'Linux'
         shell: bash

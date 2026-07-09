@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	// softMemoryLimitDefault is the soft heap cap applied at startup when the
-	// operator hasn't set GOMEMLIMIT. A soft limit makes the GC collect more
+	// softMemoryLimitDefault is the soft heap cap applied (at startup, or via
+	// the live Settings toggle) when the operator hasn't set GOMEMLIMIT. A soft limit makes the GC collect more
 	// aggressively as the heap nears it, trading a little CPU for a lower RSS
 	// plateau — the opposite trade from the chart-cache fixes. It stays a soft
 	// target: the runtime collects harder near the limit but never OOM-kills.
@@ -28,17 +28,27 @@ const (
 // applyDefaultMemoryLimit installs softMemoryLimitDefault as the GC's soft
 // memory target, but only when no limit is already in effect — an
 // operator-supplied GOMEMLIMIT (read by the runtime at startup) must win so ops
-// can override or disable the default. The getLimit/setLimit seam lets tests
-// exercise the override logic without mutating the real runtime.
-func applyDefaultMemoryLimit(getLimit func() int64, setLimit func(int64) int64) {
+// can override or disable the default. It reports whether it installed the
+// limit, so the Settings cap toggle knows a later "off" may remove it (and
+// never clears an operator's). The getLimit/setLimit seam lets tests exercise
+// the override logic without mutating the real runtime.
+func applyDefaultMemoryLimit(getLimit func() int64, setLimit func(int64) int64) bool {
 	if getLimit() != memoryLimitUnset {
-		return // operator (or a prior call) set a limit; leave it alone.
+		return false // operator (or a prior call) set a limit; leave it alone.
 	}
 	setLimit(softMemoryLimitDefault)
+	return true
 }
 
 // installDefaultMemoryLimit wires applyDefaultMemoryLimit to the real runtime.
 // debug.SetMemoryLimit(-1) reads the current limit without changing it.
-func installDefaultMemoryLimit() {
-	applyDefaultMemoryLimit(func() int64 { return debug.SetMemoryLimit(-1) }, debug.SetMemoryLimit)
+func installDefaultMemoryLimit() bool {
+	return applyDefaultMemoryLimit(func() int64 { return debug.SetMemoryLimit(-1) }, debug.SetMemoryLimit)
+}
+
+// removeMemoryLimit returns the GC to the unlimited default. Callers must only
+// remove a limit this app installed (installDefaultMemoryLimit returned true),
+// so an operator GOMEMLIMIT is never cleared.
+func removeMemoryLimit() {
+	debug.SetMemoryLimit(memoryLimitUnset)
 }
