@@ -64,10 +64,12 @@ type colorPalette struct {
 }
 
 // palette is the active design-system color dictionary every widget reads.
-// applyTheme (theme.go) points it at paletteDark or paletteLight once at startup
-// from the persisted theme preference (BZS253-72); it defaults to dark, the
-// design's primary identity. It's a var, not a const, so that single startup
-// swap reaches every call site that reads palette.X.
+// applyTheme (theme.go) points it at paletteDark or paletteLight from the
+// persisted theme preference (BZS253-72) — at startup and again on a live
+// Appearance change, each followed by (re)building the widget tree since
+// widgets bake palette colors in at construction. It defaults to dark, the
+// design's primary identity. It's a var, not a const, so the swap reaches
+// every call site that reads palette.X.
 var palette = paletteDark
 
 // paletteDark holds the design-system colors. Hex values are taken verbatim
