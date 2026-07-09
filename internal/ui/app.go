@@ -60,7 +60,7 @@ const (
 // check (BZS253-71).
 func Run(version string) {
 	a := app.NewWithID(appID)
-	registerNotificationDisplayName()
+	registerNotificationAppName()
 
 	// Load persisted preferences before any UI or collector is built: the theme
 	// palette, memory cap, and poll cadence are all read once here and applied at
