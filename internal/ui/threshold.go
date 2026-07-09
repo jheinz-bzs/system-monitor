@@ -114,11 +114,17 @@ func (r *thresholdRule) crossedUp(now time.Time) bool {
 		return false
 	}
 	r.firing = true
-	if now.Sub(r.lastFired) < notifyCooldown {
+	if !r.cooledDown(now) {
 		return false // latched, but too soon after the last toast to send another
 	}
 	r.lastFired = now
 	return true
+}
+
+// cooledDown reports whether enough time has passed since the last toast that
+// this rule may notify again.
+func (r *thresholdRule) cooledDown(now time.Time) bool {
+	return now.Sub(r.lastFired) >= notifyCooldown
 }
 
 // thresholdWatcher fires notifications for the metrics whose alert is enabled.
@@ -157,11 +163,12 @@ func newThresholdWatcher(prefs settings, r thresholdReaders, notify notifyFunc) 
 func (w *thresholdWatcher) tick() {
 	now := w.now()
 	for _, r := range w.rules {
-		if r.crossedUp(now) {
-			w.notify(
-				fmt.Sprintf(notifyTitleFmt, r.label),
-				fmt.Sprintf(notifyBodyFmt, r.label, r.value, r.threshold),
-			)
+		if !r.crossedUp(now) {
+			continue
 		}
+		w.notify(
+			fmt.Sprintf(notifyTitleFmt, r.label),
+			fmt.Sprintf(notifyBodyFmt, r.label, r.value, r.threshold),
+		)
 	}
 }
