@@ -439,12 +439,12 @@ func (r *volumesListRenderer) syncEmpty(count int) {
 // line, separated by volumeLineGap.
 func (r *volumesListRenderer) MinSize() fyne.Size {
 	n := len(r.visiblePartitions())
-	if n == 0 {
-		return fyne.NewSize(volumeMinWidth, 0)
+	if n > 0 {
+		captionH := r.probe.MinSize().Height
+		rowH := 2*captionH + 2*volumeLineGap + volumeBarHeight
+		return fyne.NewSize(volumeMinWidth, float32(n)*rowH+float32(n-1)*volumeRowGap)
 	}
-	captionH := r.probe.MinSize().Height
-	rowH := 2*captionH + 2*volumeLineGap + volumeBarHeight
-	return fyne.NewSize(volumeMinWidth, float32(n)*rowH+float32(n-1)*volumeRowGap)
+	return fyne.NewSize(volumeMinWidth, 0)
 }
 
 // Objects lists each row's track under its fill, with the texts on top; the
