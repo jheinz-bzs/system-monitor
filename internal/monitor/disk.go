@@ -50,8 +50,27 @@ type diskReading struct {
 // samples through.
 type diskSampler func(ctx context.Context) (diskReading, error)
 
+// pseudoFstypes lists filesystem types that mount with reported capacity but
+// are not real storage volumes: read-only image mounts (squashfs/erofs — Ubuntu
+// mounts one per snap revision, each reading 100% full), RAM-backed filesystems,
+// and overlays. They are dropped at the sampler so every consumer — the Disk
+// tab's volume list and selector, the directory-scan roots, the Overview
+// busiest-volume read — sees only real volumes; dozens of snap mounts otherwise
+// flood the volume selector (and blew the window past the GPU's max surface
+// width on Linux, an X BadAlloc crash).
+var pseudoFstypes = map[string]bool{
+	"squashfs": true,
+	"erofs":    true,
+	"tmpfs":    true,
+	"devtmpfs": true,
+	"devfs":    true,
+	"overlay":  true,
+	"ramfs":    true,
+}
+
 // defaultDiskSampler reads partition usage and I/O counters via gopsutil. It
-// samples every mounted partition (including pseudo-filesystems). Usage failures
+// samples every mounted partition except the pseudoFstypes set (image/RAM/
+// overlay mounts, not real volumes). Usage failures
 // on individual mounts are skipped rather than failing the whole sample, because
 // unreadable or permission-denied mounts are routine on a real machine; a
 // failure to enumerate partitions or read I/O counters is returned as an error.
@@ -63,6 +82,9 @@ func defaultDiskSampler(ctx context.Context) (diskReading, error) {
 
 	usage := make([]PartitionUsage, 0, len(parts))
 	for _, p := range parts {
+		if pseudoFstypes[p.Fstype] {
+			continue // image/RAM mount, not a real volume
+		}
 		stat, err := disk.UsageWithContext(ctx, p.Mountpoint)
 		if err != nil {
 			continue // unreadable mount; skip it rather than failing the sample
