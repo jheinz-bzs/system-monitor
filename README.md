@@ -8,12 +8,15 @@ resolution) — there is no persistence layer.
 
 ## Tabs
 
-Nine tabs: **Overview** (2×4 metric grid with sparklines), **CPU** (overall +
-per-core charts, top processes), **Memory** (stacked usage chart, top
-processes), **Disk** (storage treemap, volumes, I/O chart), **Network**
-(bandwidth stats and chart), **Processes** (treemap + sortable table),
-**Ports** and **Connections** (filterable tables with cross-tab navigation to
-the owning process), and **Settings**.
+- **Overview** — 2×4 metric grid with sparklines
+- **CPU** — overall + per-core charts, top processes
+- **Memory** — stacked usage chart, top processes
+- **Disk** — storage treemap, volumes, I/O chart
+- **Network** — bandwidth stats and chart
+- **Processes** — treemap + sortable table
+- **Ports** — filterable table with cross-tab navigation to the owning process
+- **Connections** — filterable table with state pills and cross-tab navigation
+- **Settings** — app preferences
 
 ## Installation
 
