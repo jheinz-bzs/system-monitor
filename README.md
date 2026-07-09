@@ -1,5 +1,13 @@
 # System Monitor
 
+[![Release](https://img.shields.io/github/v/release/jheinz-bzs/system-monitor)](https://github.com/jheinz-bzs/system-monitor/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/jheinz-bzs/system-monitor)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/jheinz-bzs/system-monitor)](go.mod)
+[![Release build](https://img.shields.io/github/actions/workflow/status/jheinz-bzs/system-monitor/release.yml?label=release%20build)](https://github.com/jheinz-bzs/system-monitor/actions/workflows/release.yml)
+[![Repo size](https://img.shields.io/github/repo-size/jheinz-bzs/system-monitor)](https://github.com/jheinz-bzs/system-monitor)
+[![Downloads](https://img.shields.io/github/downloads/jheinz-bzs/system-monitor/total)](https://github.com/jheinz-bzs/system-monitor/releases)
+![Platforms](https://img.shields.io/badge/platforms-windows%20%7C%20linux%20%7C%20macos-blue)
+
 A native desktop system monitoring app built in **Go** with the **Fyne** UI
 toolkit and **gopsutil** for system data. Targets developers and power users.
 
