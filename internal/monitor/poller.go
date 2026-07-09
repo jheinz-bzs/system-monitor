@@ -51,6 +51,15 @@ func (p *Poller) OnTick(fn func()) {
 	p.onTick = append(p.onTick, fn)
 }
 
+// SetInterval changes the tick cadence used the next time Start runs. Call it
+// while the poller is stopped (Stop → SetInterval → Start) to re-pace it; a
+// running poller keeps its current ticker.
+func (p *Poller) SetInterval(d time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.interval = d
+}
+
 // Start launches the polling goroutine. It collects once immediately so the
 // buffers populate without waiting a full interval, then again on every tick.
 // The goroutine exits when ctx is cancelled or Stop is called. Calling Start on
@@ -65,7 +74,9 @@ func (p *Poller) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
 	p.done = make(chan struct{})
-	go p.run(ctx, p.done)
+	// interval is captured under the lock and passed in, so the goroutine never
+	// reads the field a concurrent SetInterval could write.
+	go p.run(ctx, p.done, p.interval)
 }
 
 // Stop halts polling and blocks until the goroutine has fully exited, so after
@@ -86,10 +97,10 @@ func (p *Poller) Stop() {
 
 // run drives collection until ctx is cancelled, closing done on exit so Stop
 // can wait for a clean shutdown.
-func (p *Poller) run(ctx context.Context, done chan struct{}) {
+func (p *Poller) run(ctx context.Context, done chan struct{}, interval time.Duration) {
 	defer close(done)
 
-	ticker := time.NewTicker(p.interval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	p.tick(ctx)
