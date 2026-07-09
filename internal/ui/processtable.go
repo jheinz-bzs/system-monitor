@@ -726,9 +726,10 @@ func (m *processTableModel) selectPID(pid PID) {
 func (m *processTableModel) selectedPIDs() []PID {
 	out := make([]PID, 0, len(m.selected))
 	for _, pid := range m.rowPIDs {
-		if m.isSelected(pid) {
-			out = append(out, pid)
+		if !m.isSelected(pid) {
+			continue
 		}
+		out = append(out, pid)
 	}
 	return out
 }

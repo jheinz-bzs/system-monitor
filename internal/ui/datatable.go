@@ -809,10 +809,11 @@ func (r *dataTableRenderer) hideRow(i int) {
 		}
 	}
 	for _, c := range r.rowChecks[i] {
-		if c != nil {
-			c.box.Hide()
-			c.mark.Hide()
+		if c == nil {
+			continue
 		}
+		c.box.Hide()
+		c.mark.Hide()
 	}
 }
 
@@ -844,9 +845,10 @@ func (r *dataTableRenderer) Objects() []fyne.CanvasObject {
 			}
 		}
 		for _, c := range r.rowChecks[i] {
-			if c != nil {
-				objs = append(objs, c.box, c.mark)
+			if c == nil {
+				continue
 			}
+			objs = append(objs, c.box, c.mark)
 		}
 	}
 	objs = append(objs, r.headerBG, r.headerDivider)
@@ -854,9 +856,10 @@ func (r *dataTableRenderer) Objects() []fyne.CanvasObject {
 		objs = append(objs, lbl)
 	}
 	for _, c := range r.headerChecks {
-		if c != nil {
-			objs = append(objs, c.box, c.mark)
+		if c == nil {
+			continue
 		}
+		objs = append(objs, c.box, c.mark)
 	}
 	return objs
 }
