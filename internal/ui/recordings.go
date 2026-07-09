@@ -191,12 +191,10 @@ func (v *recordingsView) charts(rec *recorder.Recording) fyne.CanvasObject {
 // series, and the primary series' absolute min/max in the header.
 func (v *recordingsView) panel(g recordingGroup, rec *recorder.Recording) fyne.CanvasObject {
 	opts := scaleAxis(g.scale)
-	if g.ceilCol != "" {
-		// Fix the axis to 0..physical-RAM (the ceiling column's max) so the used
-		// line reads against total capacity rather than an auto-scaled window.
-		if ceil := maxValue(columnValues(rec, g.ceilCol)); ceil > 0 {
-			opts = []lineChartOption{fixedRange(0, ceil), valueFormat(formatBytesAxis)}
-		}
+	// Fix the axis to 0..physical-RAM (the ceiling column's max) so the used
+	// line reads against total capacity rather than an auto-scaled window.
+	if ceil := maxValue(columnValues(rec, g.ceilCol)); g.ceilCol != "" && ceil > 0 {
+		opts = []lineChartOption{fixedRange(0, ceil), valueFormat(formatBytesAxis)}
 	}
 	if g.band {
 		// Band the CPU high-usage zone in the critical-red tint, reusing the user's
@@ -214,9 +212,9 @@ func (v *recordingsView) panel(g recordingGroup, rec *recorder.Recording) fyne.C
 		vals := ln.vals
 		if ln.emph {
 			chart.addSeries(series.SourceFunc(func() []float64 { return vals }), emphasized())
-		} else {
-			chart.addSeries(series.SourceFunc(func() []float64 { return vals }), seriesColor(ln.col))
+			continue
 		}
+		chart.addSeries(series.SourceFunc(func() []float64 { return vals }), seriesColor(ln.col))
 	}
 
 	var entries []legendEntry
