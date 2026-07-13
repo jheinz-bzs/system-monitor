@@ -4,12 +4,12 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Threshold alerts
-- Get a native desktop notification when **CPU**, **memory**, or **disk** usage
-  crosses a threshold you set — so a spike reaches you even when the window
-  isn't in front of you.
-- Turn each alert on and set its percentage under **Settings** → the new
-  **CPU / Memory / Disk alert** rows. All three start off.
-- You're notified once when usage crosses above the line, not every second while
-  it stays high; the alert re-arms after usage drops back below.
-- The disk alert watches your busiest volume.
+### Settings apply instantly
+- Changes in **Settings** now take effect immediately — theme, text size,
+  poll interval, memory limit, and alert thresholds no longer need a relaunch.
+
+### Alert notifications
+- On Windows, threshold alerts now show **System Monitor** as the sender
+  instead of a generic app name.
+- Usage bouncing around your threshold can't queue a pile of notifications
+  anymore — after an alert fires, the next one waits a short cooldown.
