@@ -20,7 +20,7 @@ BIN := bin/system-monitor
 ASSETS_GEN := internal/ui/assets_gen.go
 ASSET_SRC  := $(wildcard internal/ui/fonts/*.ttf internal/ui/icons/*.svg) tools/genassets/main.go
 
-.PHONY: run start build build-win release vet tidy fmt clean generate
+.PHONY: run start build build-win build-record release vet tidy fmt clean generate
 
 $(ASSETS_GEN): $(ASSET_SRC)
 	go run ./tools/genassets
@@ -39,6 +39,13 @@ build: $(ASSETS_GEN)
 ## build-win: compile a windowed Windows binary (no console window)
 build-win: $(ASSETS_GEN)
 	go build -ldflags="-H windowsgui" -o $(BIN).exe $(PKG)
+
+## build-record: compile the headless recording agent (no Fyne, no cgo, no
+## generated assets). Cross-compiling is just prefixing GOOS/GOARCH, e.g.
+## GOOS=linux GOARCH=amd64 make build-record
+build-record: export CGO_ENABLED := 0
+build-record:
+	go build -o $(BIN)-record ./cmd/system-monitor-record
 
 ## release: build a versioned Windows release binary locally (usage: VERSION=v1.2.3 make release)
 ## Mirrors the ldflags the release workflow uses, for a hand-cut release or a swap test.
