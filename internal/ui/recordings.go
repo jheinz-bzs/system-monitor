@@ -27,6 +27,7 @@ import (
 	"github.com/ncruces/zenity"
 
 	"github.com/josephheinz/system-monitor/internal/recorder"
+	"github.com/josephheinz/system-monitor/internal/recorder/columns"
 	"github.com/josephheinz/system-monitor/internal/series"
 )
 
@@ -88,15 +89,16 @@ type recordingGroup struct {
 
 // recordingGroups mirrors the live tabs: CPU (with its high-usage band), Memory
 // used vs total, Swap, Network rx/tx with a total, Disk I/O read/write with a
-// total, and the process count. Keyed by the recorder's column consts (app.go)
-// so the grouping stays in sync with what the recorder writes.
+// total, and the process count. Keyed by the shared schema consts
+// (recorder/columns) so the grouping stays in sync with what the recorder
+// writes — in the GUI and the headless binary alike.
 var recordingGroups = []recordingGroup{
-	{title: labelCPUPageTitle, cols: []string{colCPUPct}, scale: scalePercent, band: true},
-	{title: labelMemoryPageTitle, cols: []string{colMemUsed}, scale: scaleBytes, ceilCol: colMemTotal},
-	{title: labelRecSwap, cols: []string{colSwapUsed}, scale: scaleBytes},
-	{title: labelNetworkPageTitle, cols: []string{colNetRx, colNetTx}, labels: []string{labelRecRx, labelRecTx}, scale: scaleRate, total: true},
-	{title: labelRecDiskIO, cols: []string{colDiskRead, colDiskWrite}, labels: []string{labelRecRead, labelRecWrite}, scale: scaleRate, total: true},
-	{title: labelProcessesPageTitle, cols: []string{colProcCount}, scale: scaleCount},
+	{title: labelCPUPageTitle, cols: []string{columns.CPUPct}, scale: scalePercent, band: true},
+	{title: labelMemoryPageTitle, cols: []string{columns.MemUsed}, scale: scaleBytes, ceilCol: columns.MemTotal},
+	{title: labelRecSwap, cols: []string{columns.SwapUsed}, scale: scaleBytes},
+	{title: labelNetworkPageTitle, cols: []string{columns.NetRx, columns.NetTx}, labels: []string{labelRecRx, labelRecTx}, scale: scaleRate, total: true},
+	{title: labelRecDiskIO, cols: []string{columns.DiskRead, columns.DiskWrite}, labels: []string{labelRecRead, labelRecWrite}, scale: scaleRate, total: true},
+	{title: labelProcessesPageTitle, cols: []string{columns.ProcCount}, scale: scaleCount},
 }
 
 // recordingsView is the tab: a header with a load action and the loaded file's
