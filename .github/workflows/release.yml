@@ -136,9 +136,38 @@ jobs:
             system-monitor-*
             *.deb
 
+  # The headless recording agent (cmd/system-monitor-record) has no Fyne and no
+  # cgo, so unlike the GUI it cross-compiles from one runner. Asset names keep
+  # the system-monitor- prefix so the checksum/release globs below cover them;
+  # update.assetName() matches exactly, so they can't be mistaken for the GUI
+  # self-update asset.
+  build-record:
+    name: build record agent
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: 0
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: build all platforms
+        shell: bash
+        run: |
+          set -euo pipefail
+          build() { GOOS="$1" GOARCH="$2" go build -o "system-monitor-record-$1-$2$3" ./cmd/system-monitor-record; }
+          build linux amd64 ""
+          build linux arm64 ""
+          build windows amd64 ".exe"
+          build darwin arm64 ""
+      - uses: actions/upload-artifact@v5
+        with:
+          name: system-monitor-record
+          path: system-monitor-record-*
+
   release:
     name: publish release
-    needs: build
+    needs: [build, build-record]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v5
