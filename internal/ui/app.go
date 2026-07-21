@@ -132,6 +132,7 @@ func Run(version string) {
 		cpuInfo:  cpuMeta{cores: cpuInfo.Cores, model: cpuInfo.ModelName},
 		settings: prefs,
 		system:   toSystemInfo(hostSummary, cpuInfo.Cores, version),
+		window:   w,
 		apply:    apply,
 	}
 	var collectors []monitor.Collector

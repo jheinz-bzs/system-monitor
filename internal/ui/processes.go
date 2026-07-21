@@ -28,6 +28,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -75,21 +76,23 @@ type processesView struct {
 	table       *dataTable
 	tableScroll *scrollTable
 	treemap     *treemap
-	treemapSrc *processTreemapSource
-	metricSel  fyne.CanvasObject // CPU/Mem dominance-metric toggle (panel header)
-	filter     *widget.Entry
-	userSel    *widget.Select
-	statusSel  *widget.Select
-	counts     *canvas.Text   // page-head "N TOTAL · M HIGH USAGE" readout
-	kill       processKiller  // nil when termination isn't wired
-	killBtn    *widget.Button // nil when kill is nil
+	treemapSrc  *processTreemapSource
+	metricSel   fyne.CanvasObject // CPU/Mem dominance-metric toggle (panel header)
+	filter      *widget.Entry
+	userSel     *widget.Select
+	statusSel   *widget.Select
+	counts      *canvas.Text   // page-head "N TOTAL · M HIGH USAGE" readout
+	kill        processKiller  // nil when termination isn't wired
+	killBtn     *widget.Button // nil when kill is nil
+	win         fyne.Window    // confirm-dialog parent; nil skips confirmation
 }
 
 // newProcessesView builds the Processes tab content. procs feeds the table;
 // killer enables the Kill action and may be nil (the button is omitted —
-// nil-collector degradation, matching the other tabs' fallbacks).
-func newProcessesView(procs allProcessSource, killer processKiller) *processesView {
-	v := &processesView{kill: killer}
+// nil-collector degradation, matching the other tabs' fallbacks); win parents
+// the mass-kill confirm dialog and may be nil (kills run unconfirmed).
+func newProcessesView(procs allProcessSource, killer processKiller, win fyne.Window) *processesView {
+	v := &processesView{kill: killer, win: win}
 	v.table, v.adapter = newAllProcessTable(procs, v.tapRow, v.tapHeader)
 	v.tableScroll = newScrollTable(v.table)
 	v.treemapSrc = newProcessTreemapSource(procs)
@@ -197,8 +200,15 @@ func newFilterPrefix(text string) *canvas.Text {
 }
 
 // tapHeader sorts by the tapped column (tap again to flip direction), re-tags
-// the headers, and redraws — the shared header behavior every process table uses.
+// the headers, and redraws — except the check column's header, which is the
+// select-all-visible / clear-all toggle.
 func (v *processesView) tapHeader(col int) {
+	if col >= 0 && col < len(v.adapter.cols) && v.adapter.cols[col].kind == columnCheck {
+		v.adapter.toggleSelectAllVisible()
+		v.syncKillState()
+		v.table.Refresh()
+		return
+	}
 	tapSortHeader(v.table, v.adapter, col)
 }
 
@@ -285,28 +295,50 @@ func (v *processesView) syncUserOptions() {
 	v.userSel.SetOptions(opts)
 }
 
-// killSelected terminates the selected process. Failure is logged rather than
-// surfaced — the row simply stays; the next tick reflects reality either way.
+// killSelected terminates the selected processes. A single kill fires
+// immediately (today's behavior); a mass kill confirms first — one mistap must
+// not take out N processes.
 func (v *processesView) killSelected() {
-	pid, ok := v.adapter.selectedPID()
-	if !ok || v.kill == nil {
+	pids := v.adapter.selectedPIDs()
+	if len(pids) == 0 || v.kill == nil {
 		return
 	}
-	if err := v.kill.kill(pid); err != nil {
-		log.Printf("kill process %d: %v", pid, err)
+	if len(pids) == 1 || v.win == nil {
+		v.killPIDs(pids)
+		return
+	}
+	dialog.ShowConfirm(labelKill, fmt.Sprintf("Kill %d processes?", len(pids)),
+		func(ok bool) {
+			if ok {
+				v.killPIDs(pids)
+			}
+		}, v.win)
+}
+
+// killPIDs terminates each PID in turn. Per-PID failure is logged rather than
+// surfaced — the row simply stays; the next tick reflects reality either way.
+func (v *processesView) killPIDs(pids []PID) {
+	for _, pid := range pids {
+		if err := v.kill.kill(pid); err != nil {
+			log.Printf("kill process %d: %v", pid, err)
+		}
 	}
 }
 
-// syncKillState enables the Kill action exactly while a row is selected.
+// syncKillState enables the Kill action exactly while rows are selected, and
+// carries the selection count in its label ("Kill (3)").
 func (v *processesView) syncKillState() {
 	if v.killBtn == nil {
 		return
 	}
-	if _, ok := v.adapter.selectedPID(); ok {
-		v.killBtn.Enable()
+	n := v.adapter.selectionCount()
+	if n == 0 {
+		v.killBtn.SetText(labelKill)
+		v.killBtn.Disable()
 		return
 	}
-	v.killBtn.Disable()
+	v.killBtn.SetText(fmt.Sprintf("%s (%d)", labelKill, n))
+	v.killBtn.Enable()
 }
 
 // selectPID selects and highlights the process with the given PID, scrolling
