@@ -96,7 +96,7 @@ func newStatusBarView(src buildSources) *statusBarView {
 	// The update affordance is built whether or not it's wired; it simply stays
 	// hidden when there's no updater (dev build) or no update pending, taking no
 	// space in the footer's box layout until refresh reveals it.
-	v.updateLink = newJumpLink(labelUpdateLink, src.startUpdate)
+	v.updateLink = newJumpLinkSized(labelUpdateLink, sizeName.Meta, src.startUpdate)
 	v.updateText = newMeta("")
 	v.updateGroup = container.New(layout.NewCustomPaddedHBoxLayout(statusDotGap),
 		vCenter(v.updateLink), vCenter(v.updateText))

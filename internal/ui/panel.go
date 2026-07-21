@@ -120,6 +120,7 @@ type jumpLink struct {
 	widget.BaseWidget
 
 	text  string
+	size  fyne.ThemeSizeName
 	onTap func()
 }
 
@@ -129,9 +130,16 @@ var (
 )
 
 // newJumpLink builds a cross-nav link labeled text that invokes onTap when
-// clicked (nil for an inert link).
+// clicked (nil for an inert link), at the standard caption size.
 func newJumpLink(text string, onTap func()) *jumpLink {
-	l := &jumpLink{text: text, onTap: onTap}
+	return newJumpLinkSized(text, theme.SizeNameCaptionText, onTap)
+}
+
+// newJumpLinkSized is newJumpLink with an explicit size token, for chrome whose
+// surrounding text is smaller than a panel header (the status bar's update
+// affordance sits among meta-size readouts).
+func newJumpLinkSized(text string, size fyne.ThemeSizeName, onTap func()) *jumpLink {
+	l := &jumpLink{text: text, size: size, onTap: onTap}
 	l.ExtendBaseWidget(l)
 	return l
 }
@@ -153,5 +161,5 @@ func (l *jumpLink) Cursor() desktop.Cursor {
 
 func (l *jumpLink) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(
-		styledText(l.text, font.MonoRegular, theme.SizeNameCaptionText, palette.Accent))
+		styledText(l.text, font.MonoRegular, l.size, palette.Accent))
 }

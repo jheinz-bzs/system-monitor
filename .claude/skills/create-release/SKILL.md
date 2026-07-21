@@ -3,7 +3,8 @@ name: create-release
 description: >-
   Cut a new release end-to-end: confirm the version number, refresh the bundled
   What's New changelog (internal/ui/whatsnew.md) from the diff since the last tag,
-  commit it, then tag vX.Y.Z and push to trigger the GitHub release workflow. Use
+  commit it, then tag vX.Y.Z and push to trigger the GitHub release workflow,
+  and fill in the published release's description. Use
   when the user says "make a release", "cut a release", "release vX.Y.Z", "ship
   v0.2.0", or "new version". Pass the version as an argument to skip the prompt.
 allowed-tools: Read, Write, Edit, PowerShell, Bash, AskUserQuestion
@@ -72,3 +73,21 @@ whatsnew change; that's just noise to close later.
    background (`gh run watch <id> --exit-status`; ~8 min) and report the
    release URL (`https://github.com/<owner>/<repo>/releases/tag/<version>`)
    when it publishes. If the run fails, report the failing job's log tail.
+
+7. **Write the release description** — the workflow publishes the release with
+   an **empty body**; fill it in. While the build runs, draft notes from the
+   same `<lastTag>..HEAD` diff: same audience and structure as whatsnew.md but
+   more in depth — per-feature `##` sections, bullet the behavior *and* the
+   relevant mechanics (defaults, platform specifics, ADR references), note
+   internal changes worth knowing under an "Under the hood" section when they
+   exist. No Jira card keys (the release is public). End with:
+   ```
+   **Full Changelog**: https://github.com/<owner>/<repo>/compare/<lastTag>...<version>
+   ```
+   (v0.1.0 has no compare link — it's the initial release.) Once the release
+   exists, apply it:
+   ```
+   gh release edit <version> --notes-file <scratchpad>/notes-<version>.md
+   ```
+   The v0.2.0–v0.4.2 release bodies on GitHub are the reference for tone and
+   depth.
