@@ -123,8 +123,9 @@ func (s settings) startTab() tabID {
 // setStartTab persists the launch tab.
 func (s settings) setStartTab(id tabID) { s.store.SetInt(prefKey.StartTab, int(id)) }
 
-// memoryCapEnabled reports whether the GC soft memory limit is applied at
-// startup (see installDefaultMemoryLimit). Defaults on.
+// memoryCapEnabled reports whether the GC soft memory limit is applied (at
+// startup, and toggled live from Settings — see installDefaultMemoryLimit).
+// Defaults on.
 func (s settings) memoryCapEnabled() bool {
 	return s.store.BoolWithFallback(prefKey.MemoryCap, defaultMemoryCap)
 }
@@ -132,8 +133,9 @@ func (s settings) memoryCapEnabled() bool {
 // setMemoryCapEnabled persists the memory-cap toggle.
 func (s settings) setMemoryCapEnabled(on bool) { s.store.SetBool(prefKey.MemoryCap, on) }
 
-// pollInterval is the sampling/redraw cadence applied at startup. A stored
-// value outside pollSecondsAllowed falls back to the default.
+// pollInterval is the sampling/redraw cadence, applied at startup and again on
+// a live Settings change. A stored value outside pollSecondsAllowed falls back
+// to the default.
 func (s settings) pollInterval() time.Duration {
 	secs := s.store.IntWithFallback(prefKey.PollSeconds, defaultPollSeconds)
 	if !slices.Contains(pollSecondsAllowed, secs) {
@@ -168,8 +170,8 @@ func (s settings) autoUpdateEnabled() bool {
 func (s settings) setAutoUpdateEnabled(on bool) { s.store.SetBool(prefKey.AutoUpdate, on) }
 
 // minimizeToTrayEnabled reports whether closing the window hides it to the
-// system tray instead of quitting (BZS253-76). Defaults off. Read once at
-// startup, like every other preference.
+// system tray instead of quitting (BZS253-76). Defaults off; applied at
+// startup and toggled live from Settings.
 func (s settings) minimizeToTrayEnabled() bool {
 	return s.store.BoolWithFallback(prefKey.MinimizeToTray, defaultMinimizeToTray)
 }

@@ -2,9 +2,10 @@ package ui
 
 // Settings tab (BZS253-72): a single panel of preference rows, styled from the
 // design-system tokens like every other tab. Each control writes straight
-// through to the persisted settings; the effects are applied at startup
-// (app.go / theme.go), so every row is documented "next launch". The tab is
-// static — no live data — so it ships no refresh callback.
+// through to the persisted settings, then fires its applyHooks entry so the
+// change takes effect immediately — no relaunch. Only the rows whose meaning
+// is inherently launch-time (start tab, auto-update install) stay launch-
+// scoped. The tab is static — no live data — so it ships no refresh callback.
 
 import (
 	"image/color"
@@ -36,14 +37,14 @@ const (
 	labelSettingDiskAlert  = "Disk alert"
 
 	helpSettingStartTab   = "Tab shown on launch"
-	helpSettingPoll       = "Sampling cadence · next launch"
-	helpSettingMemCap     = "GC soft heap limit · next launch"
-	helpSettingTheme      = "Color palette · next launch"
+	helpSettingPoll       = "Sampling cadence"
+	helpSettingMemCap     = "GC soft heap limit"
+	helpSettingTheme      = "Color palette"
 	helpSettingAutoUpdate = "Install updates on next launch · off by default"
-	helpSettingTray       = "Close hides to the tray · next launch · off by default"
+	helpSettingTray       = "Close hides to the tray · off by default"
 	// Shared by the CPU and memory alert rows (disk names its volume choice).
-	helpSettingAlert     = "Notify above the threshold · next launch · off by default"
-	helpSettingDiskAlert = "Busiest volume above the threshold · next launch · off by default"
+	helpSettingAlert     = "Notify above the threshold · off by default"
+	helpSettingDiskAlert = "Busiest volume above the threshold · off by default"
 
 	// System-section row labels (BZS253-74): static, read-once machine facts.
 	labelSysHostname = "Hostname"
@@ -93,10 +94,26 @@ var pollIntervalLabels = []string{"1s", "2s", "5s"}
 // Appearance segment labels, aligned by index with themeChoice (dark, light).
 var themeLabels = []string{"Dark", "Light"}
 
-// settingsView is the Settings tab. It holds only the assembled root; controls
-// capture the settings store directly and need no further state.
+// applyHooks are the composition root's live-appliers for the Settings rows
+// whose effect lives outside this tab: the theme palette, the poller cadence,
+// the GC memory cap, and the tray behavior. Each control persists its
+// preference first, then calls its hook so the change takes effect immediately
+// — no relaunch. Defined here at the consumer (idiomatic Go); app.go populates
+// it because only the composition root holds the window, poller, and runtime.
+// A nil hooks struct or nil field just persists (tests, or an effect that
+// isn't wired on this platform).
+type applyHooks struct {
+	theme  func(themeChoice)
+	poll   func(time.Duration)
+	memCap func(enabled bool)
+	tray   func(enabled bool)
+}
+
+// settingsView is the Settings tab. It holds the assembled root; controls
+// capture the settings store and the live-apply hooks directly.
 type settingsView struct {
 	prefs settings
+	apply *applyHooks
 	root  fyne.CanvasObject
 }
 
@@ -118,8 +135,8 @@ type systemInfo struct {
 
 // newSettingsView builds the Settings tab: the preferences form plus a
 // read-only System section (BZS253-74) describing the monitored machine.
-func newSettingsView(prefs settings, sys systemInfo) *settingsView {
-	v := &settingsView{prefs: prefs}
+func newSettingsView(prefs settings, sys systemInfo, apply *applyHooks) *settingsView {
+	v := &settingsView{prefs: prefs, apply: apply}
 
 	form := container.New(layout.NewCustomPaddedVBoxLayout(settingRowGap),
 		settingRow(labelSettingStartTab, helpSettingStartTab, v.startTabControl()),
@@ -244,19 +261,29 @@ func tabName(tabs []tabDef, id tabID) string {
 }
 
 // pollControl is a segmented selector over the allowed cadences; the chosen
-// segment persists as the poll interval (applied next launch).
+// segment persists as the poll interval and re-paces the running poller.
 func (v *settingsView) pollControl() fyne.CanvasObject {
 	// A stored value outside the set yields index -1; seed the first segment.
 	active := max(slices.Index(pollSecondsAllowed, int(v.prefs.pollInterval().Seconds())), 0)
 	return newSegmentedSelect(active, func(i int) {
 		v.prefs.setPollSeconds(pollSecondsAllowed[i])
+		if v.apply != nil && v.apply.poll != nil {
+			// Read the duration back through the getter — the one authoritative
+			// seconds→Duration conversion (prefs.go).
+			v.apply.poll(v.prefs.pollInterval())
+		}
 	}, pollIntervalLabels...)
 }
 
-// memCapControl toggles the GC soft memory limit (applied next launch).
+// memCapControl toggles the GC soft memory limit, applied immediately.
 func (v *settingsView) memCapControl() fyne.CanvasObject {
 	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.memoryCapEnabled(),
-		func(on bool) { v.prefs.setMemoryCapEnabled(on) })
+		func(on bool) {
+			v.prefs.setMemoryCapEnabled(on)
+			if v.apply != nil && v.apply.memCap != nil {
+				v.apply.memCap(on)
+			}
+		})
 }
 
 // autoUpdateControl toggles opt-in auto-install (applied next launch). Off by
@@ -267,17 +294,22 @@ func (v *settingsView) autoUpdateControl() fyne.CanvasObject {
 		func(on bool) { v.prefs.setAutoUpdateEnabled(on) })
 }
 
-// trayControl toggles minimize-to-tray-on-close (applied next launch). Off by
+// trayControl toggles minimize-to-tray-on-close, applied immediately. Off by
 // default so quit-on-close stays unchanged until the user opts in (BZS253-76).
 func (v *settingsView) trayControl() fyne.CanvasObject {
 	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.minimizeToTrayEnabled(),
-		func(on bool) { v.prefs.setMinimizeToTrayEnabled(on) })
+		func(on bool) {
+			v.prefs.setMinimizeToTrayEnabled(on)
+			if v.apply != nil && v.apply.tray != nil {
+				v.apply.tray(on)
+			}
+		})
 }
 
 // alertControl is one metric's threshold-alert row control (BZS253-75): an
 // enable chip beside a numeric percentage entry and its "%" suffix. Both write
-// straight through to settings; the watcher reads them at next launch (app.go),
-// like every other preference.
+// straight through to settings; the watcher reads them live each tick
+// (threshold.go), so changes apply immediately.
 func (v *settingsView) alertControl(m thresholdMetric) fyne.CanvasObject {
 	toggle := newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.alertEnabled(m),
 		func(on bool) { v.prefs.setAlertEnabled(m, on) })
@@ -316,10 +348,14 @@ func parseThreshold(s string) (int, bool) {
 	return n, true
 }
 
-// themeControl is a segmented Dark/Light selector; the choice persists as the
-// startup palette (applied next launch).
+// themeControl is a segmented Dark/Light selector; the choice persists and
+// swaps the live palette (the composition root rebuilds the widget tree, since
+// palette colors are baked in at construction).
 func (v *settingsView) themeControl() fyne.CanvasObject {
 	return newSegmentedSelect(int(v.prefs.theme()), func(i int) {
 		v.prefs.setTheme(themeChoice(i))
+		if v.apply != nil && v.apply.theme != nil {
+			v.apply.theme(themeChoice(i))
+		}
 	}, themeLabels...)
 }

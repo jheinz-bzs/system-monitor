@@ -15,6 +15,16 @@ Releases are fully automated by `.github/workflows/release.yml`: pushing a
 `v*.*.*` tag builds every platform and publishes the GitHub Release. This skill
 just gets `whatsnew.md` right first, then pushes the tag.
 
+**The whatsnew commit is never pushed to `master`.** `master` is a protected,
+PR-only branch — a direct push is rejected (`Changes must be made through a pull
+request`). So the release lives entirely on the tag: commit the whatsnew update
+on top of `master` locally, tag *that commit*, and push **only the tag**. The
+commit rides along with the tag (its objects are uploaded) but `master` is not
+updated and no PR is opened. This is how every whatsnew-bearing release has been
+cut — e.g. `v0.2.0` (`f40e604`) is the tagged whatsnew commit, sitting on top of
+its era's `master` tip but present on no branch. Do **not** open a PR for the
+whatsnew change; that's just noise to close later.
+
 ## Steps
 
 1. **Preconditions** — abort with a clear message if any fail:
@@ -38,15 +48,24 @@ just gets `whatsnew.md` right first, then pushes the tag.
    describes exactly this diff (e.g. it was updated on the feature branch),
    skip the rewrite and say so.
 
-4. **Commit** — if whatsnew.md changed:
-   `git add internal/ui/whatsnew.md`, commit
-   (`docs: update what's new for <version>`), push to master.
+4. **Commit on top of master (do NOT push to master)** — if whatsnew.md changed:
+   ```
+   git add internal/ui/whatsnew.md
+   git commit -m "docs: update what's new for <version>"
+   ```
+   The commit stays local; it will be reachable only through the tag. Never
+   `git push origin master` (the protected branch rejects it) and never open a
+   PR for it. If whatsnew.md didn't change, tag `HEAD` (== `origin/master`) as-is.
 
-5. **Tag and push**:
+5. **Tag that commit and push only the tag**:
    ```
-   git tag -a <version> -m "<version>"
-   git push origin <version>
+   git tag -a <version> -m "<version>"   # tags HEAD = the whatsnew commit
+   git push origin <version>             # pushes the tag ref only, not master
    ```
+   Pushing a tag doesn't touch `master`, so it isn't blocked by the branch
+   protection. Afterward your local `master` sits one commit (the whatsnew
+   commit) ahead of `origin/master` — that's expected; leave it, or reset it to
+   `origin/master` if you prefer a clean branch.
 
 6. **Watch** — confirm the workflow started
    (`gh run list --workflow release.yml --limit 1`), then watch it in the
