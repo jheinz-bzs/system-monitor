@@ -4,12 +4,15 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Settings apply instantly
-- Changes in **Settings** now take effect immediately — theme, text size,
-  poll interval, memory limit, and alert thresholds no longer need a relaunch.
+### Kill multiple processes at once
+- The **Processes** table now has a checkbox column — tick several processes
+  and end them together in one action, instead of one at a time.
 
-### Alert notifications
-- On Windows, threshold alerts now show **System Monitor** as the sender
-  instead of a generic app name.
-- Usage bouncing around your threshold can't queue a pile of notifications
-  anymore — after an alert fires, the next one waits a short cooldown.
+### Headless recording
+- A new command-line companion, **system-monitor-record**, captures metrics to
+  a CSV file without opening the window — handy for logging a long run or a
+  machine you're only connected to over a terminal.
+
+### Fixes
+- The **Disk** tab's volumes list no longer goes blank after the window sits
+  idle for a while.
