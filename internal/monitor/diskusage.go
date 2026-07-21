@@ -30,13 +30,16 @@ const (
 	minExpandTiles     = 2 // a dir is worth expanding only if it yields ≥2 above-floor tiles
 )
 
-// cacheFileName is the warm-start snapshot written next to the executable. A
-// full-volume walk takes seconds, so on launch the scanner shows the previous
-// run's tiles from this file while the fresh crawl runs — the treemap is never
-// blank waiting on a cold walk. cacheFileMode is its permission bits.
+// cacheFileName is the warm-start snapshot written under the OS per-user cache
+// directory, in cacheDirName. A full-volume walk takes seconds, so on launch
+// the scanner shows the previous run's tiles from this file while the fresh
+// crawl runs — the treemap is never blank waiting on a cold walk. cacheFileMode
+// and cacheDirMode are their permission bits.
 const (
 	cacheFileName = "diskcache.json"
+	cacheDirName  = "system-monitor"
 	cacheFileMode = 0o644
+	cacheDirMode  = 0o755
 )
 
 // DirSize is one treemap tile chosen by the selection algorithm: the absolute
@@ -257,14 +260,21 @@ func (s *DiskUsageScanner) persist(cache map[string][]DirSize) {
 	}
 }
 
-// cachePath returns the cache file path next to the running executable, or ""
-// when the executable can't be located (then caching is silently skipped).
+// cachePath returns the cache file path under the OS per-user cache directory,
+// creating the app's subdirectory, or "" when either is unavailable (then
+// caching is silently skipped). The file must NOT live next to the executable:
+// system installs (the .deb's /usr/bin) are read-only for the user, so the
+// cache would silently never persist.
 func cachePath() string {
-	exe, err := os.Executable()
+	base, err := os.UserCacheDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(exe), cacheFileName)
+	dir := filepath.Join(base, cacheDirName)
+	if err := os.MkdirAll(dir, cacheDirMode); err != nil {
+		return ""
+	}
+	return filepath.Join(dir, cacheFileName)
 }
 
 // walkFiles traverses root in parallel with fastwalk, returning every regular

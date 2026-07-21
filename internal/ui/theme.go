@@ -6,8 +6,9 @@ package ui
 // See https://docs.fyne.io/faq/theme/ for the theme contract.
 //
 // The theme ignores the requested fyne.ThemeVariant: the active palette (dark
-// by default, or light) is selected once at startup by applyTheme from the
-// persisted theme preference (BZS253-72), not from the OS light/dark variant.
+// by default, or light) is selected by applyTheme from the persisted theme
+// preference (BZS253-72) — at startup and again on a live Appearance change —
+// not from the OS light/dark variant.
 //
 // Fonts: the design calls for IBM Plex Mono (everything numeric/tabular) and
 // IBM Plex Sans (titles and prose). Both families are bundled and embedded in
@@ -32,10 +33,10 @@ var _ fyne.Theme = (*monitorTheme)(nil)
 func newTheme() fyne.Theme { return &monitorTheme{} }
 
 // applyTheme points the active palette at the chosen variant and rebuilds the
-// Fyne color map from it. Run calls it once at startup, before the theme is set
-// and any widget is built (BZS253-72) — palette is read at construction across
-// the package, so the swap must precede all UI. Not safe to call after the
-// window exists; theme changes take effect on next launch.
+// Fyne color map from it. Run calls it at startup before any widget is built,
+// and again on a live Appearance change — palette is read at widget
+// construction across the package, so every call must be followed by building
+// (or rebuilding) the widget tree from scratch (see rebuild in app.go).
 func applyTheme(choice themeChoice) {
 	switch choice {
 	case themeLight:
@@ -89,8 +90,8 @@ func buildThemeColors() map[fyne.ThemeColorName]color.Color {
 
 // Color maps Fyne's semantic color names onto the active design-system palette.
 // The Fyne variant is intentionally ignored: the palette (dark or light) is
-// chosen once at startup by applyTheme from the persisted preference, not from
-// the OS light/dark variant.
+// chosen by applyTheme from the persisted preference, not from the OS
+// light/dark variant.
 func (m *monitorTheme) Color(name fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
 	if c, ok := themeColors[name]; ok {
 		return c

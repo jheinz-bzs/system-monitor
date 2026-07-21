@@ -51,6 +51,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 	"golang.org/x/image/vector"
 
@@ -71,6 +72,15 @@ const (
 	chartLabelGap       = spaceSM // 4; gap between a tick label and the plot
 	chartMinWidth       = 60 * spaceSM
 	chartMinHeight      = 30 * spaceSM
+)
+
+// Hover overlay geometry (the point tooltip shown while the pointer is over a
+// hover-interactive chart).
+const (
+	hoverMarkerSize = 6       // px; hovered-point dot diameter (off-grid)
+	hoverTipPad     = spaceSM // 4; tooltip inner padding
+	hoverTipGap     = spaceMD // 8; offset from the point to the tooltip box
+	hoverTipRadius  = spaceXS // 2; tooltip corner radius
 )
 
 // yRange describes how the chart derives its vertical scale.
@@ -123,6 +133,30 @@ func timeAxis(span time.Duration) lineChartOption {
 	return func(c *lineChart) { c.span = span }
 }
 
+// thresholdBandSpec shades the plot wherever the driving series sits at or above
+// threshold — the "high usage" highlight.
+type thresholdBandSpec struct {
+	threshold float64
+	fill      color.Color
+}
+
+// hoverReadout makes the chart hover-interactive: as the pointer moves over the
+// plot, the chart snaps a crosshair + marker to the nearest sample of the driving
+// series and shows a tooltip of that sample's value and the label f returns for
+// its index (the Recordings tab passes the sample's absolute timestamp). Without
+// this option the chart isn't hover-interactive.
+func hoverReadout(f func(index int) string) lineChartOption {
+	return func(c *lineChart) { c.hover = f }
+}
+
+// thresholdBand shades the vertical span of the plot wherever the first (driving)
+// series' value is at or above threshold, so an over-threshold stretch reads at a
+// glance (the highlight from the BZS253-77 follow-up). fill should be translucent
+// so the line stays visible on top — pass a design token such as palette.RedDim.
+func thresholdBand(threshold float64, fill color.Color) lineChartOption {
+	return func(c *lineChart) { c.band = &thresholdBandSpec{threshold: threshold, fill: fill} }
+}
+
 // chartSeries is one plotted line. Construct it with addSeries; style it with
 // the series options.
 type chartSeries struct {
@@ -170,6 +204,10 @@ type lineChart struct {
 	window  int
 	span    time.Duration
 	stacked bool
+	band    *thresholdBandSpec // nil = no threshold highlight
+	hover   func(index int) string // sample→label for the hover tooltip; nil = not interactive
+
+	renderer *lineChartRenderer // captured in CreateRenderer, for hover hit-testing
 }
 
 // newLineChart returns a chart configured by opts. Default Y range is
@@ -215,7 +253,54 @@ func (c *lineChart) CreateRenderer() fyne.WidgetRenderer {
 		r.hGrid = append(r.hGrid, newGridLine(palette.Border))
 		r.yLabels = append(r.yLabels, newMeta(""))
 	}
+
+	// Hover overlay, built once and hidden until the pointer enters the plot.
+	r.crosshair = newGridLine(palette.BorderStrong)
+	r.marker = canvas.NewCircle(palette.Accent)
+	r.tipBG = canvas.NewRectangle(palette.Surface3)
+	r.tipBG.StrokeColor = palette.Border
+	r.tipBG.StrokeWidth = 1
+	r.tipBG.CornerRadius = hoverTipRadius
+	// Larger than axis meta so the readout is easily legible: 12px table size, the
+	// value in medium/primary over the label in regular/secondary.
+	r.tipVal = styledText("", font.MonoMedium, sizeName.TableText, palette.Text)
+	r.tipLabel = styledText("", font.MonoRegular, sizeName.TableText, palette.Text2)
+	r.hideHover()
+
+	c.renderer = r
 	return r
+}
+
+var (
+	_ desktop.Hoverable  = (*lineChart)(nil)
+	_ desktop.Cursorable = (*lineChart)(nil)
+)
+
+// MouseIn / MouseMoved / MouseOut implement desktop.Hoverable: on a
+// hover-interactive chart they snap the overlay to the nearest sample; on a plain
+// chart (no hoverReadout) they no-op.
+func (c *lineChart) MouseIn(ev *desktop.MouseEvent) { c.MouseMoved(ev) }
+
+func (c *lineChart) MouseMoved(ev *desktop.MouseEvent) {
+	if c.hover == nil || c.renderer == nil {
+		return
+	}
+	c.renderer.showHover(ev.Position)
+}
+
+func (c *lineChart) MouseOut() {
+	if c.renderer != nil {
+		c.renderer.hideHover()
+	}
+}
+
+// Cursor implements desktop.Cursorable — a crosshair over a hover-interactive
+// plot, the default pointer otherwise.
+func (c *lineChart) Cursor() desktop.Cursor {
+	if c.hover == nil {
+		return desktop.DefaultCursor
+	}
+	return desktop.CrosshairCursor
 }
 
 // newGridLine builds a 1px gridline in the given color.
@@ -245,7 +330,19 @@ type lineChartRenderer struct {
 	series *canvas.Raster
 	lines  []polyline
 	fills  []bandFill
+	bands  []bandFill // threshold highlight rectangles, drawn beneath the lines
 	plot   chartBox
+
+	// Hover overlay, shown only while the pointer is over a hover-interactive
+	// plot: a crosshair at the sample, a marker on the driving line, and a
+	// tooltip of the value + its label. hoverVals is that driving series' samples,
+	// index-aligned with lines[0].pts, so a snapped index reads its own value.
+	crosshair *canvas.Line
+	marker    *canvas.Circle
+	tipBG     *canvas.Rectangle
+	tipVal    *canvas.Text
+	tipLabel  *canvas.Text
+	hoverVals []float64
 
 	// Buffers reused across frames so a 1 Hz refresh doesn't churn a fresh
 	// image + a rasterizer-per-series every tick (the dominant memory pressure
@@ -318,6 +415,8 @@ func (r *lineChartRenderer) arrange() {
 	} else {
 		r.lines, r.fills = r.buildLines(plot, lo, hi, data), nil
 	}
+	r.bands = r.buildBands(plot, data)
+	r.hoverVals = firstVisibleSeries(data) // driving series for the hover tooltip
 	r.series.Resize(fyne.NewSize(plot.width, plot.height))
 	r.series.Move(fyne.NewPos(plot.x, plot.y))
 	r.series.Refresh()
@@ -441,6 +540,74 @@ func (r *lineChartRenderer) buildLines(plot chartBox, lo, hi float64, data [][]f
 	return lines
 }
 
+// buildBands resolves the threshold highlight into plot-local rectangles: one
+// per contiguous run where the driving series is at or above the threshold. The
+// driving series is the first visible one (the emphasized headline line), so its
+// x mapping matches seriesPoints. Each run is widened by half a sample step on
+// both sides — so a single-sample spike still shades a visible cell — then
+// clamped to the plot box.
+func (r *lineChartRenderer) buildBands(plot chartBox, data [][]float64) []bandFill {
+	if r.chart.band == nil {
+		return nil
+	}
+	vals := firstVisibleSeries(data)
+	if len(vals) == 0 {
+		return nil
+	}
+	span := r.chart.window
+	if span < len(vals) {
+		span = len(vals)
+	}
+	step := plot.width / float32(max(span-1, 1))
+	xAt := func(j int) float32 { return plot.width - float32(len(vals)-1-j)*step }
+
+	var bands []bandFill
+	for _, sp := range thresholdSpans(vals, r.chart.band.threshold) {
+		x0 := clamp32(xAt(sp[0])-step/2, 0, plot.width)
+		x1 := clamp32(xAt(sp[1])+step/2, 0, plot.width)
+		bands = append(bands, bandFill{
+			col: r.chart.band.fill,
+			pts: []fyne.Position{
+				{X: x0, Y: 0}, {X: x1, Y: 0},
+				{X: x1, Y: plot.height}, {X: x0, Y: plot.height},
+			},
+		})
+	}
+	return bands
+}
+
+// firstVisibleSeries returns the first visible series' samples (arrange leaves an
+// invisible series' slot nil), or nil when none has data — the series that drives
+// the threshold highlight.
+func firstVisibleSeries(data [][]float64) []float64 {
+	for _, d := range data {
+		if len(d) > 0 {
+			return d
+		}
+	}
+	return nil
+}
+
+// thresholdSpans returns the contiguous [start, end] index runs where vals is at
+// or above threshold.
+func thresholdSpans(vals []float64, threshold float64) [][2]int {
+	var spans [][2]int
+	start := -1
+	for i, v := range vals {
+		switch {
+		case v >= threshold && start < 0:
+			start = i
+		case v < threshold && start >= 0:
+			spans = append(spans, [2]int{start, i - 1})
+			start = -1
+		}
+	}
+	if start >= 0 {
+		spans = append(spans, [2]int{start, len(vals) - 1})
+	}
+	return spans
+}
+
 // seriesPoints maps a series' samples to plot-local pixels: newest pinned to
 // the right edge, older samples stepping left by a window-stable interval.
 func (r *lineChartRenderer) seriesPoints(plot chartBox, lo, hi float64, vals []float64) []fyne.Position {
@@ -458,6 +625,64 @@ func (r *lineChartRenderer) seriesPoints(plot chartBox, lo, hi float64, vals []f
 	return pts
 }
 
+// showHover snaps the overlay to the driving series' sample nearest pos.X: a
+// crosshair at that column, a marker on the line, and a tooltip of the sample's
+// value and its label (the timestamp, for a recording). Only the overlay objects
+// are refreshed, so a mouse move never regenerates the series raster.
+func (r *lineChartRenderer) showHover(pos fyne.Position) {
+	if len(r.lines) == 0 || len(r.lines[0].pts) == 0 || len(r.hoverVals) == 0 {
+		return
+	}
+	pts := r.lines[0].pts
+	idx, best := 0, float32(math.Inf(1))
+	for j, p := range pts {
+		if d := float32(math.Abs(float64(r.plot.x + p.X - pos.X))); d < best {
+			best, idx = d, j
+		}
+	}
+	if idx >= len(r.hoverVals) {
+		return
+	}
+	px, py := r.plot.x+pts[idx].X, r.plot.y+pts[idx].Y
+
+	r.crosshair.Position1 = fyne.NewPos(px, r.plot.y)
+	r.crosshair.Position2 = fyne.NewPos(px, r.plot.y+r.plot.height)
+
+	r.marker.Resize(fyne.NewSize(hoverMarkerSize, hoverMarkerSize))
+	r.marker.Move(fyne.NewPos(px-hoverMarkerSize/2, py-hoverMarkerSize/2))
+
+	r.tipVal.Text = r.chart.format(r.hoverVals[idx])
+	r.tipLabel.Text = r.chart.hover(idx)
+	valSize, lblSize := r.tipVal.MinSize(), r.tipLabel.MinSize()
+	tw := max(valSize.Width, lblSize.Width) + 2*hoverTipPad
+	th := valSize.Height + lblSize.Height + 2*hoverTipPad
+	// Prefer up-and-right of the point, clamped inside the plot box.
+	tx := clamp32(px+hoverTipGap, r.plot.x, r.plot.x+r.plot.width-tw)
+	ty := clamp32(py-th-hoverTipGap, r.plot.y, r.plot.y+r.plot.height-th)
+	r.tipBG.Resize(fyne.NewSize(tw, th))
+	r.tipBG.Move(fyne.NewPos(tx, ty))
+	r.tipVal.Move(fyne.NewPos(tx+hoverTipPad, ty+hoverTipPad))
+	r.tipLabel.Move(fyne.NewPos(tx+hoverTipPad, ty+hoverTipPad+valSize.Height))
+
+	for _, o := range r.hoverObjects() {
+		o.Show()
+		o.Refresh()
+	}
+}
+
+// hideHover hides the overlay (the pointer left, or the chart isn't interactive).
+func (r *lineChartRenderer) hideHover() {
+	for _, o := range r.hoverObjects() {
+		o.Hide()
+		o.Refresh()
+	}
+}
+
+// hoverObjects is the overlay set, listed once so show/hide stay in lockstep.
+func (r *lineChartRenderer) hoverObjects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.crosshair, r.marker, r.tipBG, r.tipVal, r.tipLabel}
+}
+
 // renderSeries is the raster generator: it strokes each resolved polyline into
 // a w×h image (device pixels). Scaling DP → pixels here keeps the lines crisp
 // at any output scale, and one anti-aliased fill per series gives a smooth line
@@ -473,6 +698,16 @@ func (r *lineChartRenderer) renderSeries(w, h int) image.Image {
 	}
 	sx := float32(w) / r.plot.width
 	sy := float32(h) / r.plot.height
+	// Threshold highlights go down first of all, so both the band fills (stacked
+	// mode) and the line strokes sit on top of them.
+	for _, b := range r.bands {
+		if len(b.pts) < 3 {
+			continue
+		}
+		r.ras.Reset(w, h)
+		fillPolygon(r.ras, b.pts, sx, sy)
+		r.ras.Draw(img, img.Bounds(), image.NewUniform(b.col), image.Point{})
+	}
 	for _, f := range r.fills {
 		if len(f.pts) < 3 {
 			continue
@@ -542,6 +777,8 @@ func (r *lineChartRenderer) Objects() []fyne.CanvasObject {
 	for _, l := range r.xLabels {
 		objs = append(objs, l)
 	}
+	// Hover overlay on top of everything (hidden until the pointer enters).
+	objs = append(objs, r.crosshair, r.marker, r.tipBG, r.tipVal, r.tipLabel)
 	return objs
 }
 

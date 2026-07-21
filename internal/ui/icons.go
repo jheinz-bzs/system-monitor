@@ -20,6 +20,7 @@ type iconSet struct {
 	Processes   fyne.Resource
 	Ports       fyne.Resource
 	Connections fyne.Resource
+	Recordings  fyne.Resource
 	Settings    fyne.Resource
 	Diamond     fyne.Resource // title-bar brand mark
 	Check       fyne.Resource // table checkbox mark
@@ -34,6 +35,7 @@ var icon = iconSet{
 	Processes:   resource("icons/processes.svg"),
 	Ports:       resource("icons/ports.svg"),
 	Connections: resource("icons/connections.svg"),
+	Recordings:  resource("icons/recordings.svg"),
 	Settings:    resource("icons/settings.svg"),
 	Diamond:     resource("icons/diamond.svg"),
 	Check:       resource("icons/check.svg"),

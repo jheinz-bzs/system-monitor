@@ -80,13 +80,20 @@ const (
 
 // Volumes-list geometry, from the wireframe's volumes panel. Off-grid bar size
 // keeps its own literal-px const; the row/line gaps are exact spacing steps.
+// Rows are pooled on demand (one per partition) and the list scrolls
+// vertically, so a machine with many volumes never stretches the pane.
 const (
-	volumeRowLimit  = 12       // max pooled rows (partitions are few; caps the pool)
 	volumeBarHeight = 6        // px; usage bar track/fill height
 	volumeRowGap    = space2XL // 24; vertical gap between volume rows
 	volumeLineGap   = spaceSM  // 4; gap between a row's header, bar, and percent
 	volumeMinWidth  = 240      // px; panel floor so name + sizes stay readable
 )
+
+// volumeSelectorMaxWidth caps the storage header's volume selector width; more
+// volumes than fit scroll horizontally instead of widening the pane (dozens of
+// mounts once forced the window past the GPU's max surface width — a fatal
+// X BadAlloc on Linux).
+const volumeSelectorMaxWidth = 420 // px
 
 // diskPartition is the UI's per-partition usage shape: a mount path and its byte
 // totals. app.go adapts monitor.PartitionUsage into this so the view never
@@ -258,7 +265,7 @@ func diskSubtitle(parts []diskPartition) string {
 
 // volumesList is the Volumes panel body: one usage bar per mounted partition,
 // stacked top→bottom. Like coreGrid it is a pooled-renderer widget — rows are
-// allocated once up to volumeRowLimit and arrange() repositions/recolors them —
+// pooled on demand (one per partition) and arrange() repositions/recolors them —
 // and re-reads its source on every Refresh, tracking the poll tick. Partitions
 // without a real total (pseudo-filesystems) contribute no row.
 type volumesList struct {
@@ -316,10 +323,9 @@ func (row *volumeRow) hide() {
 
 func (v *volumesList) CreateRenderer() fyne.WidgetRenderer {
 	r := &volumesListRenderer{list: v}
-	r.rows = make([]*volumeRow, volumeRowLimit)
-	for i := range r.rows {
-		r.rows[i] = newVolumeRow()
-	}
+	// Probe text for row-height math in MinSize: both of a row's text lines are
+	// caption-sized, so one measurement fixes the whole row height.
+	r.probe = styledText("0", font.MonoMedium, theme.SizeNameCaptionText, palette.Text)
 	r.empty = newMeta(labelVolumesEmpty)
 	r.empty.Hide()
 	return r
@@ -327,9 +333,18 @@ func (v *volumesList) CreateRenderer() fyne.WidgetRenderer {
 
 type volumesListRenderer struct {
 	list  *volumesList
-	rows  []*volumeRow
+	rows  []*volumeRow // pooled on demand, one per partition
+	probe *canvas.Text // caption-height measurement for MinSize; never drawn
 	empty *canvas.Text
 	size  fyne.Size
+}
+
+// ensureRows grows the row pool to hold n rows. Existing rows are reused;
+// the pool never shrinks (surplus rows are hidden by arrange).
+func (r *volumesListRenderer) ensureRows(n int) {
+	for len(r.rows) < n {
+		r.rows = append(r.rows, newVolumeRow())
+	}
 }
 
 func (r *volumesListRenderer) Layout(size fyne.Size) {
@@ -351,6 +366,7 @@ func (r *volumesListRenderer) arrange() {
 		return
 	}
 	parts := r.visiblePartitions()
+	r.ensureRows(len(parts))
 	for _, row := range r.rows {
 		row.hide()
 	}
@@ -361,14 +377,9 @@ func (r *volumesListRenderer) arrange() {
 	r.syncEmpty(len(parts))
 }
 
-// visiblePartitions returns the snapshot's partitions with real capacity, capped
-// at the pool size.
+// visiblePartitions returns the snapshot's partitions with real capacity.
 func (r *volumesListRenderer) visiblePartitions() []diskPartition {
-	parts := withCapacity(r.list.src.partitions())
-	if len(parts) > volumeRowLimit {
-		parts = parts[:volumeRowLimit]
-	}
-	return parts
+	return withCapacity(r.list.src.partitions())
 }
 
 // arrangeRow lays one partition out at vertical offset y across the full width,
@@ -422,7 +433,17 @@ func (r *volumesListRenderer) syncEmpty(count int) {
 	r.empty.Show()
 }
 
+// MinSize reports the full stacked height of every row, so the enclosing
+// vertical scroller knows the true content extent. Row height mirrors
+// arrangeRow exactly: a caption header line, the bar, and a caption percent
+// line, separated by volumeLineGap.
 func (r *volumesListRenderer) MinSize() fyne.Size {
+	n := len(r.visiblePartitions())
+	if n > 0 {
+		captionH := r.probe.MinSize().Height
+		rowH := 2*captionH + 2*volumeLineGap + volumeBarHeight
+		return fyne.NewSize(volumeMinWidth, float32(n)*rowH+float32(n-1)*volumeRowGap)
+	}
 	return fyne.NewSize(volumeMinWidth, 0)
 }
 
@@ -520,7 +541,8 @@ func (v *diskView) pageHead() fyne.CanvasObject {
 // keeps the larger share, per the wireframe.
 func (v *diskView) topRow() fyne.CanvasObject {
 	storage := newPanel(labelStorageByDir, v.storageHeader(), v.storageBody())
-	volumes := newPanel(labelVolumesPanel, nil, v.volumes)
+	// Vertical scroll so many volumes never stretch the pane past the window.
+	volumes := newPanel(labelVolumesPanel, nil, container.NewVScroll(v.volumes))
 	return newWeightedHBox(tabPad,
 		weightedPane{object: storage, weight: storageDirWeight},
 		weightedPane{object: volumes, weight: volumesPaneWeight},
@@ -575,7 +597,13 @@ func (v *diskView) volumeSelector() fyne.CanvasObject {
 	for i, m := range v.mounts {
 		labels[i] = volumeLabel(m)
 	}
-	return newSegmentedSelect(0, func(i int) { v.selectVolume(v.mounts[i]) }, labels...)
+	sel := newSegmentedSelect(0, func(i int) { v.selectVolume(v.mounts[i]) }, labels...)
+	// Cap the selector's width and scroll the overflow: its natural width grows
+	// with every mounted volume, and an uncapped header widens the whole window.
+	natural := sel.MinSize()
+	scroll := container.NewHScroll(sel)
+	scroll.SetMinSize(fyne.NewSize(fyne.Min(natural.Width, volumeSelectorMaxWidth), natural.Height))
+	return scroll
 }
 
 // volumeLabel renders a mount path as a compact selector label, dropping a

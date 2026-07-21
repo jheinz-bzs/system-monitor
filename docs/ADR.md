@@ -205,7 +205,7 @@ Switching on a typed `id` decouples routing from labels (rename `name` freely; r
 ## ADR-007: Persisted settings via app.Preferences(); startup-applied; reversing "no settings screen"
 
 **Date:** 2026-06-23
-**Status:** Active
+**Status:** Active — the startup-only ("next launch") application rule is superseded by ADR-013; the storage decision stands
 **Area:** Architecture / UI
 
 ### Context
@@ -265,7 +265,7 @@ Making it opt-in and default-off preserves the AC's intent — nothing replaces 
 ## ADR-011: Linux ships .deb + AppImage + bare binary; only the AppImage self-updates
 
 **Date:** 2026-06-24
-**Status:** Active
+**Status:** Active — amended 2026-07-09: the bare Linux binary now also self-updates when its install directory is writable. `assetName()` resolves the `.AppImage` only for AppImage launches (`$APPIMAGE` set) and the extensionless binary otherwise; `update.Supported()` gates a bare-binary launch on a writability probe of the executable's directory (create+remove a temp file — the exact operation the installer performs), so a root-owned `/usr/bin` (.deb) install still shows no update affordance and stays apt-managed. The "no dishonest UI" rationale below is preserved by the probe rather than by excluding bare binaries wholesale.
 **Area:** Infrastructure / UI
 
 ### Context
@@ -279,3 +279,41 @@ The cross-platform story is a selling point, so the Linux release should offer r
 ### Rationale
 
 One native build feeds all three packagers, so there's no extra compile. Making the AppImage the self-update target is the natural fit — it's already a relocatable, user-writable single file, so the existing rename-swap works unchanged once it targets `$APPIMAGE` (a one-line indirection via `targetExecutable()`, shared by swap, restart, and the download dir so the temp file lands on the AppImage's volume for an atomic rename). Gating with `Supported()` avoids dishonest UI: a `.deb` user would otherwise see "update failed" when the swap hit a permission wall, so instead they see nothing and update through apt — the correct distro convention. nfpm (a Go binary, `go install`-able on the runner) drives the `.deb` from a small YAML with no FPM/Ruby; linuxdeploy bundles the GL/X11 shared libs the Fyne binary links, so the AppImage runs on machines without them. macOS code-signing/notarization remains deferred (ADR-009); this ADR only broadens Linux.
+
+---
+
+## ADR-012: Session tracking mode records metrics to a CSV file (scoped exception to no-persistence)
+
+**Date:** 2026-07-08
+**Status:** Active
+**Area:** UI / Product
+
+### Context
+
+The no-persistence rule (ADR-001) is a defining constraint: metric history lives only in an in-memory ring buffer (~1 min at 1s), never on disk. But that same short window is a real limitation — a user who wants to catch a spike that happened while they were away, or capture a longer profiling run to inspect later, has nowhere for the data to go. BZS253-77 asks for an opt-in "tracking mode" that records one row of metrics per poll tick to a file for a session the user explicitly starts and stops.
+
+### Decision
+
+**Session tracking is a deliberate, scoped exception to the no-persistence rule. A user-started session appends one CSV row per poll tick (`internal/recorder`), stops on the user's command, and defaults OFF on every launch — it is session scope, not a persisted preference, so nothing records without an explicit start. The recorder registers as a third `OnTick` observer (after the redraw and the threshold watcher), reads each column through a plain `func() float64` supplied by the composition root, and writes through an `io.WriteCloser` — so its data path imports no Fyne, no monitor, and no UI, and is unit-tested without a running app. Output is CSV via stdlib `encoding/csv` (one header row, then `timestamp` + nine metric columns), `Flush()`ed per row so a crash mid-session keeps what was recorded. The file location is chosen by the user through the platform's native OS save dialog (`github.com/ncruces/zenity`) on start (default name `tracking-<timestamp>.csv`); zenity blocks, so it is invoked off the UI goroutine.**
+
+### Rationale
+
+The exception is narrow and honest: the no-persistence rule governs *ambient* history the app writes on its own; this is a *user-initiated export* of a session the user starts and stops, so "the app doesn't quietly keep your metrics" still holds — the only bytes on disk are ones the user asked for, to a location they picked. Defaulting off every launch (no persisted toggle) keeps the consent boundary at the same place ADR-010 put auto-update: nothing happens without an explicit act. CSV over a custom/binary format because it's grep-able, opens in any spreadsheet, and adds zero dependencies. The `OnTick` seam (ADR-007's neutral `series.Source` layering, extended by the poller's multi-observer tick) means no change to `Run()`'s collector wiring beyond registering one observer — the recorder is added, not woven in. Keeping the data path behind `io.WriteCloser` + `func() float64` rather than importing the series seam or a collector makes the "no Fyne in the data path" acceptance criterion structural, not just observed, and lets the test drive it with a `bytes.Buffer`. **Two recorded deviations from the card, both chosen by the card owner:** (1) the card scoped v1 as "default path, no chooser dialog yet" — the owner chose to ship a file picker now, so the user picks the location on start; (2) the picker is the platform's *native* OS dialog, which the card's "no new third-party dependency" AC cannot satisfy — Fyne's built-in `dialog` is drawn in-app, not native, and core Fyne has no native picker. So `github.com/ncruces/zenity` is added deliberately. zenity was chosen over alternatives (e.g. `sqweek/dialog`) for its cgo-free, cross-platform native dialogs (Windows via syscall, macOS via `osascript`, Linux via the `zenity`/`qarma` binary), keeping the build simple on the project's Windows + macOS targets. The recorder's data path is unaffected — it still takes only `io.WriteCloser`, so the new dependency lives solely in the composition root's toggle action.
+
+## ADR-013: Settings apply live via applyHooks; supersedes ADR-007's startup-only rule
+
+**Date:** 2026-07-09
+**Status:** Active
+**Area:** Architecture / UI
+
+### Context
+
+ADR-007 (settings) deliberately applied every preference once at startup ("next launch" per row) because a live theme switch would require rebuilding the whole window. In practice the relaunch requirement read as broken UX — a threshold change not taking effect was reported as a bug — and the alert rows had already moved to live prefs reads (BZS253-75 follow-up). The remaining rows (appearance, poll cadence, memory cap, tray) needed a decision: keep next-launch or wire live application.
+
+### Decision
+
+**Settings apply immediately. A consumer-defined `applyHooks` struct (settings.go) carries live-appliers the composition root populates late through a shared pointer: appearance and poll cadence call `rebuild()` — a full `buildContent` reconstruction that re-bakes palette colors and time axes, landing back on the Settings tab via `buildSources.initialTab`; poll additionally re-paces the poller (Stop → SetInterval → Start); memory cap installs/removes the GC soft limit (never clearing an operator `GOMEMLIMIT`); tray enables live, and a mid-run disable restores quit-on-close but leaves the icon until exit (Fyne has no tray-removal API). Alert rows read prefs on every watcher tick. Only inherently launch-scoped rows (start tab, auto-update install) keep launch wording. Each control persists first, then fires its hook; nil hooks just persist (tests, non-desktop drivers).**
+
+### Rationale
+
+The "rebuild the whole window" cost ADR-007 avoided turned out to be small: tabs build lazily, so a rebuild constructs one tab plus chrome, and ring buffers live outside the widget tree so chart history survives. One mechanism (rebuild) covers both structural settings instead of per-widget re-theming machinery, and it guarantees axis labels, the status-bar poll label, and every palette-baked canvas object stay truthful. The hooks stay in the ui package but respect the seam direction: defined at the consumer (Settings tab), populated only by the composition root, which alone holds the window, poller, and runtime handles. `Poller.SetInterval` keeps the interval read race-free by passing it into the run goroutine at Start. The tray's lingering icon on live-disable is an accepted ponytail ceiling — the close behavior (the part users feel) switches instantly.
