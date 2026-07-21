@@ -3,7 +3,34 @@ package ui
 import (
 	"image/color"
 	"testing"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/test"
 )
+
+// TestVolumesListSurvivesRendererRecreation guards the Disk tab's volumes pane
+// against going permanently blank: fyne destroys renderers left unpainted for
+// ~1 minute and recreates them on demand, and the recreated renderer gets no
+// Layout call while the widget's size is unchanged. Arrange must therefore
+// take its size from the widget (which survives recreation), not from a
+// Layout-fed renderer field.
+func TestVolumesListSurvivesRendererRecreation(t *testing.T) {
+	test.NewApp()
+	src := diskUsageSourceFunc(func() []diskPartition {
+		return []diskPartition{{mount: "C:\\", total: 512, used: 420}}
+	})
+	list := newVolumesList(src)
+	list.Resize(fyne.NewSize(400, 300))
+
+	// A second CreateRenderer stands in for fyne recreating a destroyed
+	// renderer: fresh row pool, zero internal state, only Refresh incoming.
+	r := list.CreateRenderer().(*volumesListRenderer)
+	r.Refresh()
+
+	if len(r.rows) == 0 || !r.rows[0].name.Visible() {
+		t.Fatal("volumes list blank after renderer recreation: no visible rows")
+	}
+}
 
 func TestDiskUsageColor(t *testing.T) {
 	var (
