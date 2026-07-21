@@ -95,6 +95,7 @@ type buildSources struct {
 	settings     settings               // persisted user preferences (Settings tab)
 	system       systemInfo             // static machine facts for the Settings "System" section (BZS253-74)
 	nav          *crossNav              // cross-tab navigation target; populated by buildContent
+	window       fyne.Window            // dialog parent (mass-kill confirm); nil in tests
 	updateStatus func() update.Snapshot // self-update state for the status bar; nil on a dev build (BZS253-71)
 	startUpdate  func()                 // install the available update on user confirmation; nil when not wired
 	apply        *applyHooks            // live-appliers for Settings changes; a pointer so app.go can late-bind them after the poller/window exist
@@ -214,7 +215,7 @@ var tabRegistry = map[tabID]tabBuilder{
 		if src.allProcs == nil {
 			return tabContent{object: newPlaceholder(labelProcessesPageTitle)}
 		}
-		v := newProcessesView(src.allProcs, src.killProc)
+		v := newProcessesView(src.allProcs, src.killProc, src.window)
 		return tabContent{object: v.object(), refresh: v.refresh, selectPID: v.selectPID}
 	},
 	tabPorts: func(src buildSources) tabContent {
