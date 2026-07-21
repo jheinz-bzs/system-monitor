@@ -10,7 +10,7 @@ section: utils
 priority: optional
 maintainer: BizStream <jheinz@bizstream.com>
 description: Native desktop system monitor — CPU, memory, disk, network, processes.
-homepage: https://github.com/jheinz-bzs/system-monitor
+homepage: https://github.com/josephheinz/system-monitor
 license: MIT
 depends:
   - libgl1

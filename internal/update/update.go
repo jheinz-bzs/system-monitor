@@ -23,7 +23,7 @@ import (
 // import (github.com/josephheinz/...); releases are actually cut from this repo,
 // so the API queries target it directly.
 const (
-	owner = "jheinz-bzs"
+	owner = "josephheinz"
 	repo  = "system-monitor"
 
 	latestReleaseURL = "https://api.github.com/repos/" + owner + "/" + repo + "/releases/latest"

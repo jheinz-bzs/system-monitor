@@ -2,7 +2,7 @@
 
 ## Option 1 — GitHub release (recommended)
 
-1. Open the [latest release](https://github.com/jheinz-bzs/system-monitor/releases/latest).
+1. Open the [latest release](https://github.com/josephheinz/system-monitor/releases/latest).
 2. Download **`system-monitor-windows-amd64.exe`**.
 3. (Optional) Verify the download against `checksums.txt`:
 
@@ -26,7 +26,7 @@ Requirements:
 - **GNU Make** (optional) — ships with mingw-w64 as `mingw32-make`.
 
 ```powershell
-git clone https://github.com/jheinz-bzs/system-monitor.git
+git clone https://github.com/josephheinz/system-monitor.git
 cd system-monitor
 mingw32-make build-win  # generates bundled assets, then builds bin\system-monitor.exe
 ```

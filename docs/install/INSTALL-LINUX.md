@@ -1,7 +1,7 @@
 # Installing on Linux
 
 All release assets are **x86_64 (amd64)** and are listed on the
-[latest release](https://github.com/jheinz-bzs/system-monitor/releases/latest)
+[latest release](https://github.com/josephheinz/system-monitor/releases/latest)
 page. Verify any download against `checksums.txt`:
 
 ```sh
@@ -17,7 +17,7 @@ file that bundles its GL/X11 dependencies and supports the app's built-in
 self-update.
 
 ```sh
-wget https://github.com/jheinz-bzs/system-monitor/releases/latest/download/system-monitor-linux-amd64.AppImage
+wget https://github.com/josephheinz/system-monitor/releases/latest/download/system-monitor-linux-amd64.AppImage
 chmod +x system-monitor-linux-amd64.AppImage
 ./system-monitor-linux-amd64.AppImage
 ```
@@ -30,7 +30,7 @@ or run with `APPIMAGE_EXTRACT_AND_RUN=1`.
 For Debian-family distros where you want apt to manage the install:
 
 ```sh
-wget https://github.com/jheinz-bzs/system-monitor/releases/latest/download/system-monitor_<version>_amd64.deb
+wget https://github.com/josephheinz/system-monitor/releases/latest/download/system-monitor_<version>_amd64.deb
 sudo apt install ./system-monitor_<version>_amd64.deb
 ```
 
@@ -45,7 +45,7 @@ the AppImage, this links GL/X11 at runtime, so your system needs Mesa/OpenGL
 and X11 (or XWayland) libraries present.
 
 ```sh
-wget https://github.com/jheinz-bzs/system-monitor/releases/latest/download/system-monitor-linux-amd64
+wget https://github.com/josephheinz/system-monitor/releases/latest/download/system-monitor-linux-amd64
 chmod +x system-monitor-linux-amd64
 ./system-monitor-linux-amd64
 ```
@@ -66,7 +66,7 @@ sudo apt install gcc libgl1-mesa-dev xorg-dev
 # Fedora
 sudo dnf install gcc mesa-libGL-devel libXcursor-devel libXrandr-devel libXinerama-devel libXi-devel libXxf86vm-devel
 
-git clone https://github.com/jheinz-bzs/system-monitor.git
+git clone https://github.com/josephheinz/system-monitor.git
 cd system-monitor
 make build     # generates bundled assets, then builds ./bin/system-monitor
 ```

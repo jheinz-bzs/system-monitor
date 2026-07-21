@@ -5,7 +5,7 @@ must build from source.
 
 ## Option 1 — .dmg from GitHub releases (recommended)
 
-1. Open the [latest release](https://github.com/jheinz-bzs/system-monitor/releases/latest)
+1. Open the [latest release](https://github.com/josephheinz/system-monitor/releases/latest)
    and download **`system-monitor-darwin-arm64.dmg`**.
 2. Open the `.dmg` and drag **System Monitor.app** into the **Applications**
    folder shortcut in the window.
@@ -52,7 +52,7 @@ Requirements: **Go 1.26+** and the Xcode Command Line Tools (Fyne needs CGO):
 xcode-select --install   # skip if already installed
 brew install go          # or download from https://go.dev/dl/
 
-git clone https://github.com/jheinz-bzs/system-monitor.git
+git clone https://github.com/josephheinz/system-monitor.git
 cd system-monitor
 make run       # or `make build` → ./bin/system-monitor
 ```
