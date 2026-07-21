@@ -317,3 +317,21 @@ ADR-007 (settings) deliberately applied every preference once at startup ("next 
 ### Rationale
 
 The "rebuild the whole window" cost ADR-007 avoided turned out to be small: tabs build lazily, so a rebuild constructs one tab plus chrome, and ring buffers live outside the widget tree so chart history survives. One mechanism (rebuild) covers both structural settings instead of per-widget re-theming machinery, and it guarantees axis labels, the status-bar poll label, and every palette-baked canvas object stay truthful. The hooks stay in the ui package but respect the seam direction: defined at the consumer (Settings tab), populated only by the composition root, which alone holds the window, poller, and runtime handles. `Poller.SetInterval` keeps the interval read race-free by passing it into the run goroutine at Start. The tray's lingering icon on live-disable is an accepted ponytail ceiling — the close behavior (the part users feel) switches instantly.
+
+## ADR-014: Headless recording binary; tracking-CSV schema extracted to internal/recorder/columns
+
+**Date:** 2026-07-13
+**Status:** Active
+**Area:** Architecture / Product
+
+### Context
+
+Servers have no reason to run the GUI — on a headless Linux box the Fyne binary won't even start (it dynamically links X11/OpenGL) — but the session-tracking mode (ADR-012) is exactly what a server operator wants: record metrics to CSV, inspect later. The tracking CSV's column schema (nine header strings the Recordings tab matches on) and its column builder lived private in `internal/ui/app.go`, unreachable from any non-GUI entry point.
+
+### Decision
+
+**A second binary, `cmd/system-monitor-record`, runs the identical recording pipeline headlessly: same collectors, same poller, same `internal/recorder`, same CSV schema — so a recording made on a server opens unchanged in the desktop app's Recordings tab. The schema (header consts, default `tracking-<timestamp>.csv` filename, and the collector→column builder) moves to a new seam package `internal/recorder/columns`, imported by both composition roots and by the Recordings tab's group definitions. `internal/recorder` itself stays dependency-free (ADR-012); `columns` sits beside it precisely because the builder needs `monitor` and `series`. The agent builds with `CGO_ENABLED=0` (the whole data path is Fyne-free and gopsutil is pure Go), so the release workflow cross-compiles all platforms from one runner, publishing `system-monitor-record-<os>-<arch>` assets. The binary is deliberately not a daemon — foreground process, stops on SIGINT/SIGTERM; supervision belongs to systemd / Task Scheduler. Flags only (`--out`, `--interval` ≥ 1s, `--duration`), no interactive setup.**
+
+### Rationale
+
+Extraction over duplication because the header strings are a file-format contract: the Recordings tab matches columns by exact string, so a drifted copy in a second binary would silently produce recordings the viewer half-ignores — the DRY "one authoritative home" case, not speculative abstraction (two real consumers exist). A second binary over a `--cli` flag because the GUI binary structurally can't serve the audience (X11/GL link failure on headless boxes) and because dropping Fyne drops cgo, turning the server artifact into a trivially cross-compiled static binary. The asset name keeps the `system-monitor-` prefix so the release workflow's checksum/upload globs cover it unchanged, and `update.assetName()` matches exactly, so the self-updater can't confuse the two. ADR-012's consent framing holds: the agent records only when an operator explicitly runs it with a chosen output path. Deferred until someone asks: a TUI viewer, file rotation, remote streaming.

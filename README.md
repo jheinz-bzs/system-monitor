@@ -36,10 +36,41 @@ or building from source:
 - [Linux](docs/install/INSTALL-LINUX.md) — bare binary, `.deb`, or AppImage
 - [macOS](docs/install/INSTALL-MACOS.md) — note the unsigned-app first-launch steps
 
+## Headless recording (servers)
+
+`system-monitor-record` is a headless agent that runs the app's session-tracking
+mode without a GUI: one CSV row per tick, same schema as the in-app record
+button, so the file opens in the desktop app's **Recordings** tab. It needs no
+Fyne, no cgo, and no display — grab it from the release assets
+(`system-monitor-record-<os>-<arch>`) or build it yourself:
+
+```sh
+make build-record                                    # host platform
+GOOS=linux GOARCH=amd64 make build-record            # cross-compile for a server
+```
+
+```sh
+system-monitor-record                          # tracking-<timestamp>.csv in cwd, until Ctrl-C
+system-monitor-record -out /var/lib/sysmon/run.csv -interval 5s -duration 1h
+```
+
+It runs in the foreground and stops on SIGINT/SIGTERM — let your service manager
+supervise it, e.g. a systemd unit:
+
+```ini
+[Service]
+ExecStart=/usr/local/bin/system-monitor-record -out /var/lib/sysmon/tracking.csv -interval 5s
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ## Layout
 
 ```
-cmd/system-monitor/   # main package — entry point
+cmd/system-monitor/          # main package — entry point (GUI)
+cmd/system-monitor-record/   # headless recording agent (servers)
 internal/
   ui/                 # Fyne app shell and the tabs
   monitor/            # gopsutil-backed metric collectors
