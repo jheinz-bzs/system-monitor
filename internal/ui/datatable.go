@@ -60,6 +60,15 @@ const (
 	tableBarHeight = 5  // px; bar track/fill height
 )
 
+// Checkbox geometry for check columns. The box is drawn — filled accent with
+// the Lucide check mark when checked, hollow otherwise — because the bundled
+// IBM Plex fonts lack the ballot-box glyphs (same reason the sort markers are
+// arrows).
+const (
+	tableCheckSize     = 12 // px; box edge
+	tableCheckMarkSize = 8  // px; check glyph inside the box (2px breathing room per side)
+)
+
 // tableCellHPad insets cell content from its column edge — the wireframe
 // table's 12px th/td padding. With a flush table panel this is also what
 // separates the first/last columns from the panel border.
@@ -77,30 +86,25 @@ type TableSource interface {
 	Snapshot() [][]tableCell
 }
 
-// tableRowHighlighter is an optional TableSource extension: sources that track
-// a selected row report its index in the current snapshot (noTableRow for
-// none). The renderer asserts for it right after Snapshot(), so the index and
-// the rows it points into always come from the same snapshot.
-type tableRowHighlighter interface {
-	highlightedRow() int
-}
-
 // tableCell is one cell's display data: text for text and pill columns; frac
 // (0..1) drives the fill of bar columns; pill selects a pill cell's semantic
-// color role (only read by pill columns, which always set it).
+// color role (only read by pill columns, which always set it); checked drives
+// check columns (a checked row also gets the selected-row background).
 type tableCell struct {
-	text string
-	frac float64
-	pill statusKind
+	text    string
+	frac    float64
+	pill    statusKind
+	checked bool
 }
 
 // columnKind selects how a column renders its cells.
 type columnKind int
 
 const (
-	columnText columnKind = iota // render tableCell.text
-	columnBar                    // render tableCell.frac as a mini bar
-	columnPill                   // render tableCell.text in status-pill chrome
+	columnText  columnKind = iota // render tableCell.text
+	columnBar                     // render tableCell.frac as a mini bar
+	columnPill                    // render tableCell.text in status-pill chrome
+	columnCheck                   // render tableCell.checked as a checkbox
 )
 
 // tableColumn declares one column: its header label, pixel width, cell text
@@ -361,25 +365,30 @@ type dataTableRenderer struct {
 	headerBG      *canvas.Rectangle
 	headerDivider *canvas.Line
 	headerCells   []*canvas.Text      // one per column
+	headerChecks  []*tableCheck       // one per column; nil at non-check columns
 	rowBGs        []*canvas.Rectangle // poolSize
 	rowDividers   []*canvas.Line      // poolSize
 	rowCells      [][]*canvas.Text    // [row][col]; nil entries at bar/pill columns
 	rowBars       [][]*tableBar       // [row][col]; nil entries at other kinds
 	rowPills      [][]*tablePill      // [row][col]; nil entries at other kinds
+	rowChecks     [][]*tableCheck     // [row][col]; nil entries at other kinds
 	snapshot      [][]tableCell
-	highlight     int       // selected data row from tableRowHighlighter; noTableRow when none
 	colW          []float32 // effective column widths for the current size
 	size          fyne.Size
 }
 
 func newDataTableRenderer(t *dataTable) *dataTableRenderer {
-	r := &dataTableRenderer{table: t, highlight: noTableRow}
+	r := &dataTableRenderer{table: t}
 
 	r.headerBG = canvas.NewRectangle(palette.Surface2)
 	r.headerDivider = newTableDivider()
 
-	for _, c := range t.cols {
+	r.headerChecks = make([]*tableCheck, len(t.cols))
+	for i, c := range t.cols {
 		r.headerCells = append(r.headerCells, newTableHeaderLabel(c.header))
+		if c.kind == columnCheck {
+			r.headerChecks[i] = newCheckBox()
+		}
 	}
 
 	r.rowBGs = make([]*canvas.Rectangle, t.poolSize)
@@ -387,28 +396,32 @@ func newDataTableRenderer(t *dataTable) *dataTableRenderer {
 	r.rowCells = make([][]*canvas.Text, t.poolSize)
 	r.rowBars = make([][]*tableBar, t.poolSize)
 	r.rowPills = make([][]*tablePill, t.poolSize)
+	r.rowChecks = make([][]*tableCheck, t.poolSize)
 	for i := range t.poolSize {
 		r.rowBGs[i] = canvas.NewRectangle(color.Transparent)
 		r.rowDividers[i] = newTableDivider()
-		r.rowCells[i], r.rowBars[i], r.rowPills[i] = newCellPools(t.cols)
+		r.rowCells[i], r.rowBars[i], r.rowPills[i], r.rowChecks[i] = newCellPools(t.cols)
 	}
 
 	return r
 }
 
 // newCellPools allocates one row's cell objects: a text per text column, a bar
-// pair per bar column, and pill chrome per pill column, each at its column's
-// slot (nil in the other pools).
-func newCellPools(cols []tableColumn) ([]*canvas.Text, []*tableBar, []*tablePill) {
+// pair per bar column, pill chrome per pill column, and a checkbox per check
+// column, each at its column's slot (nil in the other pools).
+func newCellPools(cols []tableColumn) ([]*canvas.Text, []*tableBar, []*tablePill, []*tableCheck) {
 	cells := make([]*canvas.Text, len(cols))
 	bars := make([]*tableBar, len(cols))
 	pills := make([]*tablePill, len(cols))
+	checks := make([]*tableCheck, len(cols))
 	for j, col := range cols {
 		switch col.kind {
 		case columnBar:
 			bars[j] = newTableBar()
 		case columnPill:
 			pills[j] = newTablePill()
+		case columnCheck:
+			checks[j] = newCheckBox()
 		default:
 			cell := newTableText("")
 			if col.color != nil {
@@ -417,7 +430,27 @@ func newCellPools(cols []tableColumn) ([]*canvas.Text, []*tableBar, []*tablePill
 			cells[j] = cell
 		}
 	}
-	return cells, bars, pills
+	return cells, bars, pills, checks
+}
+
+// tableCheck is the pooled canvas pair for one checkbox: a hollow
+// border-strong box and the Lucide check mark shown inside it while checked
+// (showCheck also fills the box accent then).
+type tableCheck struct {
+	box  *canvas.Rectangle
+	mark *canvas.Image
+}
+
+// newCheckBox builds a pooled checkbox. The mark is recolored once to white,
+// the conventional check color on an accent-filled box in either theme.
+func newCheckBox() *tableCheck {
+	box := canvas.NewRectangle(color.Transparent)
+	box.StrokeColor = palette.BorderStrong
+	box.StrokeWidth = 1
+	box.CornerRadius = theme.Size(theme.SizeNameInputRadius)
+	mark := canvas.NewImageFromResource(colorizeStroke(icon.Check, color.White))
+	mark.FillMode = canvas.ImageFillContain
+	return &tableCheck{box: box, mark: mark}
 }
 
 // newTablePill builds a pooled status pill: border-strong outline, chip
@@ -477,10 +510,6 @@ func (r *dataTableRenderer) arrange() {
 	}
 	r.snapshot = r.table.src.Snapshot()
 	r.table.rowCount = len(r.snapshot)
-	r.highlight = noTableRow
-	if h, ok := r.table.src.(tableRowHighlighter); ok {
-		r.highlight = h.highlightedRow()
-	}
 	r.colW = effectiveWidths(r.table.cols, r.size.Width)
 	r.layoutHeader()
 	r.layoutRows()
@@ -521,6 +550,11 @@ func (r *dataTableRenderer) layoutHeader() {
 	for i, col := range r.table.cols {
 		if i >= len(r.headerCells) {
 			break
+		}
+		if box := r.headerChecks[i]; box != nil {
+			showCheck(box, r.allChecked(i), x, top, r.colW[i], tableHeaderHeight)
+			x += r.colW[i]
+			continue
 		}
 		lbl := r.headerCells[i]
 		lbl.Text = strings.ToUpper(col.header)
@@ -600,6 +634,8 @@ func (r *dataTableRenderer) showRow(pool, row int, y float32) {
 			r.showBar(r.rowBars[pool][j], cell, x, y, r.colW[j])
 		case columnPill:
 			r.showPill(r.rowPills[pool][j], cell, x, y)
+		case columnCheck:
+			showCheck(r.rowChecks[pool][j], cell.checked, x, y, r.colW[j], rowH)
 		default:
 			r.showText(r.rowCells[pool][j], cell, x, y, col.align, r.colW[j])
 		}
@@ -607,17 +643,42 @@ func (r *dataTableRenderer) showRow(pool, row int, y float32) {
 	}
 }
 
-// rowFill is a data row's background: selected wins over hovered, everything
-// else stays transparent (the design-system row states).
+// rowFill is a data row's background: selected (any checked cell) wins over
+// hovered, everything else stays transparent (the design-system row states).
 func (r *dataTableRenderer) rowFill(row int) color.Color {
-	switch row {
-	case r.highlight:
+	switch {
+	case r.rowChecked(row):
 		return palette.Surface3
-	case r.table.hoverRow:
+	case row == r.table.hoverRow:
 		return palette.Surface2
 	default:
 		return color.Transparent
 	}
+}
+
+// rowChecked reports whether any of a row's check-column cells is checked —
+// the snapshot itself carries selection state, so no side channel is needed.
+func (r *dataTableRenderer) rowChecked(row int) bool {
+	for j, col := range r.table.cols {
+		if col.kind == columnCheck && r.cellAt(row, j).checked {
+			return true
+		}
+	}
+	return false
+}
+
+// allChecked reports whether every snapshot row is checked at column j — the
+// header checkbox's select-all state. An empty snapshot is not "all checked".
+func (r *dataTableRenderer) allChecked(j int) bool {
+	if len(r.snapshot) == 0 {
+		return false
+	}
+	for i := range r.snapshot {
+		if !r.cellAt(i, j).checked {
+			return false
+		}
+	}
+	return true
 }
 
 // cellAt returns the snapshot cell for [row i, col j], or a zero cell when the
@@ -690,6 +751,33 @@ func (r *dataTableRenderer) showPill(pill *tablePill, cell tableCell, x, y float
 	pill.text.Show()
 }
 
+// showCheck positions one checkbox centered in its column within a band of
+// height bandH starting at y (a data row or the header band): filled accent
+// with the check mark when checked, hollow with no mark otherwise.
+func showCheck(check *tableCheck, checked bool, x, y, colW, bandH float32) {
+	boxX := x + (colW-tableCheckSize)/2
+	boxY := y + (bandH-tableCheckSize)/2
+
+	check.box.FillColor = color.Transparent
+	if checked {
+		check.box.FillColor = palette.Accent
+	}
+	check.box.Resize(fyne.NewSize(tableCheckSize, tableCheckSize))
+	check.box.Move(fyne.NewPos(boxX, boxY))
+	check.box.Refresh()
+	check.box.Show()
+
+	if !checked {
+		check.mark.Hide()
+		return
+	}
+	inset := (tableCheckSize - tableCheckMarkSize) / float32(2)
+	check.mark.Resize(fyne.NewSize(tableCheckMarkSize, tableCheckMarkSize))
+	check.mark.Move(fyne.NewPos(boxX+inset, boxY+inset))
+	check.mark.Refresh()
+	check.mark.Show()
+}
+
 // tablePillFill is a table pill's background for its semantic role. Unlike
 // newStatusPill's neutral (surface-3), the wireframe's table draws neutral
 // pills hollow — outline only — so quiet states don't shout in a dense list.
@@ -720,6 +808,13 @@ func (r *dataTableRenderer) hideRow(i int) {
 			p.text.Hide()
 		}
 	}
+	for _, c := range r.rowChecks[i] {
+		if c == nil {
+			continue
+		}
+		c.box.Hide()
+		c.mark.Hide()
+	}
 }
 
 // Objects returns all canvas objects in back-to-front draw order: row
@@ -749,10 +844,22 @@ func (r *dataTableRenderer) Objects() []fyne.CanvasObject {
 				objs = append(objs, p.bg, p.text)
 			}
 		}
+		for _, c := range r.rowChecks[i] {
+			if c == nil {
+				continue
+			}
+			objs = append(objs, c.box, c.mark)
+		}
 	}
 	objs = append(objs, r.headerBG, r.headerDivider)
 	for _, lbl := range r.headerCells {
 		objs = append(objs, lbl)
+	}
+	for _, c := range r.headerChecks {
+		if c == nil {
+			continue
+		}
+		objs = append(objs, c.box, c.mark)
 	}
 	return objs
 }
