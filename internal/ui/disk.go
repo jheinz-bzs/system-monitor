@@ -347,8 +347,7 @@ func (r *volumesListRenderer) ensureRows(n int) {
 	}
 }
 
-func (r *volumesListRenderer) Layout(size fyne.Size) {
-	r.size = size
+func (r *volumesListRenderer) Layout(fyne.Size) {
 	r.arrange()
 }
 
@@ -362,6 +361,13 @@ func (r *volumesListRenderer) Refresh() {
 // from the top. It reads the source once and shows only the rows it fills, so a
 // removed volume leaves no stale row behind.
 func (r *volumesListRenderer) arrange() {
+	// Size comes from the widget, never a Layout-fed renderer field: Fyne
+	// destroys renderers left unpainted for ~1 min and recreates them on
+	// demand, and a recreated renderer gets no Layout call while the widget's
+	// size is unchanged (the enclosing scroller's content resize is a no-op).
+	// A renderer-cached size would stay zero and leave the list blank until an
+	// external window resize; the widget's own size survives recreation.
+	r.size = r.list.Size()
 	if r.size.Width <= 0 || r.size.Height <= 0 {
 		return
 	}
