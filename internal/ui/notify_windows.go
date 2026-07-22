@@ -21,15 +21,21 @@ import (
 // startMenuPrograms is the per-user Start Menu folder, relative to %APPDATA%.
 const startMenuPrograms = `Microsoft\Windows\Start Menu\Programs`
 
-// aumidShortcutScript writes the app's Start Menu shortcut and stamps it with
-// PKEY_AppUserModel_ID. PowerShell with inline C# (for the IPropertyStore COM
-// call) rather than native Go COM — Fyne already shells out to PowerShell for
-// every toast, so the pattern and dependency are established.
-// ponytail: Add-Type compiles C# on each run; the .lnk-exists guard in
-// registerNotificationAppName makes that a first-launch-only cost. Port to
-// x/sys COM vtables if it ever needs to be in-process.
-// Sprintf order: link path, target exe, link path, AUMID.
+// aumidShortcutScript ensures the app's Start Menu shortcut targets the
+// running executable and carries PKEY_AppUserModel_ID. It exits early when the
+// shortcut already points at the current exe, so a stale target (moved or
+// renamed binary) self-heals on the next launch. PowerShell with inline C#
+// (for the IPropertyStore COM call) rather than native Go COM — Fyne already
+// shells out to PowerShell for every toast, so the pattern and dependency are
+// established.
+// ponytail: Add-Type compiles C# on each run; the early exit above it makes
+// that a target-changed-only cost. Port to x/sys COM vtables if it ever needs
+// to be in-process.
+// Sprintf order: link path, target exe, target exe, link path, AUMID.
 const aumidShortcutScript = `
+$shell = New-Object -ComObject WScript.Shell
+$lnk = $shell.CreateShortcut('%s')
+if ($lnk.TargetPath -eq '%s') { exit }
 $code = @'
 using System;
 using System.Runtime.InteropServices;
@@ -83,27 +89,24 @@ namespace ShortcutAumid {
 }
 '@
 Add-Type -TypeDefinition $code
-$shell = New-Object -ComObject WScript.Shell
-$lnk = $shell.CreateShortcut('%s')
 $lnk.TargetPath = '%s'
 $lnk.Save()
 [ShortcutAumid.Helper]::StampAumid('%s', '%s')
 `
 
-// registerNotificationAppName ensures the Start Menu shortcut exists so toasts
-// read "System Monitor". Runs the script off the startup path; on any failure
-// notifications still work, just show the raw appID.
+// registerNotificationAppName ensures the Start Menu shortcut exists and
+// targets the running executable, so toasts read "System Monitor" and the app
+// launches from Windows search. The script itself skips the rewrite when the
+// target already matches; on any failure notifications still work, just show
+// the raw appID.
 func registerNotificationAppName() {
 	link := filepath.Join(os.Getenv("APPDATA"), startMenuPrograms, appName+".lnk")
-	if _, err := os.Stat(link); err == nil {
-		return // already registered
-	}
 	exe, err := os.Executable()
 	if err != nil {
 		fyne.LogError("resolve executable for start-menu shortcut", err)
 		return
 	}
-	go runShortcutScript(fmt.Sprintf(aumidShortcutScript, link, exe, link, appID))
+	go runShortcutScript(fmt.Sprintf(aumidShortcutScript, link, exe, exe, link, appID))
 }
 
 // runShortcutScript executes the shortcut script via a temp .ps1 file with a
