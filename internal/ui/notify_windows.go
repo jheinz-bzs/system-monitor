@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"fyne.io/fyne/v2"
@@ -106,18 +107,36 @@ func registerNotificationAppName() {
 		fyne.LogError("resolve executable for start-menu shortcut", err)
 		return
 	}
+	link, exe = psQuoteEscape(link), psQuoteEscape(exe)
 	go runShortcutScript(fmt.Sprintf(aumidShortcutScript, link, exe, exe, link, appID))
 }
 
+// psQuoteEscape doubles single quotes so a path is safe inside a PowerShell
+// single-quoted string literal (e.g. a C:\Users\O'Brien profile).
+func psQuoteEscape(path string) string {
+	return strings.ReplaceAll(path, "'", "''")
+}
+
 // runShortcutScript executes the shortcut script via a temp .ps1 file with a
-// hidden window — the same mechanism Fyne's notification delivery uses.
+// hidden window — the same mechanism Fyne's notification delivery uses. The
+// file name is unique per invocation so concurrent app launches can't
+// overwrite or delete each other's script while PowerShell is loading it.
 func runShortcutScript(script string) {
-	tmp := filepath.Join(os.TempDir(), appID+"-shortcut.ps1")
-	if err := os.WriteFile(tmp, []byte(script), 0o600); err != nil {
+	tmpFile, err := os.CreateTemp("", appID+"-shortcut-*.ps1")
+	if err != nil {
+		fyne.LogError("create start-menu shortcut script file", err)
+		return
+	}
+	tmp := tmpFile.Name()
+	defer os.Remove(tmp)
+	_, err = tmpFile.WriteString(script)
+	if closeErr := tmpFile.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		fyne.LogError("write start-menu shortcut script", err)
 		return
 	}
-	defer os.Remove(tmp)
 
 	cmd := exec.Command("PowerShell", "-ExecutionPolicy", "Bypass", "-File", tmp)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
