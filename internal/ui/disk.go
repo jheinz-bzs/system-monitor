@@ -89,12 +89,6 @@ const (
 	volumeMinWidth  = 240      // px; panel floor so name + sizes stay readable
 )
 
-// volumeSelectorMaxWidth caps the storage header's volume selector width; more
-// volumes than fit scroll horizontally instead of widening the pane (dozens of
-// mounts once forced the window past the GPU's max surface width — a fatal
-// X BadAlloc on Linux).
-const volumeSelectorMaxWidth = 420 // px
-
 // diskPartition is the UI's per-partition usage shape: a mount path and its byte
 // totals. app.go adapts monitor.PartitionUsage into this so the view never
 // imports the monitor layer.
@@ -592,9 +586,11 @@ func (v *diskView) rescanLink() fyne.CanvasObject {
 }
 
 // volumeSelector is the header control choosing which volume the directory
-// treemap scans (the wireframe's "Macintosh HD" / "Data" segmented control).
-// It's omitted when there's nothing to retarget — no selectVolume hook or only
-// one volume.
+// treemap scans (the wireframe's "Macintosh HD" / "Data" segmented control,
+// rendered as a dropdown so many mounts never overflow the header). The
+// dropdown widths to its longest label and opens a scrolled list, so the
+// natural width cap the segmented control needed is gone. It's omitted when
+// there's nothing to retarget — no selectVolume hook or only one volume.
 func (v *diskView) volumeSelector() fyne.CanvasObject {
 	if v.selectVolume == nil || len(v.mounts) < 2 {
 		return nil
@@ -603,13 +599,19 @@ func (v *diskView) volumeSelector() fyne.CanvasObject {
 	for i, m := range v.mounts {
 		labels[i] = volumeLabel(m)
 	}
-	sel := newSegmentedSelect(0, func(i int) { v.selectVolume(v.mounts[i]) }, labels...)
-	// Cap the selector's width and scroll the overflow: its natural width grows
-	// with every mounted volume, and an uncapped header widens the whole window.
-	natural := sel.MinSize()
-	scroll := container.NewHScroll(sel)
-	scroll.SetMinSize(fyne.NewSize(fyne.Min(natural.Width, volumeSelectorMaxWidth), natural.Height))
-	return scroll
+	sel := widget.NewSelect(labels, func(chosen string) {
+		for i, l := range labels {
+			if l == chosen {
+				v.selectVolume(v.mounts[i])
+				return
+			}
+		}
+	})
+	// Seed the first volume so the dropdown and the shown treemap agree at
+	// startup (scanRoots order). Set the field directly — the newFilterSelect
+	// pattern — so seeding doesn't fire the callback at build time.
+	sel.Selected = labels[0]
+	return flatFocus(sel)
 }
 
 // volumeLabel renders a mount path as a compact selector label, dropping a
