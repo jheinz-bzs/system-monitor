@@ -26,22 +26,24 @@ const (
 	labelSettingsPanel     = "Preferences"
 	labelSystemPanel       = "System"
 
-	labelSettingStartTab   = "Start tab"
-	labelSettingPoll       = "Poll interval"
-	labelSettingMemCap     = "Memory cap"
-	labelSettingTheme      = "Appearance"
-	labelSettingAutoUpdate = "Auto-update"
-	labelSettingTray       = "Minimize to tray"
-	labelSettingCPUAlert   = "CPU alert"
-	labelSettingMemAlert   = "Memory alert"
-	labelSettingDiskAlert  = "Disk alert"
+	labelSettingStartTab    = "Start tab"
+	labelSettingPoll        = "Poll interval"
+	labelSettingMemCap      = "Memory cap"
+	labelSettingTheme       = "Appearance"
+	labelSettingAutoUpdate  = "Auto-update"
+	labelSettingUpdateCheck = "Update checks"
+	labelSettingTray        = "Minimize to tray"
+	labelSettingCPUAlert    = "CPU alert"
+	labelSettingMemAlert    = "Memory alert"
+	labelSettingDiskAlert   = "Disk alert"
 
-	helpSettingStartTab   = "Tab shown on launch"
-	helpSettingPoll       = "Sampling cadence"
-	helpSettingMemCap     = "GC soft heap limit"
-	helpSettingTheme      = "Color palette"
-	helpSettingAutoUpdate = "Install updates on next launch · off by default"
-	helpSettingTray       = "Close hides to the tray · off by default"
+	helpSettingStartTab    = "Tab shown on launch"
+	helpSettingPoll        = "Sampling cadence"
+	helpSettingMemCap      = "GC soft heap limit"
+	helpSettingTheme       = "Color palette"
+	helpSettingAutoUpdate  = "Install updates on next launch · off by default"
+	helpSettingUpdateCheck = "How often to check for updates · off disables checks"
+	helpSettingTray        = "Close hides to the tray · off by default"
 	// Shared by the CPU and memory alert rows (disk names its volume choice).
 	helpSettingAlert     = "Notify above the threshold · off by default"
 	helpSettingDiskAlert = "Busiest volume above the threshold · off by default"
@@ -90,6 +92,12 @@ const (
 
 // Poll-interval segment labels, aligned by index with pollSecondsAllowed.
 var pollIntervalLabels = []string{"1s", "2s", "5s"}
+
+// updateCheckIntervalLabels are the dropdown options for the periodic
+// update-check cadence, aligned by index with updateCheckIntervalMinutesAllowed
+// (0 = disabled). Kept a var like pollIntervalLabels so the allowed-set and the
+// visible options can't drift apart.
+var updateCheckIntervalLabels = []string{"Off", "5 min", "15 min", "30 min", "1 hour"}
 
 // Appearance segment labels, aligned by index with themeChoice (dark, light).
 var themeLabels = []string{"Dark", "Light"}
@@ -144,6 +152,7 @@ func newSettingsView(prefs settings, sys systemInfo, apply *applyHooks) *setting
 		settingRow(labelSettingMemCap, helpSettingMemCap, v.memCapControl()),
 		settingRow(labelSettingTheme, helpSettingTheme, v.themeControl()),
 		settingRow(labelSettingAutoUpdate, helpSettingAutoUpdate, v.autoUpdateControl()),
+		settingRow(labelSettingUpdateCheck, helpSettingUpdateCheck, v.updateCheckControl()),
 		settingRow(labelSettingTray, helpSettingTray, v.trayControl()),
 		settingRow(labelSettingCPUAlert, helpSettingAlert, v.alertControl(thresholdCPU)),
 		settingRow(labelSettingMemAlert, helpSettingAlert, v.alertControl(thresholdMemory)),
@@ -292,6 +301,24 @@ func (v *settingsView) memCapControl() fyne.CanvasObject {
 func (v *settingsView) autoUpdateControl() fyne.CanvasObject {
 	return newToggleChip(labelToggleEnabled, palette.Series[0], v.prefs.autoUpdateEnabled(),
 		func(on bool) { v.prefs.setAutoUpdateEnabled(on) })
+}
+
+// updateCheckControl is a dropdown of the periodic update-check cadences,
+// seeded with the current pref. Selecting an option persists it; the check
+// loop reads it at next launch (the loop's interval is fixed at wiring time,
+// so this is launch-scoped like the auto-update row). "Off" (0) disables
+// periodic checks entirely — the app never queries GitHub during the session.
+func (v *settingsView) updateCheckControl() fyne.CanvasObject {
+	active := max(slices.Index(updateCheckIntervalMinutesAllowed, int(v.prefs.updateCheckInterval().Minutes())), 0)
+	sel := widget.NewSelect(updateCheckIntervalLabels, func(chosen string) {
+		if i := slices.Index(updateCheckIntervalLabels, chosen); i >= 0 {
+			v.prefs.setUpdateCheckIntervalMinutes(updateCheckIntervalMinutesAllowed[i])
+		}
+	})
+	sel.SetSelected(updateCheckIntervalLabels[active])
+	// Quiet the accent focus flash widget.Select paints while focused
+	// (see flatFocus in theme.go).
+	return flatFocus(sel)
 }
 
 // trayControl toggles minimize-to-tray-on-close, applied immediately. Off by
