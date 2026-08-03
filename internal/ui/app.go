@@ -732,11 +732,14 @@ func mostUsedPercent(parts []monitor.PartitionUsage) (float64, bool) {
 // entry points start byte-identical sessions; this file supplies the window and
 // wires the modal's confirmed spec into columns.SessionOptions.
 
-// Native save-dialog chrome (zenity), reused by the record modal's Browse.
+// Native save-dialog chrome (zenity), reused by the record modal's Browse. The
+// open-dialog side (the Recordings tab's load action) widens the same filter with
+// the gzip pattern, since recorder.Read opens compact sessions transparently.
 const (
-	recordDialogTitle   = "Save tracking session"
-	recordFilterName    = "CSV files"
-	recordFilterPattern = "*.csv"
+	recordDialogTitle       = "Save tracking session"
+	recordFilterName        = "CSV files"
+	recordFilterPattern     = "*.csv"
+	recordFilterGzipPattern = "*.csv.gz"
 )
 
 // toggleRecording is the status-bar toggle's action: stop an active session, or
