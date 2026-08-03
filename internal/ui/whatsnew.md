@@ -4,13 +4,10 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Linux: updates via apt now get a proper prompt
-- If you installed from the `.deb`, an available update now shows the update
-  banner and an **Update via apt** link — tapping it tells you to run
-  `sudo apt update && sudo apt upgrade` instead of the app swapping a file it
-  doesn't own. Standalone binaries and AppImages still self-update in place.
-
-### macOS: installs are smoother
-- The Homebrew cask now clears the quarantine attribute automatically after
-  install, so the app installed by a fresh `brew install --cask system-monitor`
-  launches without a Gatekeeper prompt.
+### Disk tab: a dropdown to pick the volume
+- The storage header's volume selector is now a dropdown instead of a
+  scrolling row of segments — on a machine with several mounts you no longer
+  have to scroll horizontally to reach a volume, and a longer mount name
+  never gets cut off.
+- The dropdown opens on the first volume at startup (matching the treemap),
+  and the rescan link sits beside it as before.
