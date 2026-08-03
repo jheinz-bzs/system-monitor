@@ -1,0 +1,23 @@
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Mon, 03 Aug 2026 16:21:16 +0000
+Label: system-monitor
+Origin: https://josephheinz.github.io/system-monitor
+Suite: stable
+MD5Sum:
+ b8844808eb0fd8c689bd73fed81a11cc              182 Release
+ 2b688b5030826fc46e5425d41904a8f6              716 main/binary-amd64/Packages
+ b0b7f5298e013f34b45dd67bf7a2d116              514 main/binary-amd64/Packages.gz
+SHA1:
+ bb9cf612cdc2e9f46b7415e33ee29c8aac6ba534              182 Release
+ 614649d8fecbdb1969a630099f5703f0a8b9c77b              716 main/binary-amd64/Packages
+ bf8d2f8c0cf5cdb4b7f39f7b5ee1b8998df9acc7              514 main/binary-amd64/Packages.gz
+SHA256:
+ 2bc0c06292c783d1e04a8f73d347ed2deafd1c9d9680d6da9995f1d211409d28              182 Release
+ 46da09daa032a1b5185e42ee25b994f6b0ac651bc640ce30c6915610c1c7e088              716 main/binary-amd64/Packages
+ 45b802b049d0df2aa710521cf9dd087d4b519ba58ecf679ccb386a08566bde85              514 main/binary-amd64/Packages.gz
+SHA512:
+ 5c8694d4e72821db4c1bd744c32c1d4d1886de11e02cddad345d4741bad25f7dcc09546fd719fd987e4a717416316c32dd1c80f45506c59e7982de1855af0871              182 Release
+ 6abf838ac846e8107fddddf18912797508afff990fd4941a2afb95e6f37f1b8338dd7ae433f2803da64d774a5a0dfbdc9aafc55c1b7d77d44a9e616c3ba1fa27              716 main/binary-amd64/Packages
+ 34c73f9db83f821a68e531060d7b9ec6a97ddaa4009e6a9324786ee956b139e6b031b51d2f3e8b81d94056e5fb7ab22d9bf413462b4e603e8e197eda08552594              514 main/binary-amd64/Packages.gz
