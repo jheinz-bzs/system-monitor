@@ -4,12 +4,10 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Settings apply instantly
-- Changes in **Settings** now take effect immediately — theme, text size,
-  poll interval, memory limit, and alert thresholds no longer need a relaunch.
-
-### Alert notifications
-- On Windows, threshold alerts now show **System Monitor** as the sender
-  instead of a generic app name.
-- Usage bouncing around your threshold can't queue a pile of notifications
-  anymore — after an alert fires, the next one waits a short cooldown.
+### Session recordings: compact and process snapshots
+- Recording a session can now write **compressed** output — the same CSV data
+  in a `.csv.gz` file that opens anywhere gzip is supported.
+- A new **top processes sidecar** records the busiest processes alongside the
+  metrics, so a spike in the charts can be traced to what caused it.
+- Both are opt-in from the recording command line; default recordings are
+  unchanged.
