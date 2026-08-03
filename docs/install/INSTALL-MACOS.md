@@ -41,7 +41,32 @@ A bare binary (`system-monitor-darwin-arm64`) is also attached to each
 release for terminal use; after `chmod +x` it needs the same
 `xattr -d com.apple.quarantine` treatment.
 
-## Option 2 — Build from source
+## Option 2 — Homebrew tap (cask)
+
+Lets Homebrew manage installs *and* upgrades (`brew upgrade --cask
+system-monitor` pulls the newest release automatically). Requires Homebrew on
+an Apple Silicon Mac (M1 or newer):
+
+```sh
+brew tap josephheinz/tap
+brew install --cask system-monitor
+```
+
+The cask installs **System Monitor** into `/Applications` and is updated by the
+release pipeline whenever a new tag is published. Update it with:
+
+```sh
+brew upgrade --cask system-monitor
+```
+
+Because the app is not notarized (see below), install with `--no-quarantine`
+to skip the first-launch Gatekeeper prompt entirely:
+
+```sh
+brew install --cask --no-quarantine system-monitor
+```
+
+## Option 3 — Build from source
 
 Building locally avoids Gatekeeper entirely (no quarantine flag) and is the
 only option for Intel Macs.

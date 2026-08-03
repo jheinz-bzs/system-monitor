@@ -2,6 +2,9 @@
 # fans out one native build per OS, then a collector job computes checksums and
 # publishes a single GitHub Release. The app's internal/update downloader pulls
 # these assets — so the asset names here are a contract with update.assetName().
+# After the release publishes, sync-homebrew-tap pushes the Homebrew cask
+# (issue #67) into josephheinz/homebrew-tap for `brew install --cask
+# system-monitor`.
 #
 # Native runners, NOT cross-compilation: Fyne needs CGO + a per-OS C toolchain
 # (and OpenGL/X11 headers on Linux), which is painful to cross-compile. Each
@@ -263,3 +266,61 @@ jobs:
             git commit -m "apt repo: publish ${GITHUB_REF_NAME}"
             git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PAGES_BRANCH"
           fi
+  # Homebrew tap sync (issue #67). Once the release is live this makes macOS
+  # users able to `brew tap josephheinz/tap && brew install --cask
+  # system-monitor`. The cask is a template — packaging/homebrew/Casks/
+  # system-monitor.rb in this repo — with __VERSION__/__SHA256__ placeholders:
+  # this job downloads the published .dmg, computes its sha256, copies the cask
+  # into josephheinz/homebrew-tap, stamps the live values, and pushes.
+  # The tap is a separate repo, so the workflow's GITHUB_TOKEN can't write to
+  # it: it needs TAP_REPO_PAT, a fine-grained PAT with Contents: read/write on
+  # josephheinz/homebrew-tap. A missing secret fails the job loudly rather than
+  # silently leaving macOS users without a tap update.
+  sync-homebrew-tap:
+    name: sync homebrew tap cask
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: require tap repo PAT
+        env:
+          TAP_REPO_PAT: ${{ secrets.TAP_REPO_PAT }}
+        shell: bash
+        run: |
+          if [[ -z "${TAP_REPO_PAT}" ]]; then
+            echo "::error::TAP_REPO_PAT is not set — cannot sync josephheinz/homebrew-tap."
+            echo "Create a fine-grained PAT (Repository access: josephheinz/homebrew-tap,"
+            echo "Contents: read/write) and store it as the TAP_REPO_PAT repo secret."
+            exit 1
+          fi
+      - name: fetch dmg and compute sha256
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg_url="https://github.com/josephheinz/system-monitor/releases/download/${GITHUB_REF_NAME}/system-monitor-darwin-arm64.dmg"
+          curl -sSfL -o system-monitor.dmg "${dmg_url}"
+          dmg_sha256="$(sha256sum system-monitor.dmg | cut -d ' ' -f 1)"
+          echo "system-monitor.dmg sha256: ${dmg_sha256}"
+          echo "cask_version=${GITHUB_REF_NAME#v}" >> "${GITHUB_ENV}"
+          echo "dmg_sha256=${dmg_sha256}" >> "${GITHUB_ENV}"
+      - name: sync cask into tap repo
+        env:
+          TAP_REPO_PAT: ${{ secrets.TAP_REPO_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tap_dir="$(mktemp -d)"
+          git clone "https://x-access-token:${TAP_REPO_PAT}@github.com/josephheinz/homebrew-tap.git" "${tap_dir}"
+          cd "${tap_dir}"
+          git config user.name "Joseph Heinz"
+          git config user.email "josephheinz28@gmail.com"
+          mkdir -p Casks
+          cp "${GITHUB_WORKSPACE}/packaging/homebrew/Casks/system-monitor.rb" Casks/system-monitor.rb
+          sed -i -e "s/__VERSION__/${cask_version}/g" -e "s/__SHA256__/${dmg_sha256}/g" Casks/system-monitor.rb
+          if git diff --quiet; then
+            echo "cask unchanged; nothing to push"
+            exit 0
+          fi
+          git add Casks/system-monitor.rb
+          git commit -m "chore: bump system-monitor cask to v${cask_version}"
+          git push origin HEAD
