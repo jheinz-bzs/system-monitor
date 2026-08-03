@@ -13,11 +13,9 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"io"
 	"log"
 	"os"
 	"os/signal"
-	"sort"
 	"syscall"
 	"time"
 
@@ -29,11 +27,10 @@ import (
 // Flag defaults. The interval floor matches the recorder's RFC3339 second-
 // resolution timestamps — a faster cadence would write duplicate-looking rows.
 const (
-	defaultInterval   = time.Second
-	minInterval       = time.Second
-	untilInterrupt    = 0 // --duration sentinel: record until a signal arrives
-	processesOff      = 0 // --processes sentinel: no top-processes sidecar
-	snapshotEveryTick = 1 // sidecar snapshot cadence: every poll tick
+	defaultInterval = time.Second
+	minInterval     = time.Second
+	untilInterrupt  = 0 // --duration sentinel: record until a signal arrives
+	processesOff    = 0 // --processes sentinel: no top-processes sidecar
 )
 
 // Flag usage strings.
@@ -80,10 +77,13 @@ func run() error {
 	if len(collectors) == 0 {
 		return errors.New("no collectors available; nothing to record")
 	}
+	if *topN > 0 && procs == nil {
+		log.Printf("--processes %d ignored: process collector unavailable", *topN)
+	}
 
 	rec := recorder.New(
 		columns.Build(cpu, memory, disk, network, procs),
-		recorderOptions(*compact, *topN, procs, path)...,
+		columns.SessionOptions(recorder.OptionsSpec{Compact: *compact, TopN: *topN}, procs, path)...,
 	)
 	f, err := os.Create(path)
 	if err != nil {
@@ -160,60 +160,5 @@ func wait(ctx context.Context, duration time.Duration) {
 	select {
 	case <-ctx.Done():
 	case <-time.After(duration):
-	}
-}
-
-// recorderOptions assembles the recorder's format options from the flags: the
-// compact .csv.gz output and, when requested and the process collector is
-// available, a top-processes sidecar written every tick.
-func recorderOptions(compact bool, topN int, procs *monitor.ProcessCollector, path string) []recorder.Option {
-	var opts []recorder.Option
-	if compact {
-		opts = append(opts, recorder.Compact())
-	}
-	if topN == processesOff {
-		return opts
-	}
-	if procs == nil {
-		log.Printf("--processes %d ignored: process collector unavailable", topN)
-		return opts
-	}
-	sidecar := columns.ProcessesFilePath(path)
-	opts = append(opts, recorder.WithProcessSnapshots(
-		topProcesses(procs, topN),
-		snapshotEveryTick,
-		func() io.WriteCloser {
-			f, err := os.Create(sidecar)
-			if err != nil {
-				log.Printf("cannot open sidecar %s: %v", sidecar, err)
-				return nil
-			}
-			return f
-		},
-	))
-	return opts
-}
-
-// topProcesses adapts the process collector into the recorder's snapshot seam,
-// returning the topN processes by CPU with only the columns the sidecar writes.
-// It reads the collector's latest cached snapshot, so calling it per tick is
-// cheap; the poller owns the expensive enumeration.
-func topProcesses(procs *monitor.ProcessCollector, topN int) recorder.ProcessSnapshot {
-	return func() []recorder.ProcessSample {
-		ps := procs.Processes()
-		sort.Slice(ps, func(i, j int) bool { return ps[i].CPUPercent > ps[j].CPUPercent })
-		if len(ps) > topN {
-			ps = ps[:topN]
-		}
-		samples := make([]recorder.ProcessSample, 0, len(ps))
-		for _, p := range ps {
-			samples = append(samples, recorder.ProcessSample{
-				PID:  p.PID,
-				Name: p.Name,
-				CPU:  p.CPUPercent,
-				RSS:  p.MemoryBytes,
-			})
-		}
-		return samples
 	}
 }

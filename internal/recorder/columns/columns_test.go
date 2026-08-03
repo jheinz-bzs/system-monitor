@@ -100,3 +100,20 @@ func TestProcessesFilePath(t *testing.T) {
 		t.Errorf("ProcessesFilePath = %q, want %q", got, want)
 	}
 }
+
+func TestValidPath(t *testing.T) {
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"tracking-20260713-093005.csv", true},
+		{"/tmp/tracking-20260713-093005.csv", true},
+		{"", false},
+		{"   ", false},
+	}
+	for _, c := range cases {
+		if got := ValidPath(c.path); got != c.want {
+			t.Errorf("ValidPath(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}

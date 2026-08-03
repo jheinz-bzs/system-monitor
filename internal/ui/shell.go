@@ -102,7 +102,7 @@ type buildSources struct {
 	apply        *applyHooks            // live-appliers for Settings changes; a pointer so app.go can late-bind them after the poller/window exist
 	initialTab   *tabID                 // overrides the persisted start tab (rebuilds land back where the user was); nil = startTab()
 	recording    func() bool            // reports whether a tracking session is active; nil when not wired (BZS253-77)
-	toggleRecord func()                 // starts (via save dialog) or stops a tracking session; nil when not wired
+	toggleRecord func()                 // starts (via the record modal) or stops a tracking session; nil when not wired
 }
 
 // processNavigator is the cross-tab navigation seam the CPU and Memory tabs
