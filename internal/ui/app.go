@@ -211,24 +211,36 @@ func Run(version string) {
 	// exist yet); the controller calls it after spawning the new binary.
 	update.CleanupOld()
 	var shutdown func()
-	// Supported() gates Linux to AppImage launches only — a bare binary or .deb
-	// install manages its own updates (apt / re-download), so no updater is wired.
+	// Supported() gates Linux to self-updating launches (AppImage, writable bare
+	// binary) plus dpkg-owned installs — the latter in "deferred" mode, where
+	// the banner/pill appear but point at apt rather than self-updating
+	// (InstallMode, issue #68).
 	if update.IsRelease(version) && update.Supported() {
-		updater := update.NewController(version, func() {
+		mode := update.InstallMode()
+		updater := update.NewController(version, mode, func() {
 			if shutdown != nil {
 				fyne.Do(shutdown)
 			}
 		})
 		src.updateStatus = updater.Snapshot
-		src.startUpdate = func() { updater.Start(ctx) }
+		src.updateMode = mode
+		switch mode {
+		case update.ModeSelf:
+			src.startUpdate = func() { updater.Start(ctx) }
+		case update.ModePackageManager:
+			// apt owns the binary; the affordance explains the upgrade command
+			// rather than swapping the file under dpkg (issue #68).
+			src.startUpdate = func() { showAptUpdateGuide(w) }
+		}
 		// Non-blocking startup check; offline degrades to a no-op. When the user
 		// has opted into auto-install, a found update installs without a click —
 		// the policy lives here (composition root), so the controller stays
-		// unaware of preferences (ADR-010).
+		// unaware of preferences (ADR-010). A package-manager-owned install never
+		// auto-installs: Start is a no-op for it, so the guard is belt-and-suspenders.
 		autoInstall := prefs.autoUpdateEnabled()
 		go func() {
 			updater.Check(ctx)
-			if autoInstall {
+			if autoInstall && mode == update.ModeSelf {
 				updater.Start(ctx) // no-ops unless Check found a newer release
 			}
 		}()

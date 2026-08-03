@@ -1,7 +1,8 @@
 # nfpm config for the Linux .deb (BZS253-71). Driven by `nfpm package` in the
 # release workflow; ${VERSION} is the tag without its leading "v" (Debian
-# versions can't start with a letter). The .deb is install-only — apt manages
-# its updates; in-app self-update targets the AppImage instead (ADR-011).
+# versions can't start with a letter). The .deb is apt-managed — the in-app
+# update UI defers to apt (`sudo apt update && sudo apt upgrade`, the live apt
+# repo) rather than swapping the binary (ADR-011).
 name: system-monitor
 arch: amd64
 platform: linux

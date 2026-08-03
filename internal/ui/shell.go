@@ -98,6 +98,7 @@ type buildSources struct {
 	window       fyne.Window            // dialog parent (mass-kill confirm); nil in tests
 	updateStatus func() update.Snapshot // self-update state for the status bar; nil on a dev build (BZS253-71)
 	startUpdate  func()                 // install the available update on user confirmation; nil when not wired
+	updateMode   update.Mode            // how an available update is delivered: in-place (self) or via apt; zero (ModeSelf) when unset (BZS253-71)
 	apply        *applyHooks            // live-appliers for Settings changes; a pointer so app.go can late-bind them after the poller/window exist
 	initialTab   *tabID                 // overrides the persisted start tab (rebuilds land back where the user was); nil = startTab()
 	recording    func() bool            // reports whether a tracking session is active; nil when not wired (BZS253-77)

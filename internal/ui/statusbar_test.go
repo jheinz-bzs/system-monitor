@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/josephheinz/system-monitor/internal/series"
+	"github.com/josephheinz/system-monitor/internal/update"
 )
 
 // TestStatusBarHealthAggregates checks the footer's overall state uses the shared
@@ -31,5 +32,17 @@ func TestStatusBarHealthAggregates(t *testing.T) {
 	busy := &statusBarView{cpu: at(60), mem: mem(80), swap: swap(0)}
 	if got := busy.health(); got != status.Warning {
 		t.Errorf("two elevated metrics: health() = %v, want Warning", got)
+	}
+}
+
+// TestUpdateLinkLabel locks the footer pill's copy to the delivery mode: the
+// plain self-update link, or the apt-deferred one for a dpkg-owned install
+// (issue #68).
+func TestUpdateLinkLabel(t *testing.T) {
+	if got := updateLinkLabel(update.ModeSelf); got != labelUpdateLink {
+		t.Errorf("updateLinkLabel(self) = %q, want %q", got, labelUpdateLink)
+	}
+	if got := updateLinkLabel(update.ModePackageManager); got != labelUpdateLinkApt {
+		t.Errorf("updateLinkLabel(pkg-manager) = %q, want %q", got, labelUpdateLinkApt)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 
@@ -20,13 +21,44 @@ import (
 )
 
 // Banner copy. The version tag is spliced between prefix and suffix so the
-// single message reads "↑ New version v1.3.0 available".
+// single message reads "↑ New version v1.3.0 available". labelUpdateActionApt
+// replaces labelUpdateAction on a package-manager-owned install, whose tap
+// surfaces the apt command instead of self-updating (issue #68).
 const (
 	labelUpdateBannerPrefix = "↑ New version "
 	labelUpdateBannerSuffix = " available"
 	labelUpdateAction       = "Update"
+	labelUpdateActionApt    = "Update via apt"
 	labelUpdateDismiss      = "✕"
 )
+
+// Update-via-apt guidance (issue #68). A .deb install is apt-owned, so the app
+// must not swap the binary itself; tapping the banner/pill instead surfaces the
+// one-shot upgrade command — the apt repo at josephheinz.github.io/system-monitor
+// is live and serves the same package.
+const (
+	labelAptGuideTitle   = "Update via apt"
+	labelAptGuideBlurb   = "system-monitor is installed via apt. Run:"
+	labelAptGuideCommand = "sudo apt update && sudo apt upgrade"
+)
+
+// updateActionLabel picks the banner's action-link text for the delivery mode:
+// "Update" on a self-updating install, "Update via apt" on a dpkg-owned one
+// whose upgrades come from apt rather than the in-app swap (issue #68).
+func updateActionLabel(mode update.Mode) string {
+	if mode == update.ModePackageManager {
+		return labelUpdateActionApt
+	}
+	return labelUpdateAction
+}
+
+// showAptUpdateGuide surfaces the package-manager upgrade command for a
+// dpkg-owned install. The tap handler runs on the UI goroutine, so like the
+// kill confirm it may call dialog directly; the user runs the command in a
+// terminal to pull the new version from the apt repo.
+func showAptUpdateGuide(win fyne.Window) {
+	dialog.ShowInformation(labelAptGuideTitle, labelAptGuideBlurb+"\n\n"+labelAptGuideCommand, win)
+}
 
 // updateBannerHeight is the banner's fixed height — a component dimension, so it
 // carries its own literal-px const rather than a spacing-scale multiple. It
@@ -43,13 +75,15 @@ type updateBannerView struct {
 }
 
 // newUpdateBannerView builds the banner from the update seam. It starts hidden;
-// refresh reveals it once a newer release is detected. The Update link triggers
-// the same install path as the status-bar pill; the ✕ dismisses for the session.
+// refresh reveals it once a newer release is detected. The link triggers the
+// same install path as the status-bar pill — a self-update, or the apt-guidance
+// dialog on a package-manager-owned install (updateMode); the ✕ dismisses for
+// the session.
 func newUpdateBannerView(src buildSources) *updateBannerView {
 	v := &updateBannerView{updateStatus: src.updateStatus}
 
 	v.text = styledText("", font.MonoMedium, theme.SizeNameCaptionText, palette.Accent)
-	action := newJumpLink(labelUpdateAction, src.startUpdate)
+	action := newJumpLink(updateActionLabel(src.updateMode), src.startUpdate)
 	dismiss := newJumpLink(labelUpdateDismiss, v.dismiss)
 
 	row := container.New(layout.NewCustomPaddedHBoxLayout(statusItemGap),
