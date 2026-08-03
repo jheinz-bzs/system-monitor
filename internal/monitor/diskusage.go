@@ -57,6 +57,15 @@ type fileEntry struct {
 	size int64
 }
 
+// fileID uniquely identifies one file's data on a volume, so two paths that
+// hard-link to the same inode collapse to one entry. volume is the device
+// (Unix) or volume serial (Windows); index is the inode (Unix) or file index
+// (Windows).
+type fileID struct {
+	volume uint64
+	index  uint64
+}
+
 // DiskUsageScanner exposes the largest directories of the currently selected
 // volume as a snapshot, mirroring the DiskCollector.Usage() pattern (mutex-
 // guarded, copied on read). Each volume's result is cached under its own root
@@ -290,6 +299,7 @@ func walkFiles(ctx context.Context, root string) []fileEntry {
 	var (
 		mu      sync.Mutex
 		entries []fileEntry
+		seen    = map[fileID]struct{}{}
 	)
 	// fastwalk runs walkFn from several goroutines, so the append must be
 	// guarded; the work is I/O-bound, so the lock contention is negligible.
@@ -307,7 +317,19 @@ func walkFiles(ctx context.Context, root string) []fileEntry {
 		if err != nil {
 			return nil
 		}
+		// A file reachable through several hard links is one inode; count it
+		// once, whichever path the walk hits first. Only files with more than
+		// one link need the identity lookup, so the common case stays out of
+		// the seen map.
+		id, dedup := fileIdentity(path, info)
 		mu.Lock()
+		if dedup {
+			if _, dup := seen[id]; dup {
+				mu.Unlock()
+				return nil // same inode already counted via another path
+			}
+			seen[id] = struct{}{}
+		}
 		entries = append(entries, fileEntry{path: path, size: info.Size()})
 		mu.Unlock()
 		return nil
@@ -343,9 +365,8 @@ var defaultSelectParams = selectParams{
 // hallway-collapse + greedy-budget selection over it (see dirNode.selectCells).
 // It is pure (no Fyne, no OS calls) so the whole pipeline is unit-testable.
 //
-// ponytail: no hard-link dedup — a file reachable by two paths counts twice.
-// It's invisible in a treemap and rare on Windows; track visited (dev,inode)
-// pairs if accuracy ever matters.
+// Hard-link dedup happens upstream in walkFiles (one entry per inode), so the
+// entries here never double-count a file reachable by several paths.
 func selectDirs(entries []fileEntry, root string, p selectParams) []DirSize {
 	return buildTree(entries, root).selectCells(p)
 }

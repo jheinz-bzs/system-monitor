@@ -232,6 +232,35 @@ func TestWalkAndSelect(t *testing.T) {
 	}
 }
 
+// TestWalkAndSelectDedupsHardLinks confirms a file reachable through two hard
+// links is counted once, not once per path: one and two hold links to the same
+// inode, so the treemap shows a single 1000-byte tile, never two 1000-byte
+// tiles.
+func TestWalkAndSelectDedupsHardLinks(t *testing.T) {
+	root := t.TempDir()
+	dir1 := filepath.Join(root, "one")
+	dir2 := filepath.Join(root, "two")
+	for _, dir := range []string{dir1, dir2} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir1, "data.bin"), bytes.Repeat([]byte{'x'}, 1000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(dir1, "data.bin"), filepath.Join(dir2, "data.bin")); err != nil {
+		t.Skipf("hard links unsupported: %v", err)
+	}
+
+	got := selectDirs(walkFiles(context.Background(), root), root, testParams(1, cellBudget))
+	if len(got) != 1 {
+		t.Fatalf("got %v, want exactly one tile (the inode counted once)", got)
+	}
+	if got[0].Bytes != 1000 {
+		t.Errorf("counted %d bytes, want 1000 (one link, not 2000 across both)", got[0].Bytes)
+	}
+}
+
 // TestCrawlMissingSkipsCachedVolumes is the core of "only scan if the cache
 // doesn't exist": a volume already present in the warm-start cache must not be
 // re-walked at launch, so a re-launch with a populated cache does no filesystem
