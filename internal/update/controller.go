@@ -123,6 +123,12 @@ func (c *Controller) set(s Status, a available) {
 }
 
 func (c *Controller) shutdown() {
+	// Arm a hard-exit fallback before asking the app to quit: after the new
+	// binary has been spawned, the old process must terminate and release its
+	// tray icon. The clean Fyne quit normally does that, but if its teardown
+	// hangs the fallback still terminates the process, so an update restart can
+	// never leave a stale instance in the tray (issue #64).
+	armForceExit()
 	if c.quit != nil {
 		c.quit()
 		return
