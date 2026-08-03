@@ -4,10 +4,13 @@
 
 Thanks for updating. Here's what changed recently.
 
-### macOS installs actually work now
-- The app bundle is now signed before it ships, so Apple Silicon no longer
-  refuses to launch it with the "damaged" error. First launch may still ask
-  you to approve it (the app is ad-hoc signed, not notarized) — see
-  `docs/install/INSTALL-MACOS.md` for the one-time Gatekeeper bypass.
-- Self-updates re-sign the bundle after swapping in the new version, so an
-  in-app update won't re-break the install.
+### Linux: updates via apt now get a proper prompt
+- If you installed from the `.deb`, an available update now shows the update
+  banner and a **Update via apt** link — tapping it tells you to run
+  `sudo apt update && sudo apt upgrade` instead of the app swapping a file it
+  doesn't own. Standalone binaries and AppImages still self-update in place.
+
+### macOS: installs are smoother
+- The Homebrew cask now clears the quarantine attribute automatically after
+  install, so a fresh `brew install --cask system-monitor` launches without a
+  Gatekeeper prompt.
