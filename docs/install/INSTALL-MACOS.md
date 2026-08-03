@@ -60,13 +60,9 @@ release pipeline whenever a new tag is published. Update it with:
 brew upgrade --cask system-monitor
 ```
 
-Because the app is not notarized (see below), set `HOMEBREW_CASK_OPTS` to
-skip the first-launch Gatekeeper prompt entirely (the `--no-quarantine` flag
-was removed from `brew` in Homebrew 4.0):
-
-```sh
-HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask system-monitor
-```
+The cask clears the quarantine attribute automatically after install (the
+`--no-quarantine` flag/env var is a no-op for cask installs — Homebrew/brew#23362),
+so no Gatekeeper bypass should be needed.
 
 ## Option 3 — Build from source
 

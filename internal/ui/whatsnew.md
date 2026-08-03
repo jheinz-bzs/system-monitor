@@ -4,12 +4,10 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Settings apply instantly
-- Changes in **Settings** now take effect immediately — theme, text size,
-  poll interval, memory limit, and alert thresholds no longer need a relaunch.
-
-### Alert notifications
-- On Windows, threshold alerts now show **System Monitor** as the sender
-  instead of a generic app name.
-- Usage bouncing around your threshold can't queue a pile of notifications
-  anymore — after an alert fires, the next one waits a short cooldown.
+### macOS installs actually work now
+- The app bundle is now signed before it ships, so Apple Silicon no longer
+  refuses to launch it with the "damaged" error. First launch may still ask
+  you to approve it (the app is ad-hoc signed, not notarized) — see
+  `docs/install/INSTALL-MACOS.md` for the one-time Gatekeeper bypass.
+- Self-updates re-sign the bundle after swapping in the new version, so an
+  in-app update won't re-break the install.
