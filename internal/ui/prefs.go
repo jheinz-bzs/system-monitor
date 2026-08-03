@@ -15,21 +15,23 @@ import (
 // string values are the on-disk keys: keep them stable across releases, or
 // persisted settings silently reset to their defaults.
 var prefKey = struct {
-	StartTab        string
-	MemoryCap       string
-	PollSeconds     string
-	Theme           string
-	AutoUpdate      string
-	MinimizeToTray  string
-	LastSeenVersion string
+	StartTab            string
+	MemoryCap           string
+	PollSeconds         string
+	Theme               string
+	AutoUpdate          string
+	MinimizeToTray      string
+	LastSeenVersion     string
+	UpdateCheckInterval string
 }{
-	StartTab:        "startTab",
-	MemoryCap:       "memoryCapEnabled",
-	PollSeconds:     "pollSeconds",
-	Theme:           "theme",
-	AutoUpdate:      "autoUpdate",
-	MinimizeToTray:  "minimizeToTray",
-	LastSeenVersion: "lastSeenVersion",
+	StartTab:            "startTab",
+	MemoryCap:           "memoryCapEnabled",
+	PollSeconds:         "pollSeconds",
+	Theme:               "theme",
+	AutoUpdate:          "autoUpdate",
+	MinimizeToTray:      "minimizeToTray",
+	LastSeenVersion:     "lastSeenVersion",
+	UpdateCheckInterval: "updateCheckInterval",
 }
 
 // Preference defaults, returned whenever a key is unset — so a fresh install,
@@ -47,6 +49,11 @@ const (
 	// (BZS253-71's "no silent background replacement"); enabling this is the
 	// user's explicit opt-in to auto-install on next launch (ADR-010).
 	defaultAutoUpdate = false
+	// defaultUpdateCheckIntervalMinutes is the shipped periodic update-check
+	// cadence (issue #84), in minutes — it must match update.DefaultCheckInterval
+	// so a fresh install checks at the same pace the loop documents. 0 disables
+	// periodic checks entirely: the app never queries GitHub during the session.
+	defaultUpdateCheckIntervalMinutes = 5
 	// defaultMinimizeToTray is off: closing the window quits as it always has
 	// until the user opts into hide-to-tray (BZS253-76).
 	defaultMinimizeToTray = false
@@ -75,6 +82,13 @@ var alertKey = map[thresholdMetric]alertPrefKeys{
 // seconds. A stored value outside this set falls back to the default, so a
 // hand-edited preference can't wedge the poll loop with a zero or negative tick.
 var pollSecondsAllowed = []int{1, 2, 5}
+
+// updateCheckIntervalMinutesAllowed is the set of periodic update-check
+// cadences the settings UI offers, in minutes. 0 disables periodic checks
+// entirely. A stored value outside this set falls back to the default, so a
+// hand-edited preference can't wedge the checker with a zero or negative tick
+// or an absurdly fast one.
+var updateCheckIntervalMinutesAllowed = []int{0, 5, 15, 30, 60}
 
 // themeChoice selects the active color palette. Stored as its int value, so the
 // theme key needs no string vocabulary.
@@ -168,6 +182,25 @@ func (s settings) autoUpdateEnabled() bool {
 
 // setAutoUpdateEnabled persists the auto-install opt-in.
 func (s settings) setAutoUpdateEnabled(on bool) { s.store.SetBool(prefKey.AutoUpdate, on) }
+
+// updateCheckInterval is the periodic update-check cadence, applied at startup
+// (the check loop reads it once when the controller is wired). A stored value
+// outside updateCheckIntervalMinutesAllowed falls back to the default, so a
+// hand-edited preference can't wedge the checker; 0 disables periodic checks
+// entirely — the app never queries GitHub during the session.
+func (s settings) updateCheckInterval() time.Duration {
+	mins := s.store.IntWithFallback(prefKey.UpdateCheckInterval, defaultUpdateCheckIntervalMinutes)
+	if !slices.Contains(updateCheckIntervalMinutesAllowed, mins) {
+		mins = defaultUpdateCheckIntervalMinutes
+	}
+	return time.Duration(mins) * time.Minute
+}
+
+// setUpdateCheckIntervalMinutes persists the update-check cadence in minutes
+// (0 = disabled).
+func (s settings) setUpdateCheckIntervalMinutes(mins int) {
+	s.store.SetInt(prefKey.UpdateCheckInterval, mins)
+}
 
 // minimizeToTrayEnabled reports whether closing the window hides it to the
 // system tray instead of quitting (BZS253-76). Defaults off; applied at

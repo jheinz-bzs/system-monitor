@@ -233,22 +233,27 @@ func Run(version string) {
 			src.startUpdate = func() { showAptUpdateGuide(w) }
 		}
 		// Periodic update checks (issue #84): query GitHub on launch, then once
-		// per update.DefaultCheckInterval for as long as the app runs, so a
-		// release that ships while the app is open shows up in the status
-		// bar/banner without a relaunch. The loop skips while a release is
-		// already known (banner up — no point re-querying the rate-limited API),
-		// degrades to a logged no-op when offline or rate-limited, and stops with
-		// ctx on shutdown. Auto-install keeps its startup semantics: a found
-		// release installs without a click when the pref is on — the policy lives
-		// here (composition root), so the controller stays unaware of preferences
-		// (ADR-010). A package-manager-owned install never auto-installs: Start is
-		// a no-op for it, so the guard is belt-and-suspenders.
+		// per the configured interval for as long as the app runs, so a release
+		// that ships while the app is open shows up in the status bar/banner
+		// without a relaunch. The interval is a Settings pref (updateCheckInterval,
+		// launch-scoped: the loop reads it once when wired); "Off" (0) skips the
+		// loop entirely — the app never queries GitHub during the session. The
+		// loop skips while a release is already known (banner up — no point
+		// re-querying the rate-limited API), degrades to a logged no-op when
+		// offline or rate-limited, and stops with ctx on shutdown. Auto-install
+		// keeps its startup semantics: a found release installs without a click
+		// when the pref is on — the policy lives here (composition root), so the
+		// controller stays unaware of preferences (ADR-010). A package-manager-
+		// owned install never auto-installs: Start is a no-op for it, so the guard
+		// is belt-and-suspenders.
 		autoInstall := prefs.autoUpdateEnabled()
-		update.RunPeriodicChecks(ctx, updater, update.DefaultCheckInterval, func() {
-			if autoInstall && mode == update.ModeSelf {
-				updater.Start(ctx) // no-ops unless a periodic check found a newer release
-			}
-		})
+		if interval := prefs.updateCheckInterval(); interval > 0 {
+			update.RunPeriodicChecks(ctx, updater, interval, func() {
+				if autoInstall && mode == update.ModeSelf {
+					updater.Start(ctx) // no-ops unless a periodic check found a newer release
+				}
+			})
+		}
 	}
 
 	// Session tracking mode (BZS253-77): a recorder appends one CSV row per poll
