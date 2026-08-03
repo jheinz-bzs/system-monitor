@@ -4,13 +4,12 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Linux: updates via apt now get a proper prompt
-- If you installed from the `.deb`, an available update now shows the update
-  banner and a **Update via apt** link — tapping it tells you to run
-  `sudo apt update && sudo apt upgrade` instead of the app swapping a file it
-  doesn't own. Standalone binaries and AppImages still self-update in place.
-
-### macOS: installs are smoother
-- The Homebrew cask now clears the quarantine attribute automatically after
-  install, so a fresh `brew install --cask system-monitor` launches without a
-  Gatekeeper prompt.
+### Recording: a dialog with real options
+- Tapping the record button now opens a dialog before a session starts:
+  - **Compact output** — gzip-compressed `.csv.gz` instead of plain CSV.
+  - **Top processes** — record the N busiest-by-CPU processes each tick to a
+    sidecar file (0 = off).
+  - **Save location** — see and edit exactly where the file will be written,
+    or Browse… to pick a folder; the default filename is pre-filled.
+- Cancel leaves recording idle, and tapping the toggle during an active
+  session still stops it right away.
