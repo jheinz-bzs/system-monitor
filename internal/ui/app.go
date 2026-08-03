@@ -232,18 +232,23 @@ func Run(version string) {
 			// rather than swapping the file under dpkg (issue #68).
 			src.startUpdate = func() { showAptUpdateGuide(w) }
 		}
-		// Non-blocking startup check; offline degrades to a no-op. When the user
-		// has opted into auto-install, a found update installs without a click —
-		// the policy lives here (composition root), so the controller stays
-		// unaware of preferences (ADR-010). A package-manager-owned install never
-		// auto-installs: Start is a no-op for it, so the guard is belt-and-suspenders.
+		// Periodic update checks (issue #84): query GitHub on launch, then once
+		// per update.DefaultCheckInterval for as long as the app runs, so a
+		// release that ships while the app is open shows up in the status
+		// bar/banner without a relaunch. The loop skips while a release is
+		// already known (banner up — no point re-querying the rate-limited API),
+		// degrades to a logged no-op when offline or rate-limited, and stops with
+		// ctx on shutdown. Auto-install keeps its startup semantics: a found
+		// release installs without a click when the pref is on — the policy lives
+		// here (composition root), so the controller stays unaware of preferences
+		// (ADR-010). A package-manager-owned install never auto-installs: Start is
+		// a no-op for it, so the guard is belt-and-suspenders.
 		autoInstall := prefs.autoUpdateEnabled()
-		go func() {
-			updater.Check(ctx)
+		update.RunPeriodicChecks(ctx, updater, update.DefaultCheckInterval, func() {
 			if autoInstall && mode == update.ModeSelf {
-				updater.Start(ctx) // no-ops unless Check found a newer release
+				updater.Start(ctx) // no-ops unless a periodic check found a newer release
 			}
-		}()
+		})
 	}
 
 	// Session tracking mode (BZS253-77): a recorder appends one CSV row per poll
