@@ -22,16 +22,19 @@ cask "system-monitor" do
   app "System Monitor.app"
 
   caveats <<~EOS
-    System Monitor is ad-hoc signed but NOT notarized, so Gatekeeper blocks the
-    first launch ("Apple could not verify…"). Remove the quarantine attribute:
+    System Monitor is ad-hoc signed but NOT notarized, so the first launch
+    may be blocked ("Apple could not verify…"). Either approve it in
+    System Settings → Privacy & Security → Open Anyway, or clear the
+    quarantine attribute:
 
       xattr -dr com.apple.quarantine "/Applications/System Monitor.app"
 
-    or pass --no-quarantine when installing:
+    To skip the quarantine step entirely at install time, set the env var
+    (the --no-quarantine flag was removed from brew in Homebrew 4.0):
 
-      brew install --cask --no-quarantine system-monitor
+      HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask system-monitor
 
-    On macOS 15 (Sequoia) and newer the old right-click → Open bypass no longer
-    works — use one of the two methods above. See docs/install/INSTALL-MACOS.md.
+    On macOS 15 (Sequoia) and newer the old right-click → Open bypass no
+    longer works — use one of the two methods above. See docs/install/INSTALL-MACOS.md.
   EOS
 end

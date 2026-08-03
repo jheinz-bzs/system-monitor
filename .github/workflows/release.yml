@@ -96,8 +96,11 @@ jobs:
             --output appimage
       # macOS ships two artifacts from the one binary: the bare binary (the
       # self-update target — update.assetName() resolves it, ADR-011 pattern)
-      # and a drag-to-Applications .dmg (install-only). Unsigned: first launch
-      # needs right-click → Open until we adopt codesign + notarization.
+      # and a drag-to-Applications .dmg (install-only). The bundle is ad-hoc
+      # signed before packaging: Apple Silicon refuses to launch unsigned code
+      # ("damaged"), and the updater re-signs after a self-update swap (see
+      # internal/update/resign_darwin.go). Notarization (Developer ID) is
+      # future work — right now first launch still needs a Gatekeeper bypass.
       - name: package macos (.dmg)
         if: runner.os == 'macOS'
         shell: bash
@@ -125,6 +128,13 @@ jobs:
           chmod +x "$app/Contents/MacOS/system-monitor"
           cp system-monitor.icns "$app/Contents/Resources/"
           sed "s/__VERSION__/${version_nov}/g" packaging/Info.plist > "$app/Contents/Info.plist"
+
+          # Ad-hoc sign the whole bundle (identifier from the Info.plist, no
+          # signing identity). Apple Silicon hard-blocks unsigned bundles with
+          # the "damaged" error; a signed bundle degrades to the bypassable
+          # Gatekeeper prompt instead. Not notarized — that needs a paid
+          # Developer ID, tracked as future work.
+          codesign --force --deep --sign - "$app"
 
           # Standard drag-install window: the .app beside an /Applications symlink.
           mkdir dmg-staging

@@ -26,5 +26,8 @@ func swap(newBin string) error {
 	if err := os.Rename(newBin, exe); err != nil {
 		return fmt.Errorf("install new exe: %w", err)
 	}
-	return nil
+	// On macOS the running binary lives inside a signed .app bundle; replacing
+	// it invalidates the bundle's code-signature seal, so re-seal it before
+	// the restarted process launches (no-op on Linux — no bundle to sign).
+	return resignAfterSwap(exe)
 }
