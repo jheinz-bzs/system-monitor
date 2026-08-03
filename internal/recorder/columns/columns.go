@@ -11,6 +11,7 @@
 package columns
 
 import (
+	"strings"
 	"time"
 
 	"github.com/josephheinz/system-monitor/internal/monitor"
@@ -37,15 +38,36 @@ const (
 // Default session filename: a session stamp so successive recordings don't
 // collide. The stamp is a Go reference-time layout, not a magic number.
 const (
-	filePrefix = "tracking-"
-	fileExt    = ".csv"
-	fileStamp  = "20060102-150405"
+	filePrefix          = "tracking-"
+	fileExt             = ".csv"
+	fileStamp           = "20060102-150405"
+	compactExt          = ".gz"
+	processesFileSuffix = ".processes.csv"
 )
 
 // FileName is the default name for a session recorded at t — offered in the
 // GUI save dialog and used by the headless binary when --out is omitted.
 func FileName(t time.Time) string {
 	return filePrefix + t.Format(fileStamp) + fileExt
+}
+
+// CompactFilePath is the gzip-compacted path for a session written to path: the
+// .gz suffix is appended unless already present, so tracking-… .csv becomes
+// tracking-… .csv.gz.
+func CompactFilePath(path string) string {
+	if strings.HasSuffix(path, compactExt) {
+		return path
+	}
+	return path + compactExt
+}
+
+// ProcessesFilePath is the top-processes sidecar path that belongs to a session
+// written to path: the recording extension is swapped for the sidecar suffix, so
+// tracking-… .csv (or .csv.gz) records beside tracking-… .processes.csv.
+func ProcessesFilePath(path string) string {
+	base := strings.TrimSuffix(path, compactExt)
+	base = strings.TrimSuffix(base, fileExt)
+	return base + processesFileSuffix
 }
 
 // Build adapts the live collectors into the tracking-mode column set, in the
