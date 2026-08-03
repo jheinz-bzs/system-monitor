@@ -249,7 +249,7 @@ jobs:
         env:
           APT_REPO_DIR: ${{ github.workspace }}/apt-repo
           APT_DEB: ${{ env.apt_deb }}
-          APT_GPG_KEY: key.asc
+          APT_GPG_KEY: ${{ github.workspace }}/key.asc
         run: sh scripts/update-apt-repo.sh
       - name: commit and push gh-pages
         env:
