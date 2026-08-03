@@ -41,7 +41,7 @@ type nopCloser struct{ *bytes.Buffer }
 func (nopCloser) Close() error { return nil }
 
 func TestBuildRoundTripsThroughRecorder(t *testing.T) {
-	rec := recorder.New(Build(nil, nil, nil, nil, nil)...)
+	rec := recorder.New(Build(nil, nil, nil, nil, nil))
 	var buf bytes.Buffer
 	if err := rec.Start(nopCloser{&buf}); err != nil {
 		t.Fatalf("start: %v", err)
@@ -72,5 +72,31 @@ func TestFileName(t *testing.T) {
 	at := time.Date(2026, 7, 13, 9, 30, 5, 0, time.UTC)
 	if got, want := FileName(at), "tracking-20260713-093005.csv"; got != want {
 		t.Errorf("FileName = %q, want %q", got, want)
+	}
+}
+
+func TestCompactFilePath(t *testing.T) {
+	at := time.Date(2026, 7, 13, 9, 30, 5, 0, time.UTC)
+	if got, want := CompactFilePath(FileName(at)), "tracking-20260713-093005.csv.gz"; got != want {
+		t.Errorf("CompactFilePath = %q, want %q", got, want)
+	}
+	if got, want := CompactFilePath("foo.csv"), "foo.csv.gz"; got != want {
+		t.Errorf("CompactFilePath = %q, want %q", got, want)
+	}
+	// Idempotent: a path already compacted is returned unchanged.
+	if got, want := CompactFilePath("foo.csv.gz"), "foo.csv.gz"; got != want {
+		t.Errorf("CompactFilePath = %q, want %q", got, want)
+	}
+}
+
+func TestProcessesFilePath(t *testing.T) {
+	at := time.Date(2026, 7, 13, 9, 30, 5, 0, time.UTC)
+	if got, want := ProcessesFilePath(FileName(at)), "tracking-20260713-093005.processes.csv"; got != want {
+		t.Errorf("ProcessesFilePath = %q, want %q", got, want)
+	}
+	// A compact session's sidecar drops the compression extension too, so both
+	// sessions write the same sidecar name.
+	if got, want := ProcessesFilePath("tracking-20260713-093005.csv.gz"), "tracking-20260713-093005.processes.csv"; got != want {
+		t.Errorf("ProcessesFilePath = %q, want %q", got, want)
 	}
 }

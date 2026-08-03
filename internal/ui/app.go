@@ -241,7 +241,7 @@ func Run(version string) {
 	// headless recording binary writes the identical format; the toggle opens a
 	// save dialog and the recorder's data path stays Fyne-free. Registered as a
 	// third OnTick observer below.
-	rec := recorder.New(columns.Build(cpu, memory, diskCol, network, procs)...)
+	rec := recorder.New(columns.Build(cpu, memory, diskCol, network, procs))
 	src.recording = rec.Recording
 	src.toggleRecord = func() { toggleRecording(rec) }
 
