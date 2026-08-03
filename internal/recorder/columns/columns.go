@@ -1,7 +1,8 @@
 // Package columns is the one authoritative home for the tracking-session CSV
 // schema (BZS253-77): the column header strings the recorder writes and the
-// Recordings tab matches on, the default session filename, and the builder that
-// adapts live collectors into the recorder's column set.
+// Recordings tab matches on, the default session filename, the builder that
+// adapts live collectors into the recorder's column set, and the session-option
+// assembly (compact output, top-processes sidecar) both entry points share.
 //
 // It exists so the GUI composition root (internal/ui.Run) and the headless
 // recording binary (cmd/system-monitor-record) write byte-identical schemas —
@@ -11,6 +12,9 @@
 package columns
 
 import (
+	"io"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -68,6 +72,64 @@ func ProcessesFilePath(path string) string {
 	base := strings.TrimSuffix(path, compactExt)
 	base = strings.TrimSuffix(base, fileExt)
 	return base + processesFileSuffix
+}
+
+// ValidPath reports whether a session path is usable: non-empty after trimming,
+// so a modal confirm with a cleared location doesn't try to create a nameless
+// file. Relative paths are allowed — a bare filename writes into the working
+// directory, matching the headless binary's --out default.
+func ValidPath(path string) bool {
+	return strings.TrimSpace(path) != ""
+}
+
+// SessionOptions assembles the recorder's format options for a session spec
+// written to path — the one translation behind both the GUI record modal and
+// the headless binary's flags. Compact selects the gzip'd .csv.gz output; a
+// TopN > 0 spec adds a top-processes sidecar (beside path) sampled from the live
+// collector every tick. procs feeds the snapshot; a nil collector or TopN 0
+// drops the sidecar. The caller passes the final output path — CompactFilePath
+// already applied when Compact is set — so the sidecar name derives from the
+// same file the caller will create.
+func SessionOptions(spec recorder.OptionsSpec, procs *monitor.ProcessCollector, path string) []recorder.Option {
+	return recorder.Options(spec, topProcesses(procs, spec.TopN), openSidecar(ProcessesFilePath(path)))
+}
+
+// topProcesses adapts the process collector into the recorder's snapshot seam,
+// returning the topN busiest-by-CPU processes with only the columns the sidecar
+// writes. Nil when the collector is nil or topN is 0, so recorder.Options drops
+// the sidecar rather than recording an empty file. Reads the collector's latest
+// cached snapshot per call; the poller owns the expensive enumeration.
+func topProcesses(procs *monitor.ProcessCollector, topN int) recorder.ProcessSnapshot {
+	if procs == nil || topN <= 0 {
+		return nil
+	}
+	return func() []recorder.ProcessSample {
+		ps := procs.Processes()
+		samples := make([]recorder.ProcessSample, len(ps))
+		for i, p := range ps {
+			samples[i] = recorder.ProcessSample{
+				PID:  p.PID,
+				Name: p.Name,
+				CPU:  p.CPUPercent,
+				RSS:  p.MemoryBytes,
+			}
+		}
+		return recorder.TopSamples(samples, topN)
+	}
+}
+
+// openSidecar opens a top-processes sidecar path on the recorder's first
+// snapshot, returning nil on failure so the recorder skips the snapshot rather
+// than crashing — the sidecar is ancillary, never allowed to kill a session.
+func openSidecar(path string) func() io.WriteCloser {
+	return func() io.WriteCloser {
+		f, err := os.Create(path)
+		if err != nil {
+			log.Printf("cannot open sidecar %s: %v", path, err)
+			return nil
+		}
+		return f
+	}
 }
 
 // Build adapts the live collectors into the tracking-mode column set, in the

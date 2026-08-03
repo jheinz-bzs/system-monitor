@@ -308,9 +308,9 @@ const recordDotGap = statusDotGap // 4
 // (BZS253-77), sitting in the status bar. Idle it shows a muted dot beside
 // "Record"; while a session is active the dot turns red and the label reads
 // "Stop" — the clear "recording" affordance the card calls for. Tapping invokes
-// onToggle; the composition root opens a save dialog and starts the recorder, or
-// stops the active session. Its painted state is read from recording() so it
-// tracks the session even when start is deferred behind an async save dialog;
+// onToggle; the composition root opens the record modal and starts the recorder
+// on confirm, or stops the active session. Its painted state is read from
+// recording() so it tracks the session even while the modal is open;
 // refresh re-syncs it once per poll tick.
 type recordControl struct {
 	widget.BaseWidget

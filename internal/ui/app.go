@@ -8,18 +8,17 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/systray"
-	"github.com/ncruces/zenity"
 
 	"github.com/josephheinz/system-monitor/internal/metrics"
 	"github.com/josephheinz/system-monitor/internal/monitor"
@@ -260,12 +259,45 @@ func Run(version string) {
 	// tick while a user-started session is active — an explicit, user-initiated
 	// export, distinct from the ambient in-memory history the no-persistence rule
 	// governs (ADR-012). The column schema lives in recorder/columns so the
-	// headless recording binary writes the identical format; the toggle opens a
-	// save dialog and the recorder's data path stays Fyne-free. Registered as a
-	// third OnTick observer below.
-	rec := recorder.New(columns.Build(cpu, memory, diskCol, network, procs))
-	src.recording = rec.Recording
-	src.toggleRecord = func() { toggleRecording(rec) }
+	// headless recording binary writes the identical format. The toggle opens a
+	// modal whose choices (compact output, top-processes sidecar, save location)
+	// build the session recorder; the recorder's data path stays Fyne-free.
+	// Recorder options are construction-time, so each session gets a fresh
+	// recorder; session points at whichever is live — nil when idle — and the
+	// status bar, poller, and teardown all read it through atomic.Load, so the
+	// swap between a stopped session and a new one can't race a poller tick
+	// (a stopped recorder's Tick is a no-op). Registered as a third OnTick
+	// observer below.
+	var session atomic.Pointer[recorder.Recorder]
+	startSession := func(spec recorder.OptionsSpec, path string) {
+		if spec.Compact {
+			path = columns.CompactFilePath(path)
+		}
+		opts := columns.SessionOptions(spec, procs, path)
+		rec := recorder.New(columns.Build(cpu, memory, diskCol, network, procs), opts...)
+		f, err := os.Create(path)
+		if err != nil {
+			log.Printf("create recording file: %v", err)
+			return
+		}
+		if startErr := rec.Start(f); startErr != nil {
+			log.Printf("start recording: %v", startErr)
+			// Recorder didn't adopt it; close so the handle doesn't leak.
+			if closeErr := f.Close(); closeErr != nil {
+				log.Printf("close after failed start: %v", closeErr)
+			}
+			return
+		}
+		session.Store(rec)
+	}
+	recording := func() bool {
+		if r := session.Load(); r != nil {
+			return r.Recording()
+		}
+		return false
+	}
+	src.recording = recording
+	src.toggleRecord = func() { toggleRecording(&session, w, startSession) }
 
 	content, refresh := buildContent(src)
 
@@ -316,8 +348,13 @@ func Run(version string) {
 
 	// Session tracking (BZS253-77): the recorder writes one row per tick while
 	// active. A third OnTick observer — no new collector, no Run() wiring beyond
-	// this. Tick is inert until a session starts, so it costs nothing when idle.
-	poller.OnTick(rec.Tick)
+	// this. Tick is inert until a session starts, so it costs nothing when idle;
+	// a nil session (no session yet, or one just swapped out) also no-ops.
+	poller.OnTick(func() {
+		if r := session.Load(); r != nil {
+			r.Tick()
+		}
+	})
 
 	poller.Start(ctx)
 
@@ -329,8 +366,10 @@ func Run(version string) {
 		// Flush and close any in-progress tracking session so a quit mid-recording
 		// still yields a complete file. No-op when not recording. After poller.Stop
 		// so no Tick races the close.
-		if err := rec.Stop(); err != nil {
-			log.Printf("stop recording: %v", err)
+		if r := session.Load(); r != nil {
+			if err := r.Stop(); err != nil {
+				log.Printf("stop recording: %v", err)
+			}
 		}
 		// a.Quit, not w.Close: with a system tray active Fyne keeps the app
 		// running after the last window closes, so closing the window would
@@ -687,11 +726,13 @@ func mostUsedPercent(parts []monitor.PartitionUsage) (float64, bool) {
 
 // Session tracking mode (BZS253-77). The recorder wiring lives in the
 // composition root because it is the only place that knows the live collectors
-// and the window the save dialog needs. The CSV schema itself (column headers,
-// default filename, column builder) lives in internal/recorder/columns, shared
-// with the headless recording binary.
+// and the window the record modal needs. The CSV schema and the session-option
+// assembly (compact output, top-processes sidecar) live in
+// internal/recorder/columns, shared with the headless recording binary, so both
+// entry points start byte-identical sessions; this file supplies the window and
+// wires the modal's confirmed spec into columns.SessionOptions.
 
-// Native save-dialog chrome (zenity).
+// Native save-dialog chrome (zenity), reused by the record modal's Browse.
 const (
 	recordDialogTitle   = "Save tracking session"
 	recordFilterName    = "CSV files"
@@ -699,43 +740,17 @@ const (
 )
 
 // toggleRecording is the status-bar toggle's action: stop an active session, or
-// start a new one behind a native OS save dialog. zenity opens the platform's
-// real file picker; the chosen path is opened here and handed to the recorder.
-// The dialog blocks, so it runs on its own goroutine to avoid freezing the UI
-// thread that dispatched the tap. A cancel leaves the session idle; genuine
-// errors are logged, not surfaced — a failed start stays off, matching the rest
-// of the app's degrade-quietly chrome.
-func toggleRecording(rec *recorder.Recorder) {
-	if rec.Recording() {
-		if err := rec.Stop(); err != nil {
+// start a new one behind the record modal. While a session is active a tap
+// stops it outright (no modal); idle, it opens the modal, whose confirm starts
+// the session through start and whose cancel leaves it idle. Runs on the UI
+// goroutine (a control tap), so the modal may call dialog directly.
+func toggleRecording(session *atomic.Pointer[recorder.Recorder], win fyne.Window, start func(recorder.OptionsSpec, string)) {
+	if r := session.Load(); r != nil && r.Recording() {
+		if err := r.Stop(); err != nil {
 			log.Printf("stop recording: %v", err)
 		}
+		session.Store(nil)
 		return
 	}
-	go func() {
-		path, err := zenity.SelectFileSave(
-			zenity.Title(recordDialogTitle),
-			zenity.ConfirmOverwrite(),
-			zenity.Filename(columns.FileName(time.Now())),
-			zenity.FileFilters{{Name: recordFilterName, Patterns: []string{recordFilterPattern}}},
-		)
-		if err != nil {
-			if !errors.Is(err, zenity.ErrCanceled) {
-				log.Printf("save dialog: %v", err)
-			}
-			return // cancelled or errored: stay idle
-		}
-		f, err := os.Create(path)
-		if err != nil {
-			log.Printf("create recording file: %v", err)
-			return
-		}
-		if startErr := rec.Start(f); startErr != nil {
-			log.Printf("start recording: %v", startErr)
-			// Recorder didn't adopt it; close so the handle doesn't leak.
-			if closeErr := f.Close(); closeErr != nil {
-				log.Printf("close after failed start: %v", closeErr)
-			}
-		}
-	}()
+	showRecordModal(win, start)
 }
