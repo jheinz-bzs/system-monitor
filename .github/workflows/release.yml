@@ -188,3 +188,78 @@ jobs:
           files: |
             dist/system-monitor*
             dist/checksums.txt
+
+  # Serve the Linux .deb through a signed static APT repo on the gh-pages
+  # branch (issue #66): Debian/Ubuntu users add the repo once and `apt upgrade`
+  # keeps system-monitor current. Requires APT_GPG_KEY (armored private key)
+  # and APT_GPG_PASSPHRASE repo secrets; the public half is exported to
+  # public.key for the keyring setup in docs/install/INSTALL-LINUX.md.
+  # One-time setup, outside this workflow: enable GitHub Pages to deploy from
+  # the gh-pages branch so https://josephheinz.github.io/system-monitor/ resolves.
+  apt-repo:
+    name: publish apt repo
+    needs: [release]
+    runs-on: ubuntu-latest
+    env:
+      PAGES_BRANCH: gh-pages
+      APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: system-monitor-linux-amd64 # the .deb rides in with the linux build
+          path: debs
+      - name: install apt repo tooling
+        run: sudo apt-get update && sudo apt-get install -y apt-utils gnupg
+      - name: locate built .deb
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt_deb=$(find debs -name 'system-monitor_*.deb' -print -quit)
+          if [ -z "$apt_deb" ]; then
+            echo "::error::no system-monitor_*.deb found in the linux build artifacts" >&2
+            exit 1
+          fi
+          echo "apt_deb=$apt_deb" >> "$GITHUB_ENV"
+      - name: write signing key
+        env:
+          APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$APT_GPG_KEY" ]; then
+            echo "::error::APT_GPG_KEY secret is not configured. Add APT_GPG_KEY (armored GPG private key) and APT_GPG_PASSPHRASE to the repository secrets." >&2
+            exit 1
+          fi
+          printf '%s\n' "$APT_GPG_KEY" > key.asc
+          chmod 600 key.asc
+      - name: clone gh-pages (bootstrap if missing)
+        shell: bash
+        run: |
+          set -euo pipefail
+          pages_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --heads "$pages_url" "refs/heads/$PAGES_BRANCH" | grep -q .; then
+            git clone --depth 1 --branch "$PAGES_BRANCH" "$pages_url" apt-repo
+          else
+            git init -b "$PAGES_BRANCH" apt-repo # first release: create the branch
+          fi
+      - name: regenerate and sign the repo
+        env:
+          APT_REPO_DIR: ${{ github.workspace }}/apt-repo
+          APT_DEB: ${{ env.apt_deb }}
+          APT_GPG_KEY: key.asc
+        run: sh scripts/update-apt-repo.sh
+      - name: commit and push gh-pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apt-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no apt repo changes to push"
+          else
+            git commit -m "apt repo: publish ${GITHUB_REF_NAME}"
+            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$PAGES_BRANCH"
+          fi

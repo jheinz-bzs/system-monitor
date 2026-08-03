@@ -33,7 +33,7 @@ Per-OS guides — each covers installing from the
 or building from source:
 
 - [Windows](docs/install/INSTALL-WINDOWS.md)
-- [Linux](docs/install/INSTALL-LINUX.md) — bare binary, `.deb`, or AppImage
+- [Linux](docs/install/INSTALL-LINUX.md) — APT repository, bare binary, `.deb`, or AppImage
 - [macOS](docs/install/INSTALL-MACOS.md) — note the unsigned-app first-launch steps
 
 ## Headless recording (servers)

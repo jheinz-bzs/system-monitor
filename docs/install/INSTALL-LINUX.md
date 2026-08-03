@@ -8,9 +8,28 @@ page. Verify any download against `checksums.txt`:
 sha256sum -c --ignore-missing checksums.txt
 ```
 
-Pick one of the three packaged formats, or build from source.
+Pick one of the packaged formats, or build from source.
 
-## Option 1 — AppImage (any modern distro)
+## Option 1 — APT repository (Debian, Ubuntu, Mint, Pop!_OS)
+
+Best choice for Debian-family distros: add the signed repo once, then
+`apt upgrade` keeps System Monitor current with the rest of your system.
+
+```sh
+# Trust the repo's signing key.
+curl -fsSL https://josephheinz.github.io/system-monitor/public.key \
+  | sudo gpg --dearmor --yes -o /usr/share/keyrings/system-monitor-archive-keyring.gpg
+# Point apt at the repo.
+echo "deb [signed-by=/usr/share/keyrings/system-monitor-archive-keyring.gpg] https://josephheinz.github.io/system-monitor/ stable main" \
+  | sudo tee /etc/apt/sources.list.d/system-monitor.list
+sudo apt update
+sudo apt install system-monitor
+```
+
+Launch from your app menu or with `system-monitor`; updates arrive through
+`sudo apt upgrade`. Uninstall with `sudo apt remove system-monitor`.
+
+## Option 2 — AppImage (any modern distro)
 
 Best choice for most desktops (Ubuntu, Fedora, Arch, openSUSE, …) — a single
 file that bundles its GL/X11 dependencies and supports the app's built-in
@@ -25,9 +44,11 @@ chmod +x system-monitor-linux-amd64.AppImage
 If it fails with a FUSE error (common on Ubuntu 22.04+), install `libfuse2`
 or run with `APPIMAGE_EXTRACT_AND_RUN=1`.
 
-## Option 2 — .deb (Debian, Ubuntu, Mint, Pop!_OS)
+## Option 3 — .deb (direct download, no setup)
 
-For Debian-family distros where you want apt to manage the install:
+For Debian-family distros that would rather not add a repo: a one-off install,
+no repo setup, but no `apt upgrade` tracking either — use the APT repository
+above if you want updates.
 
 ```sh
 wget https://github.com/josephheinz/system-monitor/releases/latest/download/system-monitor_<version>_amd64.deb
@@ -38,7 +59,7 @@ Replace `<version>` with the release version (e.g. `system-monitor_0.3.0_amd64.d
 for `v0.3.0` — note the underscore naming and no leading `v`). Launch from your
 app menu or with `system-monitor`. Uninstall with `sudo apt remove system-monitor`.
 
-## Option 3 — Bare binary (no file extension)
+## Option 4 — Bare binary (no file extension)
 
 For servers, minimal setups, or distros without AppImage/deb support. Unlike
 the AppImage, this links GL/X11 at runtime, so your system needs Mesa/OpenGL
@@ -56,7 +77,7 @@ Optionally move it onto your PATH:
 sudo install system-monitor-linux-amd64 /usr/local/bin/system-monitor
 ```
 
-## Option 4 — Build from source
+## Option 5 — Build from source
 
 Requirements: **Go 1.26+**, gcc, and the GL/X11 dev headers (Fyne needs CGO).
 
