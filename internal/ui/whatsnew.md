@@ -4,13 +4,12 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Linux: updates via apt now get a proper prompt
-- If you installed from the `.deb`, an available update now shows the update
-  banner and a **Update via apt** link — tapping it tells you to run
-  `sudo apt update && sudo apt upgrade` instead of the app swapping a file it
-  doesn't own. Standalone binaries and AppImages still self-update in place.
-
-### macOS: installs are smoother
-- The Homebrew cask now clears the quarantine attribute automatically after
-  install, so a fresh `brew install --cask system-monitor` launches without a
-  Gatekeeper prompt.
+### Linux: the Disk treemap now matches reality
+- The directory treemap no longer absorbs separate filesystems mounted under a
+  volume — `/` shows only `/`'s storage, not `/proc`, `/sys`, or a separate
+  `/home` — so volume totals agree with the Volumes panel.
+- File-backed mounts (like a container's `/etc/hostname`) no longer appear as
+  phantom volumes with empty treemaps.
+- Unreadable directories (other users' homes, `/root`) are now counted and
+  reported instead of silently skipped, so a partial crawl is visible rather
+  than looking complete.
