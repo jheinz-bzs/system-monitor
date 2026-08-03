@@ -321,10 +321,10 @@ jobs:
           mkdir -p Casks
           cp "${GITHUB_WORKSPACE}/packaging/homebrew/Casks/system-monitor.rb" Casks/system-monitor.rb
           sed -i -e "s/__VERSION__/${cask_version}/g" -e "s/__SHA256__/${dmg_sha256}/g" Casks/system-monitor.rb
-          if git diff --quiet; then
+          git add Casks/system-monitor.rb
+          if git diff --cached --quiet; then
             echo "cask unchanged; nothing to push"
             exit 0
           fi
-          git add Casks/system-monitor.rb
           git commit -m "chore: bump system-monitor cask to v${cask_version}"
           git push origin HEAD
