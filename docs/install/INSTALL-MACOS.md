@@ -11,11 +11,12 @@ must build from source.
    folder shortcut in the window.
 3. Eject the disk image.
 
-### ⚠️ First launch — the app is not signed
+### ⚠️ First launch — ad-hoc signed, not notarized
 
-The app is **not notarized with an Apple Developer account**, so Gatekeeper
-will block the first launch ("Apple could not verify…"). You have two ways
-past it:
+The app is **ad-hoc signed** (Apple Silicon requires *some* signature to run)
+but **not notarized with an Apple Developer account**, so Gatekeeper may
+block the first launch ("Apple could not verify…"). You have two ways past
+it:
 
 **A. Remove the quarantine flag in Terminal (most reliable):**
 
@@ -59,11 +60,12 @@ release pipeline whenever a new tag is published. Update it with:
 brew upgrade --cask system-monitor
 ```
 
-Because the app is not notarized (see below), install with `--no-quarantine`
-to skip the first-launch Gatekeeper prompt entirely:
+Because the app is not notarized (see below), set `HOMEBREW_CASK_OPTS` to
+skip the first-launch Gatekeeper prompt entirely (the `--no-quarantine` flag
+was removed from `brew` in Homebrew 4.0):
 
 ```sh
-brew install --cask --no-quarantine system-monitor
+HOMEBREW_CASK_OPTS="--no-quarantine" brew install --cask system-monitor
 ```
 
 ## Option 3 — Build from source
