@@ -20,20 +20,25 @@ type Controller struct {
 	current string       // build-time version, e.g. "v1.2.0"
 	client  *http.Client // injectable for tests
 	quit    func()       // ask the app to exit so the freshly-spawned process takes over
+	mode    Mode         // how an available update is delivered (ModeSelf installs; ModePackageManager never does)
 
 	mu     sync.Mutex
 	status Status
 	avail  available
 }
 
-// NewController returns a controller comparing against current. quit is invoked
-// after the new binary has been spawned, to exit this process (the UI wires it
-// to a clean Fyne shutdown); a nil quit falls back to os.Exit.
-func NewController(current string, quit func()) *Controller {
+// NewController returns a controller comparing against current, delivering
+// updates per mode: ModeSelf installs in place on Start; ModePackageManager (a
+// dpkg-owned install) detects availability but Start is a no-op, since apt owns
+// the file. quit is invoked after the new binary has been spawned, to exit this
+// process (the UI wires it to a clean Fyne shutdown); a nil quit falls back to
+// os.Exit.
+func NewController(current string, mode Mode, quit func()) *Controller {
 	return &Controller{
 		current: current,
 		client:  &http.Client{Timeout: httpTimeout},
 		quit:    quit,
+		mode:    mode,
 		status:  StatusIdle,
 	}
 }
@@ -70,11 +75,13 @@ func (c *Controller) Check(ctx context.Context) {
 
 // Start installs the available update: download, verify, swap, then spawn the new
 // binary and quit. It is a no-op unless an update is currently available, so a
-// stray tap can't trigger an install mid-flight. The work runs on a goroutine so
-// the calling UI tap returns immediately.
+// stray tap can't trigger an install mid-flight. For a ModePackageManager
+// install it is always a no-op — apt owns the file and would be left with a
+// mismatched dpkg database if the updater swapped it (issue #68). The work runs
+// on a goroutine so the calling UI tap returns immediately.
 func (c *Controller) Start(ctx context.Context) {
 	c.mu.Lock()
-	if c.status != StatusAvailable {
+	if c.status != StatusAvailable || c.mode != ModeSelf {
 		c.mu.Unlock()
 		return
 	}

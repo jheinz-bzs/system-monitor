@@ -31,9 +31,12 @@ const (
 
 	// Self-update affordance (BZS253-71): a tappable link shown only when a newer
 	// release is available, plus a status word for the install phases.
-	labelUpdateLink   = "↑ Update"
-	labelUpdating     = "updating…"
-	labelUpdateFailed = "update failed"
+	// labelUpdateLinkApt replaces labelUpdateLink on a package-manager-owned
+	// install, whose tap surfaces the apt command instead of self-updating (#68).
+	labelUpdateLink    = "↑ Update"
+	labelUpdateLinkApt = "↑ Update via apt"
+	labelUpdating      = "updating…"
+	labelUpdateFailed  = "update failed"
 )
 
 // Status bar layout geometry.
@@ -95,8 +98,9 @@ func newStatusBarView(src buildSources) *statusBarView {
 
 	// The update affordance is built whether or not it's wired; it simply stays
 	// hidden when there's no updater (dev build) or no update pending, taking no
-	// space in the footer's box layout until refresh reveals it.
-	v.updateLink = newJumpLinkSized(labelUpdateLink, sizeName.Meta, src.startUpdate)
+	// space in the footer's box layout until refresh reveals it. The link label
+	// names the delivery path: self-update, or apt on a dpkg-owned install.
+	v.updateLink = newJumpLinkSized(updateLinkLabel(src.updateMode), sizeName.Meta, src.startUpdate)
 	v.updateText = newMeta("")
 	v.updateGroup = container.New(layout.NewCustomPaddedHBoxLayout(statusDotGap),
 		vCenter(v.updateLink), vCenter(v.updateText))
@@ -228,4 +232,14 @@ func (v *statusBarView) health() statusKind {
 // ("1s poll"), so it stays truthful if pollInterval changes.
 func pollLabel() string {
 	return strconv.Itoa(int(pollInterval/time.Second)) + labelStatusPoll
+}
+
+// updateLinkLabel picks the footer's update-link text for the delivery mode:
+// "↑ Update" on a self-updating install, "↑ Update via apt" on a dpkg-owned one
+// whose upgrades come from apt rather than the in-app swap (issue #68).
+func updateLinkLabel(mode update.Mode) string {
+	if mode == update.ModePackageManager {
+		return labelUpdateLinkApt
+	}
+	return labelUpdateLink
 }

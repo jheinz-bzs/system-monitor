@@ -46,3 +46,15 @@ func TestUpdateBannerNilSeam(t *testing.T) {
 		t.Error("banner visible with no update seam")
 	}
 }
+
+// TestUpdateActionLabel locks the banner link's copy to the delivery mode: the
+// plain self-update action, or the apt-deferred one for a dpkg-owned install
+// (issue #68).
+func TestUpdateActionLabel(t *testing.T) {
+	if got := updateActionLabel(update.ModeSelf); got != labelUpdateAction {
+		t.Errorf("updateActionLabel(self) = %q, want %q", got, labelUpdateAction)
+	}
+	if got := updateActionLabel(update.ModePackageManager); got != labelUpdateActionApt {
+		t.Errorf("updateActionLabel(pkg-manager) = %q, want %q", got, labelUpdateActionApt)
+	}
+}
