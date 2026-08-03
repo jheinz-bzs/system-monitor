@@ -312,8 +312,8 @@ jobs:
           tap_dir="$(mktemp -d)"
           git clone "https://x-access-token:${TAP_REPO_PAT}@github.com/josephheinz/homebrew-tap.git" "${tap_dir}"
           cd "${tap_dir}"
-          git config user.name "system-monitor release bot"
-          git config user.email "jheinz@bizstream.com"
+          git config user.name "Joseph Heinz"
+          git config user.email "josephheinz28@gmail.com"
           mkdir -p Casks
           cp "${GITHUB_WORKSPACE}/packaging/homebrew/Casks/system-monitor.rb" Casks/system-monitor.rb
           sed -i -e "s/__VERSION__/${cask_version}/g" -e "s/__SHA256__/${dmg_sha256}/g" Casks/system-monitor.rb
