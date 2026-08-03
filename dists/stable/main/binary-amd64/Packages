@@ -83,3 +83,20 @@ SHA512: 9bfdc973d2bf0f8cb0c1704ce2c9288cea8ec5fc47213704e036b43b7097d9db091c7ded
 Homepage: https://github.com/josephheinz/system-monitor
 Description: Native desktop system monitor — CPU, memory, disk, network, processes.
 
+Package: system-monitor
+Architecture: amd64
+Version: 0.9.0
+Priority: optional
+Section: utils
+Maintainer: Joseph Heinz <josephheinz28@gmail.com>
+Installed-Size: 35867
+Depends: libgl1, libx11-6
+Filename: pool/main/s/system-monitor/system-monitor_0.9.0_amd64.deb
+Size: 19832918
+MD5sum: e273f11ed2af515416dcf670786256e2
+SHA1: 9b19e26c78260e44a43ea0af1078146d06218e53
+SHA256: 3b40ac6ce40b13286ff6c6006da33021e7e615e9872e62b9aedbe66f8d6e1200
+SHA512: acf14fd63982b02a2defe29462a317239649a3b32ce1648235b562e995c1b85008d8b29273088e6ec2e0466d1813644d24c0e8a47920f04126573a2d081f4fcf
+Homepage: https://github.com/josephheinz/system-monitor
+Description: Native desktop system monitor — CPU, memory, disk, network, processes.
+
