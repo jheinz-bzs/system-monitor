@@ -234,6 +234,8 @@ jobs:
           printf '%s\n' "$APT_GPG_KEY" > key.asc
           chmod 600 key.asc
       - name: clone gh-pages (bootstrap if missing)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -250,6 +252,8 @@ jobs:
           APT_GPG_KEY: key.asc
         run: sh scripts/update-apt-repo.sh
       - name: commit and push gh-pages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
