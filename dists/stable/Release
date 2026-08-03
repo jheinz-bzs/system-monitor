@@ -1,23 +1,23 @@
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Mon, 03 Aug 2026 17:53:56 +0000
+Date: Mon, 03 Aug 2026 20:36:55 +0000
 Label: system-monitor
 Origin: https://josephheinz.github.io/system-monitor
 Suite: stable
 MD5Sum:
- b3bf505c81f5c9316ae1921ca5dd2a94              182 Release
- 7b108604f8082b0c342cf1a7615a9055             2864 main/binary-amd64/Packages
- 505536dbc92c9117e781a67306a79ecf             1075 main/binary-amd64/Packages.gz
+ be7b08a245f6d21cb85c81757d88d324              182 Release
+ ecb4c76b098d29985a77c8cd820a65e7             3580 main/binary-amd64/Packages
+ c249da88eb07ada2d43e2bbde8cdb11d             1263 main/binary-amd64/Packages.gz
 SHA1:
- 7269cd3d383d5548b671ef36114383b655e7c00f              182 Release
- 5b2b85a15d13ddf366fb15f67b1ddd108f93a624             2864 main/binary-amd64/Packages
- 1457e76316297a887524c5dc2159381d2636963a             1075 main/binary-amd64/Packages.gz
+ 819c190df3bc4cad988a367faff3af349d5451d8              182 Release
+ f40afa867c0b782058c44fd0274cf2681107e6e8             3580 main/binary-amd64/Packages
+ 83f40f4c4af4bf224004801af4ea07850f7f7560             1263 main/binary-amd64/Packages.gz
 SHA256:
- 685929c5376d9093e880cf3c371dddde4452a556745f752b4dfb52209856b716              182 Release
- 53b9f1a8f78be603757a1b4ed836996120afcfeda260108e25dbbffa30191270             2864 main/binary-amd64/Packages
- 50330c9264e7e7a42427664154e5384adcb39348ec8c82714f32dd1cab386fd9             1075 main/binary-amd64/Packages.gz
+ 68f166d1683386da3697038cd403130b8993b5a238bb488053387444b02b8eca              182 Release
+ 46e0bd0330515eeb8ca059de5c261500f0ed3ba203595c1283367ce86e79ddf2             3580 main/binary-amd64/Packages
+ eb1390823903f60b5f281ccf2b60c175734d019d4f5f8cf4bcc86cafd6a6b6c1             1263 main/binary-amd64/Packages.gz
 SHA512:
- c6d6e44ef68eb45eefcc35ae849c22844180faaaaef8297657dc97b9b73f841a45a37936741071c125dd432330a09f1a65dcfcfd8c0fde79f46a4070400739a4              182 Release
- c037bd334fd100ce54860342b0a81d45e9fc439c11c6d222a5c4f671e0891bd677fee6a496e60409df5d7078afd861e7d459cff9b2febfd03ca0cb3059a27beb             2864 main/binary-amd64/Packages
- d5a3817002f01afc992602c3a9e845aca11ee339e51213f4693fe8a343efcbb744874dbd23877c452ee0187b9b1d921cab2f51ee152e27f058b0b9686c7a8a50             1075 main/binary-amd64/Packages.gz
+ 3b326919b8f3487a1eb0a76966d86b295706688282338b14154e1f08b6a664cbc05186405b41fb692cee13d1caa55bb42d6fcd91e528489f52f6800fae094b68              182 Release
+ a057176eced7b852b0d61c7336321cdf3adc211ccd2e6d1c45b7e805f967029c9e19554c525c16f0511d10e9baa6ab86e81d7803c8596c933d9da0395293124d             3580 main/binary-amd64/Packages
+ 0504f7b7e7750e5481ea623603b6fc43c7e57a8ce8322c2dee4f48d1f05b898d10e43552bb1bd3cf715ccc53a7eb3be1604b59f6f5fd49039e7fffedc39c1640             1263 main/binary-amd64/Packages.gz
