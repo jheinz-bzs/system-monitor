@@ -595,23 +595,44 @@ func (v *diskView) volumeSelector() fyne.CanvasObject {
 	if v.selectVolume == nil || len(v.mounts) < 2 {
 		return nil
 	}
-	labels := make([]string, len(v.mounts))
+	labels := make([]string, 0, len(v.mounts))
+	mountByLabel := make(map[string]string, len(v.mounts))
 	for i, m := range v.mounts {
-		labels[i] = volumeLabel(m)
+		l := volumeLabel(m)
+		if _, dup := mountByLabel[l]; dup {
+			// volumeLabel strips trailing separators, so "/data" and "/data/"
+			// would share a label and the first match would select the wrong
+			// mount. Disambiguate the duplicate with its index so every label
+			// maps to exactly one mount.
+			l = fmt.Sprintf("%s [%d]", l, i+1)
+		}
+		mountByLabel[l] = m
+		labels = append(labels, l)
 	}
 	sel := widget.NewSelect(labels, func(chosen string) {
-		for i, l := range labels {
-			if l == chosen {
-				v.selectVolume(v.mounts[i])
-				return
-			}
+		if m, ok := mountByLabel[chosen]; ok {
+			v.selectVolume(m)
 		}
 	})
 	// Seed the first volume so the dropdown and the shown treemap agree at
 	// startup (scanRoots order). Set the field directly — the newFilterSelect
 	// pattern — so seeding doesn't fire the callback at build time.
 	sel.Selected = labels[0]
-	return flatFocus(sel)
+	// widget.Select sizes itself to the selected label only, so a short
+	// default volume would clip longer mounts in the popup. Floor the control
+	// at the widest option (label text plus the renderer's chrome) with a
+	// transparent spacer so every mount name fits.
+	widest := float32(0)
+	th := sel.Theme()
+	for _, l := range labels {
+		if w := fyne.MeasureText(l, th.Size(theme.SizeNameText), fyne.TextStyle{}).Width; w > widest {
+			widest = w
+		}
+	}
+	chrome := th.Size(theme.SizeNameInnerPadding)*4 + th.Size(theme.SizeNameInlineIcon)
+	floor := canvas.NewRectangle(color.Transparent)
+	floor.SetMinSize(fyne.NewSize(widest+chrome, 1))
+	return flatFocus(container.NewStack(floor, sel))
 }
 
 // volumeLabel renders a mount path as a compact selector label, dropping a
