@@ -17,6 +17,23 @@ Description: Native desktop system monitor — CPU, memory, disk, network, proce
 
 Package: system-monitor
 Architecture: amd64
+Version: 0.11.0
+Priority: optional
+Section: utils
+Maintainer: Joseph Heinz <josephheinz28@gmail.com>
+Installed-Size: 35926
+Depends: libgl1, libx11-6
+Filename: pool/main/s/system-monitor/system-monitor_0.11.0_amd64.deb
+Size: 19861326
+MD5sum: aa652bef3fe22895e217f7b652103502
+SHA1: c002c863ff98218d6b1fc8105451b683d88f3b19
+SHA256: 3f80b5adac52c9d2a7f2caf9173cd817fb89f7899a6af40b7138b07fa44ee226
+SHA512: 047fdc35d982eb54083abc079e106163782223844a6eefe3c588584a095a59c77475869730c469dd7ade3da5a46df54c606f0356007f75be26fffa3f1ad53a77
+Homepage: https://github.com/josephheinz/system-monitor
+Description: Native desktop system monitor — CPU, memory, disk, network, processes.
+
+Package: system-monitor
+Architecture: amd64
 Version: 0.7.0
 Priority: optional
 Section: utils
