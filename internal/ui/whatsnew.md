@@ -4,13 +4,13 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Linux: updates via apt now get a proper prompt
-- If you installed from the `.deb`, an available update now shows the update
-  banner and a **Update via apt** link — tapping it tells you to run
-  `sudo apt update && sudo apt upgrade` instead of the app swapping a file it
-  doesn't own. Standalone binaries and AppImages still self-update in place.
-
-### macOS: installs are smoother
-- The Homebrew cask now clears the quarantine attribute automatically after
-  install, so a fresh `brew install --cask system-monitor` launches without a
-  Gatekeeper prompt.
+### Updates: checks now run while the app is open
+- The app checks for a new version at launch and then every 5 minutes, so a
+  release that ships while System Monitor is running shows up in the status
+  bar without a restart.
+- The cadence is a **Settings → Update checks** dropdown — **Off** / 5 / 15 /
+  30 / 60 minutes. **Off** disables checks entirely: the app never queries
+  GitHub during the session.
+- The check skips while an update is already shown, so it never re-pings the
+  rate-limited API behind the banner. Auto-install (when enabled) keeps
+  working off the periodic check.
