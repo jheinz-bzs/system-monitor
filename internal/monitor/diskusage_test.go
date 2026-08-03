@@ -222,7 +222,11 @@ func TestWalkAndSelect(t *testing.T) {
 	write("small/file3", 100)   // small → 100
 	write("loose.bin", 300)     // a loose file at root → dropped (not a directory)
 
-	got := selectDirs(walkFiles(context.Background(), root), root, testParams(1, cellBudget))
+	entries, report := walkFiles(context.Background(), root)
+	if report.files != 4 || report.bytes != 1900 {
+		t.Errorf("walk report = %d files / %d bytes, want 4 / 1900 (a file per written inode)", report.files, report.bytes)
+	}
+	got := selectDirs(entries, root, testParams(1, cellBudget))
 	want := []DirSize{
 		{Path: filepath.Join(root, "big"), Bytes: 1500},
 		{Path: filepath.Join(root, "small"), Bytes: 100},
@@ -252,7 +256,11 @@ func TestWalkAndSelectDedupsHardLinks(t *testing.T) {
 		t.Skipf("hard links unsupported: %v", err)
 	}
 
-	got := selectDirs(walkFiles(context.Background(), root), root, testParams(1, cellBudget))
+	entries, report := walkFiles(context.Background(), root)
+	if report.files != 1 || report.bytes != 1000 {
+		t.Errorf("walk report = %d files / %d bytes, want 1 / 1000 (the inode once, not both links)", report.files, report.bytes)
+	}
+	got := selectDirs(entries, root, testParams(1, cellBudget))
 	if len(got) != 1 {
 		t.Fatalf("got %v, want exactly one tile (the inode counted once)", got)
 	}
@@ -273,6 +281,7 @@ func TestCrawlMissingSkipsCachedVolumes(t *testing.T) {
 		ctx:      context.Background(),
 		cache:    map[string][]DirSize{walk: sentinel},
 		scanning: map[string]bool{},
+		reports:  map[string]walkReport{},
 	}
 
 	s.crawlMissing([]string{root})
@@ -292,12 +301,69 @@ func TestCrawlMissingScansUncachedVolume(t *testing.T) {
 	s := &DiskUsageScanner{
 		ctx:      context.Background(),
 		cache:    map[string][]DirSize{},
+		selected: walk,
 		scanning: map[string]bool{},
+		reports:  map[string]walkReport{},
 	}
 
 	s.crawlMissing([]string{root})
 
 	if _, ok := s.cache[walk]; !ok {
 		t.Error("uncached volume was not scanned: no cache entry created")
+	}
+	if r := s.Report(); r.root != walk {
+		t.Errorf("Report() = %+v, want a walk record for %q", r, walk)
+	}
+}
+
+// TestWalkFilesCountsSkippedUnreadable covers the visibility fix: a directory
+// the user cannot read must be counted in the walk report's skipped tally, not
+// vanish silently. The readable siblings are still counted, so a partial crawl
+// is now visible instead of looking like a complete one.
+func TestWalkFilesCountsSkippedUnreadable(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string) {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte{'x'}, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("open/a")
+	write("open/b")
+	write("locked/c")
+	locked := filepath.Join(root, "locked")
+	if err := os.Chmod(locked, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(locked, 0o755) }) // let TempDir's cleanup delete it
+
+	entries, report := walkFiles(context.Background(), root)
+	if report.skipped < 1 {
+		t.Errorf("skipped = %d, want >= 1 (the locked dir), report = %+v", report.skipped, report)
+	}
+	if report.files != 2 || report.bytes != 2 {
+		t.Errorf("counted %d files / %d bytes, want 2 / 2 (only the readable siblings)", report.files, report.bytes)
+	}
+	if len(entries) != 2 {
+		t.Errorf("entries = %d, want 2 (the locked subtree is absent)", len(entries))
+	}
+}
+
+// TestReportZeroForCachedOnlyVolume is the stale-cache indicator: a volume whose
+// snapshot came only from the warm-start cache has never been walked this
+// session, so Report() returns the zero value (root "") — a UI can distinguish
+// "fresh crawl" from "shown from a previous run's cache" by that.
+func TestReportZeroForCachedOnlyVolume(t *testing.T) {
+	walk := walkRoot(filepath.Join(t.TempDir(), "vol"))
+	s := &DiskUsageScanner{
+		cache:    map[string][]DirSize{walk: {{Path: "old", Bytes: 1}}},
+		selected: walk,
+		reports:  map[string]walkReport{},
+	}
+	if r := s.Report(); r != (walkReport{}) {
+		t.Errorf("Report() = %+v, want the zero report (no session walk yet)", r)
 	}
 }

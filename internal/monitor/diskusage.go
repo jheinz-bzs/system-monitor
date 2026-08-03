@@ -57,6 +57,21 @@ type fileEntry struct {
 	size int64
 }
 
+// walkReport describes how complete one volume walk was: what it counted and
+// what it deliberately did not. Files/bytes are the post-dedup totals that feed
+// the treemap; skipped counts the entries dropped because they were unreadable
+// (permission denied, vanished mid-walk); pruned counts the directories that
+// are a different filesystem than the volume root (mount points below it) and
+// were not descended into. Non-zero skipped means the treemap under-reports the
+// volume — previously that fact was invisible.
+type walkReport struct {
+	root    string
+	files   int
+	bytes   uint64
+	skipped int
+	pruned  int
+}
+
 // fileID uniquely identifies one file's data on a volume, so two paths that
 // hard-link to the same inode collapse to one entry. volume is the device
 // (Unix) or volume serial (Windows); index is the inode (Unix) or file index
@@ -99,6 +114,12 @@ type DiskUsageScanner struct {
 	// scanning marks volume roots with an in-flight walk, so the launch crawl and
 	// a manual rescan can't redundantly walk the same volume at once.
 	scanning map[string]bool
+
+	// reports holds the walkReport of each volume walked this session (a volume
+	// present only in the warm-start cache has no report — its snapshot predates
+	// this launch). It is the visibility hook for a partial crawl: a non-zero
+	// skipped count means the treemap under-reports that volume.
+	reports map[string]walkReport
 }
 
 // NewDiskUsageScanner builds a scanner seeded from the on-disk cache (so the
@@ -112,6 +133,7 @@ func NewDiskUsageScanner(ctx context.Context, roots []string) *DiskUsageScanner 
 		cache:     map[string][]DirSize{},
 		cachePath: cachePath(),
 		scanning:  map[string]bool{},
+		reports:   map[string]walkReport{},
 	}
 	if len(roots) > 0 {
 		s.selected = walkRoot(roots[0])
@@ -153,6 +175,17 @@ func (s *DiskUsageScanner) Dirs() []DirSize {
 	out := make([]DirSize, len(src))
 	copy(out, src)
 	return out
+}
+
+// Report returns the walk report of the selected volume — how complete its
+// snapshot is. A volume whose snapshot only came from the warm-start cache has
+// never been walked this session, so its report is the zero value: a UI reading
+// it can tell "stale, shown from cache" from "freshly crawled" by the root
+// field, and a non-zero Skipped flags a treemap that under-reports the volume.
+func (s *DiskUsageScanner) Report() walkReport {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.reports[s.selected]
 }
 
 // crawlMissing walks only the volumes with no cached snapshot yet, in order
@@ -201,19 +234,28 @@ func (s *DiskUsageScanner) scan(walk string) {
 	}
 	defer s.endScan(walk)
 
-	dirs := selectDirs(walkFiles(s.ctx, walk), walk, defaultSelectParams)
+	entries, report := walkFiles(s.ctx, walk)
 	if s.ctx.Err() != nil {
 		return // shutting down mid-walk; the partial result is meaningless
 	}
+	dirs := selectDirs(entries, walk, defaultSelectParams)
 
 	s.mu.Lock()
 	s.cache[walk] = dirs
+	s.reports[walk] = report
 	// Clone so the marshal runs outside the lock; slice values are replaced
 	// wholesale (never mutated in place), so sharing backing arrays is safe.
 	snapshot := maps.Clone(s.cache)
 	s.mu.Unlock()
 
 	s.persist(snapshot)
+	slog.Info("disk usage crawl complete",
+		"root", walk,
+		"files", report.files,
+		"bytes", report.bytes,
+		"skipped", report.skipped,
+		"pruned_fs", report.pruned,
+	)
 }
 
 // beginScan claims the walk slot for walk, reporting false when one is already
@@ -287,34 +329,76 @@ func cachePath() string {
 }
 
 // walkFiles traverses root in parallel with fastwalk, returning every regular
-// file's path and size. Unreadable entries (permission denied, vanished mid-
-// walk) are skipped rather than failing the walk, mirroring the collector's
-// "skip unreadable mount" stance; the walk stops early if ctx is cancelled.
+// file's path and size plus a report of what the walk could not count.
+//
+// Two kinds of content are excluded from a volume's treemap, both deliberately
+// and both now counted in the report instead of being silently dropped:
+//
+//   - Unreadable entries (permission denied, vanished mid-walk) are skipped
+//     rather than failing the walk, mirroring the collector's "skip unreadable
+//     mount" stance. On a normal Linux user's box that includes other users'
+//     homes and /root, so a skipped count above zero means the treemap
+//     under-reports the volume.
+//   - A directory on a different filesystem than the volume root is a mount
+//     point below it (e.g. /proc, /home, or another disk under /). It is pruned
+//     so the treemap stays on the volume's own storage, matching the statfs
+//     per-volume totals the Volumes panel shows — otherwise the "/" treemap
+//     would absorb every other filesystem's bytes (including /proc's virtual
+//     monsters) and double-count a separate /home.
+//
+// Symlinks are never followed (fastwalk's default), so a symlink cannot loop or
+// double-count a subtree. The walk stops early if ctx is cancelled.
 //
 // ponytail: this materializes one fileEntry per file so selectDirs can stay a
 // pure function over a slice. On a multi-million-file volume that transient
 // slice is sizeable; if it ever matters, build the dirNode tree directly inside
 // the walkFn and drop the slice.
-func walkFiles(ctx context.Context, root string) []fileEntry {
+func walkFiles(ctx context.Context, root string) ([]fileEntry, walkReport) {
 	var (
 		mu      sync.Mutex
 		entries []fileEntry
 		seen    = map[fileID]struct{}{}
+		report  = walkReport{root: root}
 	)
-	// fastwalk runs walkFn from several goroutines, so the append must be
-	// guarded; the work is I/O-bound, so the lock contention is negligible.
+	// The root's device is the volume's identity: any subdirectory on a
+	// different device is a mount point below the root. A failed root stat
+	// leaves rootDev at 0, which disables boundary pruning — conservative.
+	var rootDev uint64
+	if info, err := os.Stat(root); err == nil {
+		rootDev = devOf(info)
+	}
+	// fastwalk runs walkFn from several goroutines, so the counters and append
+	// must be guarded; the work is I/O-bound, so the lock contention is
+	// negligible.
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip unreadable entry
+			// Unreadable entry: count it and skip, never fail the walk.
+			mu.Lock()
+			report.skipped++
+			mu.Unlock()
+			slog.Debug("disk usage skip unreadable", "path", path, "err", err)
+			return nil
 		}
 		if ctx.Err() != nil {
 			return ctx.Err() // shutting down; abandon the walk
 		}
 		if d.IsDir() {
+			// A subdirectory on another filesystem is a mount point below this
+			// volume; prune it so the treemap covers only this volume's storage.
+			if info, ierr := d.Info(); ierr == nil && rootDev != 0 && devOf(info) != rootDev {
+				mu.Lock()
+				report.pruned++
+				mu.Unlock()
+				slog.Debug("disk usage prune filesystem boundary", "path", path)
+				return fastwalk.SkipDir
+			}
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil {
+			mu.Lock()
+			report.skipped++
+			mu.Unlock()
 			return nil
 		}
 		// A file reachable through several hard links is one inode; count it
@@ -330,6 +414,8 @@ func walkFiles(ctx context.Context, root string) []fileEntry {
 			}
 			seen[id] = struct{}{}
 		}
+		report.files++
+		report.bytes += uint64(info.Size())
 		entries = append(entries, fileEntry{path: path, size: info.Size()})
 		mu.Unlock()
 		return nil
@@ -338,7 +424,7 @@ func walkFiles(ctx context.Context, root string) []fileEntry {
 	if err := fastwalk.Walk(&fastwalk.Config{}, root, walkFn); err != nil && ctx.Err() == nil {
 		slog.Warn("disk usage walk", "root", root, "err", err)
 	}
-	return entries
+	return entries, report
 }
 
 // selectParams tunes the directory-selection algorithm. It exists so the pure

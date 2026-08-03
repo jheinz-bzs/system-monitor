@@ -89,12 +89,6 @@ const (
 	volumeMinWidth  = 240      // px; panel floor so name + sizes stay readable
 )
 
-// volumeSelectorMaxWidth caps the storage header's volume selector width; more
-// volumes than fit scroll horizontally instead of widening the pane (dozens of
-// mounts once forced the window past the GPU's max surface width — a fatal
-// X BadAlloc on Linux).
-const volumeSelectorMaxWidth = 420 // px
-
 // diskPartition is the UI's per-partition usage shape: a mount path and its byte
 // totals. app.go adapts monitor.PartitionUsage into this so the view never
 // imports the monitor layer.
@@ -592,24 +586,53 @@ func (v *diskView) rescanLink() fyne.CanvasObject {
 }
 
 // volumeSelector is the header control choosing which volume the directory
-// treemap scans (the wireframe's "Macintosh HD" / "Data" segmented control).
-// It's omitted when there's nothing to retarget — no selectVolume hook or only
-// one volume.
+// treemap scans (the wireframe's "Macintosh HD" / "Data" segmented control,
+// rendered as a dropdown so many mounts never overflow the header). The
+// dropdown widths to its longest label and opens a scrolled list, so the
+// natural width cap the segmented control needed is gone. It's omitted when
+// there's nothing to retarget — no selectVolume hook or only one volume.
 func (v *diskView) volumeSelector() fyne.CanvasObject {
 	if v.selectVolume == nil || len(v.mounts) < 2 {
 		return nil
 	}
-	labels := make([]string, len(v.mounts))
+	labels := make([]string, 0, len(v.mounts))
+	mountByLabel := make(map[string]string, len(v.mounts))
 	for i, m := range v.mounts {
-		labels[i] = volumeLabel(m)
+		l := volumeLabel(m)
+		if _, dup := mountByLabel[l]; dup {
+			// volumeLabel strips trailing separators, so "/data" and "/data/"
+			// would share a label and the first match would select the wrong
+			// mount. Disambiguate the duplicate with its index so every label
+			// maps to exactly one mount.
+			l = fmt.Sprintf("%s [%d]", l, i+1)
+		}
+		mountByLabel[l] = m
+		labels = append(labels, l)
 	}
-	sel := newSegmentedSelect(0, func(i int) { v.selectVolume(v.mounts[i]) }, labels...)
-	// Cap the selector's width and scroll the overflow: its natural width grows
-	// with every mounted volume, and an uncapped header widens the whole window.
-	natural := sel.MinSize()
-	scroll := container.NewHScroll(sel)
-	scroll.SetMinSize(fyne.NewSize(fyne.Min(natural.Width, volumeSelectorMaxWidth), natural.Height))
-	return scroll
+	sel := widget.NewSelect(labels, func(chosen string) {
+		if m, ok := mountByLabel[chosen]; ok {
+			v.selectVolume(m)
+		}
+	})
+	// Seed the first volume so the dropdown and the shown treemap agree at
+	// startup (scanRoots order). Set the field directly — the newFilterSelect
+	// pattern — so seeding doesn't fire the callback at build time.
+	sel.Selected = labels[0]
+	// widget.Select sizes itself to the selected label only, so a short
+	// default volume would clip longer mounts in the popup. Floor the control
+	// at the widest option (label text plus the renderer's chrome) with a
+	// transparent spacer so every mount name fits.
+	widest := float32(0)
+	th := sel.Theme()
+	for _, l := range labels {
+		if w := fyne.MeasureText(l, th.Size(theme.SizeNameText), fyne.TextStyle{}).Width; w > widest {
+			widest = w
+		}
+	}
+	chrome := th.Size(theme.SizeNameInnerPadding)*4 + th.Size(theme.SizeNameInlineIcon)
+	floor := canvas.NewRectangle(color.Transparent)
+	floor.SetMinSize(fyne.NewSize(widest+chrome, 1))
+	return flatFocus(container.NewStack(floor, sel))
 }
 
 // volumeLabel renders a mount path as a compact selector label, dropping a
