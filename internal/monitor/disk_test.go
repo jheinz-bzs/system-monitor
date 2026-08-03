@@ -3,9 +3,13 @@ package monitor
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/shirou/gopsutil/v4/disk"
 )
 
 // fakeDiskSampler returns successive readings on each call, then repeats the
@@ -202,5 +206,34 @@ func TestDiskReadMethodsReturnIndependentCopies(t *testing.T) {
 	}
 	if got := c.WriteRate(); got[0] == 999 {
 		t.Errorf("WriteRate() exposed mutable internal state: %v", got)
+	}
+}
+
+// TestRealVolumesFiltersImageAndFileMounts covers the mount→volume filter: a
+// partition that is a pseudo-filesystem (overlay/squashfs/tmpfs), a file-backed
+// bind mount (a container's /etc/hostname — a real file with real reported
+// capacity but not a volume), or an unreadable mountpoint is dropped, so only
+// distinct real storage directories reach the Volumes list and the scan roots.
+func TestRealVolumesFiltersImageAndFileMounts(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(t.TempDir(), "bindfile")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parts := []disk.PartitionStat{
+		{Fstype: "overlay", Mountpoint: "/"},                        // pseudo → dropped
+		{Fstype: "squashfs", Mountpoint: "/snap/core/current"},      // pseudo → dropped
+		{Fstype: "tmpfs", Mountpoint: "/dev/shm"},                   // pseudo → dropped
+		{Fstype: "ext4", Mountpoint: file},                          // file-backed bind → dropped
+		{Fstype: "ext4", Mountpoint: "/does/not/exist"},             // unreadable → dropped
+		{Fstype: "ext4", Mountpoint: "/", Device: "/dev/nvme0n1p2"}, // real volume → kept
+		{Fstype: "xfs", Mountpoint: dir, Device: "/dev/nvme0n1p3"},  // real volume → kept
+	}
+
+	got := realVolumes(parts)
+	want := []disk.PartitionStat{parts[5], parts[6]}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("realVolumes =\n  %v\nwant\n  %v", got, want)
 	}
 }

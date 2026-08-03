@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 	"time"
 
@@ -68,9 +69,32 @@ var pseudoFstypes = map[string]bool{
 	"ramfs":    true,
 }
 
+// realVolumes keeps the partitions that represent a distinct real storage
+// volume, dropping (a) the pseudoFstypes image/RAM/overlay mounts and (b) mounts
+// whose mountpoint is not a directory. The second rule is the container bind
+// mount: a file such as /etc/resolv.conf or /etc/hostname bind-mounted from the
+// same disk as / has real reported capacity but is not a volume — it showed up
+// in the Volumes list and fed the scanner a file as a walk root, which produced
+// an empty treemap for a "volume" that was really one file.
+func realVolumes(parts []disk.PartitionStat) []disk.PartitionStat {
+	out := make([]disk.PartitionStat, 0, len(parts))
+	for _, p := range parts {
+		if pseudoFstypes[p.Fstype] {
+			continue // image/RAM mount, not a real volume
+		}
+		info, err := os.Stat(p.Mountpoint)
+		if err != nil || !info.IsDir() {
+			continue // unreadable or file-backed mount (e.g. a container /etc/hostname bind)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 // defaultDiskSampler reads partition usage and I/O counters via gopsutil. It
 // samples every mounted partition except the pseudoFstypes set (image/RAM/
-// overlay mounts, not real volumes). Usage failures
+// overlay mounts) and non-directory mounts (file-backed binds) — neither is a
+// real volume. Usage failures
 // on individual mounts are skipped rather than failing the whole sample, because
 // unreadable or permission-denied mounts are routine on a real machine; a
 // failure to enumerate partitions or read I/O counters is returned as an error.
@@ -81,10 +105,7 @@ func defaultDiskSampler(ctx context.Context) (diskReading, error) {
 	}
 
 	usage := make([]PartitionUsage, 0, len(parts))
-	for _, p := range parts {
-		if pseudoFstypes[p.Fstype] {
-			continue // image/RAM mount, not a real volume
-		}
+	for _, p := range realVolumes(parts) {
 		stat, err := disk.UsageWithContext(ctx, p.Mountpoint)
 		if err != nil {
 			continue // unreadable mount; skip it rather than failing the sample
