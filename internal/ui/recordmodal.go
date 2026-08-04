@@ -11,11 +11,13 @@ package ui
 
 import (
 	"errors"
+	"image/color"
 	"log"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -44,6 +46,10 @@ const (
 	labelRecordLocation            = "Save to"
 	helpRecordLocation             = "editable; Browse… to pick"
 	labelRecordBrowse              = "Browse…"
+	// pathEntryMinWidth floors the Save-to entry so the modal opens wide
+	// enough to show a normal path. A component dimension, so it carries its
+	// own literal-px const (spacing.go) rather than a scale step.
+	pathEntryMinWidth = 320
 )
 
 // showRecordModal presents the session-start choices — compact output, a
@@ -103,7 +109,13 @@ func showRecordModal(win fyne.Window, processesAvailable bool, onStart func(reco
 			fyne.Do(func() { pathEntry.SetText(picked) })
 		}()
 	})
-	location := container.NewBorder(nil, nil, nil, browse, pathEntry)
+	// Floor the entry's width with the app's transparent-sizer pattern (the
+	// disk volume selector): dialog.NewCustomConfirm sizes to the content's
+	// MinSize, so without a floor the bare filename is all that fits. Beyond
+	// the floor the entry scrolls rather than truncating.
+	sizer := canvas.NewRectangle(color.Transparent)
+	sizer.SetMinSize(fyne.NewSize(pathEntryMinWidth, pathEntry.MinSize().Height))
+	location := container.NewBorder(nil, nil, nil, browse, container.NewStack(sizer, pathEntry))
 
 	// Rows reuse the Settings tab's label-column layout so the modal reads like
 	// the rest of the app: a fixed-width uppercase label over a muted caption,
