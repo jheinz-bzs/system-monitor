@@ -273,6 +273,14 @@ func Run(version string) {
 		if spec.Compact {
 			path = columns.CompactFilePath(path)
 		}
+		// A session that asked for top processes but can't have them is a silent
+		// data-loss bug (issue #89): the sidecar simply never appears. Mirror the
+		// headless binary's "--processes %d ignored" diagnostic instead of
+		// swallowing the option — the modal's disabled field and this log together
+		// make the drop visible.
+		if spec.TopN > 0 && !columns.SidecarArmed(spec, procs) {
+			log.Printf("top processes %d ignored: process collector unavailable", spec.TopN)
+		}
 		opts := columns.SessionOptions(spec, procs, path)
 		rec := recorder.New(columns.Build(cpu, memory, diskCol, network, procs), opts...)
 		f, err := os.Create(path)
@@ -297,7 +305,7 @@ func Run(version string) {
 		return false
 	}
 	src.recording = recording
-	src.toggleRecord = func() { toggleRecording(&session, w, startSession) }
+	src.toggleRecord = func() { toggleRecording(&session, w, procs != nil, startSession) }
 
 	content, refresh := buildContent(src)
 
@@ -742,9 +750,12 @@ const (
 // toggleRecording is the status-bar toggle's action: stop an active session, or
 // start a new one behind the record modal. While a session is active a tap
 // stops it outright (no modal); idle, it opens the modal, whose confirm starts
-// the session through start and whose cancel leaves it idle. Runs on the UI
-// goroutine (a control tap), so the modal may call dialog directly.
-func toggleRecording(session *atomic.Pointer[recorder.Recorder], win fyne.Window, start func(recorder.OptionsSpec, string)) {
+// the session through start and whose cancel leaves it idle. processesAvailable
+// tells the modal whether the top-processes sidecar can be recorded — when the
+// process collector failed to start the field is disabled and its caption warns,
+// so requesting an untrackable sidecar is impossible rather than silent. Runs
+// on the UI goroutine (a control tap), so the modal may call dialog directly.
+func toggleRecording(session *atomic.Pointer[recorder.Recorder], win fyne.Window, processesAvailable bool, start func(recorder.OptionsSpec, string)) {
 	if r := session.Load(); r != nil && r.Recording() {
 		if err := r.Stop(); err != nil {
 			log.Printf("stop recording: %v", err)
@@ -752,5 +763,5 @@ func toggleRecording(session *atomic.Pointer[recorder.Recorder], win fyne.Window
 		session.Store(nil)
 		return
 	}
-	showRecordModal(win, start)
+	showRecordModal(win, processesAvailable, start)
 }
