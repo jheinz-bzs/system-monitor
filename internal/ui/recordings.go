@@ -139,7 +139,7 @@ func (v *recordingsView) load() {
 	go func() {
 		path, err := zenity.SelectFile(
 			zenity.Title(recordingDialogTitle),
-			zenity.FileFilters{{Name: recordFilterName, Patterns: []string{recordFilterPattern}}},
+			zenity.FileFilters{{Name: recordFilterName, Patterns: []string{recordFilterPattern, recordFilterGzipPattern}}},
 		)
 		if err != nil {
 			if !errors.Is(err, zenity.ErrCanceled) {
