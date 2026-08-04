@@ -91,16 +91,25 @@ func ValidPath(path string) bool {
 // already applied when Compact is set — so the sidecar name derives from the
 // same file the caller will create.
 func SessionOptions(spec recorder.OptionsSpec, procs *monitor.ProcessCollector, path string) []recorder.Option {
-	return recorder.Options(spec, topProcesses(procs, spec.TopN), openSidecar(ProcessesFilePath(path)))
+	return recorder.Options(spec, topProcesses(spec, procs), openSidecar(ProcessesFilePath(path)))
+}
+
+// SidecarArmed reports whether a session started from spec will write the
+// top-processes sidecar: the spec asked for it (TopN > 0) and a live process
+// collector feeds the snapshots. SessionOptions drops the sidecar when this is
+// false, so a composition root can warn the user — the headless binary's
+// "--processes %d ignored" diagnostic — instead of silently missing the file.
+func SidecarArmed(spec recorder.OptionsSpec, procs *monitor.ProcessCollector) bool {
+	return spec.TopN > 0 && procs != nil
 }
 
 // topProcesses adapts the process collector into the recorder's snapshot seam,
-// returning the topN busiest-by-CPU processes with only the columns the sidecar
-// writes. Nil when the collector is nil or topN is 0, so recorder.Options drops
-// the sidecar rather than recording an empty file. Reads the collector's latest
+// returning the spec.TopN busiest-by-CPU processes with only the columns the
+// sidecar writes. Nil when SidecarArmed is false, so recorder.Options drops the
+// sidecar rather than recording an empty file. Reads the collector's latest
 // cached snapshot per call; the poller owns the expensive enumeration.
-func topProcesses(procs *monitor.ProcessCollector, topN int) recorder.ProcessSnapshot {
-	if procs == nil || topN <= 0 {
+func topProcesses(spec recorder.OptionsSpec, procs *monitor.ProcessCollector) recorder.ProcessSnapshot {
+	if !SidecarArmed(spec, procs) {
 		return nil
 	}
 	return func() []recorder.ProcessSample {
@@ -114,7 +123,7 @@ func topProcesses(procs *monitor.ProcessCollector, topN int) recorder.ProcessSna
 				RSS:  p.MemoryBytes,
 			}
 		}
-		return recorder.TopSamples(samples, topN)
+		return recorder.TopSamples(samples, spec.TopN)
 	}
 }
 

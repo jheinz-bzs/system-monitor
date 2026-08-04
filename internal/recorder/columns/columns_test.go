@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/josephheinz/system-monitor/internal/monitor"
 	"github.com/josephheinz/system-monitor/internal/recorder"
 )
 
@@ -114,6 +115,28 @@ func TestValidPath(t *testing.T) {
 	for _, c := range cases {
 		if got := ValidPath(c.path); got != c.want {
 			t.Errorf("ValidPath(%q) = %v, want %v", c.path, got, c.want)
+		}
+	}
+}
+
+func TestSidecarArmed(t *testing.T) {
+	// A zero-value collector is non-nil, which is all the predicate inspects —
+	// it reports availability, not the collector's contents.
+	live := &monitor.ProcessCollector{}
+	cases := []struct {
+		name  string
+		spec  recorder.OptionsSpec
+		procs *monitor.ProcessCollector
+		want  bool
+	}{
+		{"off by default", recorder.OptionsSpec{}, live, false},
+		{"requested without a collector", recorder.OptionsSpec{TopN: 3}, nil, false},
+		{"requested with a collector", recorder.OptionsSpec{TopN: 3}, live, true},
+	}
+	for _, c := range cases {
+		if got := SidecarArmed(c.spec, c.procs); got != c.want {
+			t.Errorf("%s: SidecarArmed(%+v, collector=%v) = %v, want %v",
+				c.name, c.spec, c.procs != nil, got, c.want)
 		}
 	}
 }

@@ -36,21 +36,27 @@ const (
 	helpRecordCompact    = "gzip-compressed .csv.gz"
 	labelRecordProcesses = "Top processes per tick"
 	helpRecordProcesses  = "N busiest by CPU; 0 = off"
-	recordTopDefault     = "0"
-	labelRecordLocation  = "Save to"
-	helpRecordLocation   = "editable; Browse… to pick"
-	labelRecordBrowse    = "Browse…"
+	// helpRecordProcessesUnavailable replaces the top-processes caption when the
+	// process collector failed to start, so the disabled field explains why the
+	// sidecar can't be recorded (issue #89) rather than silently dropping it.
+	helpRecordProcessesUnavailable = "process collector unavailable; sidecar off"
+	recordTopDefault               = "0"
+	labelRecordLocation            = "Save to"
+	helpRecordLocation             = "editable; Browse… to pick"
+	labelRecordBrowse              = "Browse…"
 )
 
 // showRecordModal presents the session-start choices — compact output, a
 // top-processes count, and the save location — and hands the confirmed spec and
 // path to onStart. It runs on the UI goroutine (a record-toggle tap); the
 // confirm callback is a Fyne dialog callback, so the recorder build and file
-// creation happen there too. The Browse button reuses the native save dialog the
-// toggle used directly before this modal, prefilled with the current location;
-// zenity blocks, so it runs on its own goroutine with the result marshalled
-// back via fyne.Do.
-func showRecordModal(win fyne.Window, onStart func(recorder.OptionsSpec, string)) {
+// creation happen there too. When processesAvailable is false the top-processes
+// field is disabled and its caption warns — the sidecar can't be recorded, so
+// the choice is surfaced rather than silently dropped (issue #89). The Browse
+// button reuses the native save dialog the toggle used directly before this
+// modal, prefilled with the current location; zenity blocks, so it runs on its
+// own goroutine with the result marshalled back via fyne.Do.
+func showRecordModal(win fyne.Window, processesAvailable bool, onStart func(recorder.OptionsSpec, string)) {
 	defaultName := columns.FileName(time.Now())
 
 	pathEntry := widget.NewEntry()
@@ -73,6 +79,11 @@ func showRecordModal(win fyne.Window, onStart func(recorder.OptionsSpec, string)
 
 	topField := widget.NewEntry()
 	topField.SetText(recordTopDefault)
+	topHelp := helpRecordProcesses
+	if !processesAvailable {
+		topHelp = helpRecordProcessesUnavailable
+		topField.Disable()
+	}
 
 	browse := widget.NewButton(labelRecordBrowse, func() {
 		current := pathEntry.Text
@@ -99,7 +110,7 @@ func showRecordModal(win fyne.Window, onStart func(recorder.OptionsSpec, string)
 	// beside the control.
 	rows := container.New(layout.NewCustomPaddedVBoxLayout(settingRowGap),
 		settingRow(labelRecordCompact, helpRecordCompact, compact),
-		settingRow(labelRecordProcesses, helpRecordProcesses, topField),
+		settingRow(labelRecordProcesses, topHelp, topField),
 		settingRow(labelRecordLocation, helpRecordLocation, location),
 	)
 
