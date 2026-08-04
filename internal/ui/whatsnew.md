@@ -4,13 +4,7 @@
 
 Thanks for updating. Here's what changed recently.
 
-### Linux: updates via apt now get a proper prompt
-- If you installed from the `.deb`, an available update now shows the update
-  banner and a **Update via apt** link — tapping it tells you to run
-  `sudo apt update && sudo apt upgrade` instead of the app swapping a file it
-  doesn't own. Standalone binaries and AppImages still self-update in place.
-
-### macOS: installs are smoother
-- The Homebrew cask now clears the quarantine attribute automatically after
-  install, so a fresh `brew install --cask system-monitor` launches without a
-  Gatekeeper prompt.
+### Recording: the save-location path is readable again
+- The **Save to** field in the record dialog now has a usable minimum width,
+  so the Browse… button no longer squeezes the file path to near-invisibility.
+  Longer paths scroll within the field instead of truncating.
