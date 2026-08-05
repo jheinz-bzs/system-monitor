@@ -8,6 +8,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"github.com/josephheinz/system-monitor/internal/recorder"
 	"github.com/josephheinz/system-monitor/internal/recorder/columns"
 	"github.com/josephheinz/system-monitor/internal/series"
+	"github.com/josephheinz/system-monitor/internal/singleinstance"
 	"github.com/josephheinz/system-monitor/internal/update"
 )
 
@@ -63,6 +65,29 @@ const (
 // (main.version); a non-release value ("dev") disables the GitHub self-update
 // check (BZS253-71).
 func Run(version string) {
+	// Single instance (issue #96): a second launch refuses to start and tells
+	// the user why, instead of silently opening a duplicate window and a second
+	// set of collectors writing to the same data (Firefox/OBS-style error, not
+	// focus-stealing). The lock is process-lifetime — release is deferred so it
+	// is held until Run returns — and the OS drops it on process death, even a
+	// crash, so nothing stale blocks a later launch. Checked before the main
+	// app.NewWithID so the losing instance never starts the real window,
+	// collectors, or tray — only the error popup's minimal app (see
+	// showAlreadyRunningDialog in singleinstance.go). A mechanism failure
+	// (e.g. no usable lockfile location) degrades to a logged no-op: the app
+	// still runs, just without the guard.
+	release, err := singleinstance.Acquire(appID)
+	if err != nil {
+		if errors.Is(err, singleinstance.ErrAlreadyRunning) {
+			showAlreadyRunningDialog()
+			os.Exit(1) // second instance refused to start: non-zero exit
+		}
+		log.Printf("single instance: %v", err)
+	}
+	if release != nil {
+		defer release()
+	}
+
 	a := app.NewWithID(appID)
 	registerNotificationAppName()
 
